@@ -19,3 +19,9 @@ Then run the following command in the web site directory to preview the website 
 ```
 jekyll --auto --server
 ```
+
+## Publishing new articles
+
+Modify `_config.yml`
+
+__Note__: `_config.yml` is only parsed once when you start jekyll, it's not automatically updated like when you modify html files. This means that whenever you add new articles you'll need to stop and restart jekyll to see the changes.
