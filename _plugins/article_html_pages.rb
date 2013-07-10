@@ -1,7 +1,7 @@
 module Jekyll
 
   class CategoryArticle < Page
-    def initialize(site, base, dir, title, author, pages, issue, pdf)
+    def initialize(site, base, dir, title, author, pages, issue, pdf, num, volume, year, month)
       @site = site
       @base = base
       @dir = dir
@@ -14,8 +14,11 @@ module Jekyll
       self.data['title'] = title 
       self.data['author'] = author 
       self.data['pages'] = pages 
-      self.data['issue'] = issue 
       self.data['pdf'] = pdf 
+      self.data['num'] = num 
+      self.data['volume'] = volume
+      self.data['year'] = year 
+      self.data['month'] = month
     end
   end
 
@@ -33,7 +36,7 @@ module Jekyll
               path = File.join(dir, issue['issue'], slug)
 #              puts path
               pdf = path + ".pdf" 
-              site.pages << CategoryArticle.new(site, site.source, path, article['title'], article['author'], article['pages'], issue['issue'], pdf)
+              site.pages << CategoryArticle.new(site, site.source, path, article['title'], article['author'], article['pages'], issue['issue'], pdf, issue['num'], issue['volume'], issue['year'], issue['month'])
             end
           end
         end
