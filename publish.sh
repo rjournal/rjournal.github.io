@@ -1,4 +1,7 @@
-# Assume there's a web-svn directory, which is a git svn checkout
+#!/bin/bash
+set -e
+
+# Assumes there is a web-svn directory, which is a git svn checkout
 # of https://svn.r-project.org/Rjournal/trunk
 
 jekyll build
@@ -7,6 +10,7 @@ jekyll build
 rsync -i --recursive --delete --checksum _site/ ../web-svn/html/
 
 cd ../web-svn
+git svn rebase
 git add -A .
 git commit -m"Update site"
 git svn dcommit
