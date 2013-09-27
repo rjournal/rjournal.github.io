@@ -10,7 +10,8 @@ jekyll build
 rsync -i --recursive --delete --checksum _site/ ../web-svn/html/
 
 cd ../web-svn
-git svn rebase
 git add -A .
 git commit -m"Update site"
+
+git svn rebase
 git svn dcommit
