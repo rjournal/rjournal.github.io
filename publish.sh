@@ -7,7 +7,10 @@ set -e
 jekyll build
 
 # from http://nathangrigg.net/2012/04/rsyncing-jekyll/
-rsync -i --recursive --delete --checksum _site/ ../web-svn/html/
+# rsync -i --recursive --delete --checksum _site/ ../web-svn/html/
+
+rsync -i --recursive --checksum build/ ../web-html/
+
 
 cd ../web-svn
 git add -A .
