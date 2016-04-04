@@ -9,7 +9,7 @@ jekyll build
 # from http://nathangrigg.net/2012/04/rsyncing-jekyll/
 # rsync -i --recursive --delete --checksum _site/ ../web-svn/html/
 
-rsync -i --recursive --checksum build/ ../web-svn/html/
+rsync -i --recursive --checksum _site/ ../web-svn/html/
 
 ## Option 1: Using git-svn
 
