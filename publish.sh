@@ -25,4 +25,4 @@ rsync -i --recursive --checksum _site/ ../web-svn/html/
 
 cd ../web-svn
 svn add --force .
-svn ci -m "Update site"
+svn ci -m "$1"
