@@ -11,17 +11,9 @@ jekyll build
 
 rsync -i --recursive --checksum _site/ ../web-svn/html/
 
-## Option 1: Using git-svn
-
-# cd ../web-svn
-# git add -A .
-# git commit -m"Update site"
-
-# git svn rebase
-# git svn dcommit
-
-## Option 2: Using just SVN
-# Check-in added files and svn commit as usual
+git add -A .
+git commit -m "$1"
+git push
 
 cd ../web-svn
 svn add --force .
