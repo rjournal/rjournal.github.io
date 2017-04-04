@@ -9,12 +9,12 @@ jekyll build
 # from http://nathangrigg.net/2012/04/rsyncing-jekyll/
 # rsync -i --recursive --delete --checksum _site/ ../web-svn/html/
 
-rsync -i --recursive --checksum _site/ ../web-svn/html/
+rsync -i --recursive --checksum _site/ ../RJ_trunk/html/
 
 git add -A .
 git commit -m "$1"
 git push
 
-cd ../web-svn
+cd ../RJ_trunk
 svn add --force .
 svn ci -m "$1"
