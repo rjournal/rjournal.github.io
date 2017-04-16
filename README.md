@@ -17,7 +17,7 @@ gem install jekyll
 Then run the following command in the web site directory to preview the website http://localhost:4000
 
 ```
-jekyll _3.0.5_ serve --watch
+jekyll serve --watch
 ```
 
 ## Publishing new articles
