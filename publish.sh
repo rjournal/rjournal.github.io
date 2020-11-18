@@ -10,12 +10,13 @@ jekyll build
 # rsync -i --recursive --delete --checksum _site/ ../web-svn/html/
 
 #rsync -i --recursive --checksum _site/ ../RJ_trunk/html/
-rsync -i --recursive --checksum _site/ ../Rjournal/trunk//html/
+rsync -i --recursive --checksum _site/ ../Rjournal/trunk/html/
 
 git add -A .
 git commit -m "$1"
 git push
 
-cd ../RJ_trunk
+#cd ../RJ_trunk
+cd ../Rjournal
 svn add --force .
 svn ci -m "$1"
