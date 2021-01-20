@@ -16,7 +16,7 @@ git add -A .
 git commit -m "$1"
 git push
 
-#cd ../RJ_trunk
-cd ../Rjournal
+cd ../RJ_trunk
+#cd ../Rjournal
 svn add --force .
 svn ci -m "$1"
