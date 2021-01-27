@@ -26,6 +26,16 @@ Then run the following command in the web site directory to preview the website 
 jekyll serve --watch
 ```
 
+*If you run into problems serving local to checkchanges, you may need to*
+
+- if you get a versioning issue with i18n try ```bundle exec jekyll serve --watch```
+
+or install particular versions with
+
+```gem install i18n --version 0.9.5```
+
+```gem install coderay```
+
 ## Publishing new articles
 
 Modify `_config.yml`
