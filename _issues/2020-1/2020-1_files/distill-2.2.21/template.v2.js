@@ -23,6 +23,12 @@ function load_distill_framework() {
       `).join('')}
     </div>
     <div>
+      <h3>Submitted</h3>
+      ${e.publishedDate?`
+        <p>${e.publishedMonth} ${e.publishedDay}, ${e.publishedYear}</p> `:`
+        <p><em>Not submitted yet.</em></p>`}
+    </div>
+    <div>
       <h3>Published</h3>
       ${e.publishedDate?`
         <p>${e.publishedMonth} ${e.publishedDay}, ${e.publishedYear}</p> `:`
