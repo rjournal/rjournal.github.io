@@ -23,9 +23,10 @@ function load_distill_framework() {
       `).join('')}
     </div>
     <div>
+      <h3>Submitted</h3>
       ${e.submittedDate?`
-        <h3>Submitted</h3>
-        <p>${e.submittedDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p> `:``}
+        <p>${e.submittedDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p> `:`
+        <p><em>Not submitted yet.</em></p>`}
       <h3>Published</h3>
       ${e.publishedDate?`
         <p>${e.publishedDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p> `:`
