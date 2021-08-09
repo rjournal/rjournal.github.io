@@ -11,12 +11,15 @@ local pkg = {
     pdf = '\\pkg{%s}'
 }
 
-function RawBlock(elem)
+
+function RawInline(elem)
   local out = {}
   
-  local pkg = string.match(elem.text, '\\pkg%((%w+)%)')
+  local pkg = string.match(elem.text, '\\pkg%{(%w+)%}.*')
   
   if pkg ~= nil then
+--     return pandoc.Para{pandoc.Strong(pkg)}
+      
     if FORMAT:match 'html.*' then
         table.insert(out, pandoc.Link(pkg, '#'))
     else
