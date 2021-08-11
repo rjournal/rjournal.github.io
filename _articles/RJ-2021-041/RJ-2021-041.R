@@ -12,7 +12,7 @@ library(visreg)
 set.seed(100)
 
 
-## ----orq_vis, echo = FALSE, fig.cap="ORQ normalization visualization on Fisher's iris data."----
+## ----orqvis, echo = FALSE, fig.cap="ORQ normalization visualization on Fisher's iris data."----
 
 x <- iris$Petal.Width
 on <- orderNorm(x, warn = FALSE)
@@ -40,7 +40,7 @@ legend('bottomright',
 x <- rgamma(250, 1, 1)
 
 
-## ----simple_hist, echo = FALSE, fig.height=4, fig.width=6, out.height="1.3in", out.width="2.5in", fig.cap="Simulated skewed data for simple example."----
+## ----simplehist, echo = FALSE, fig.height=4, fig.width=6, out.height="1.3in", out.width="2.5in", fig.cap="Simulated skewed data for simple example."----
 MASS::truehist(x, nbins = 12)
 
 
@@ -48,11 +48,11 @@ MASS::truehist(x, nbins = 12)
 (BNobject <- bestNormalize(x))
 
 
-## ----bn_plot, fig.cap="The suite of transformations estimated by default in \\pkg{bestNormalize} (trained on simulated right-skewed data)."----
+## ----bnplot, fig.cap="The suite of transformations estimated by default in \\pkg{bestNormalize} (trained on simulated right-skewed data)."----
 plot(BNobject, leg_loc = "topleft")
 
 
-## ----hist_best, warning=FALSE, echo = FALSE, fig.height=8, fig.width = 7.8, fig.cap="Summary of transformations performed on simulated right-skewed data."----
+## ----histbest, warning=FALSE, echo = FALSE, fig.height=8, fig.width = 7.8, fig.cap="Summary of transformations performed on simulated right-skewed data."----
 par(mfrow = c(2,2), mar = c(4, 4, 4, 1))
 MASS::truehist(x, main = "Original Data")
 MASS::truehist(BNobject$x.t, main = paste("Best Normalizing Transformation:", class(BNobject$chosen_transform)[1]), nbins = 12)
@@ -80,7 +80,7 @@ lines(pp, predict(BNobject, newdata = pp, inverse = TRUE),  lwd = 5)
 #> lines(xx, predict(orderNorm_obj, newdata = xx), col = 4)
 
 
-## ----vis_data2, echo = FALSE, fig.height = 4, fig.width = 6, out.height = "2.5in", out.width = "4.375in", fig.cap="Manually plotting transformations trained on simulated right-skewed data."----
+## ----visdata2, echo = FALSE, fig.height = 4, fig.width = 6, out.height = "2.5in", out.width = "4.375in", fig.cap="Manually plotting transformations trained on simulated right-skewed data."----
 xx <- seq(min(x), max(x), length = 100) # vector of values over domain of x
 plot(xx, predict(arcsinh_obj, newdata = xx), type = "l", col = 1, ylim = c(-4, 4),
      xlab = 'x', ylab = "g(x)")
@@ -92,7 +92,7 @@ legend("bottomright", legend = c("arcsinh", "Box-Cox", "Yeo-Johnson", "OrderNorm
        col = 1:4, lty = 1, bty = 'n')
 
 
-## ----hist_trans, fig.height=6, fig.width = 6, echo = FALSE, out.height="4in", out.width="4in", fig.cap="Normalized values for trained transformations on simulated right-skewed data."----
+## ----histtrans, fig.height=6, fig.width = 6, echo = FALSE, out.height="4in", out.width="4in", fig.cap="Normalized values for trained transformations on simulated right-skewed data."----
 par(mfrow = c(2,2))
 MASS::truehist(arcsinh_obj$x.t, main = "Arcsinh transformation", nbins = 12)
 MASS::truehist(boxcox_obj$x.t, main = "Box-Cox transformation", nbins = 12)
@@ -119,7 +119,7 @@ bestNormalize(x, allow_orderNorm = FALSE, out_of_sample = FALSE)
 #> parallel::stopCluster(cl)
 
 
-## ----parallel_timings, echo = FALSE, fig.height = 4, fig.width = 4.5, fig.cap="Potential speedup using parallelization functionality."----
+## ----paralleltimings, echo = FALSE, fig.height = 4, fig.width = 4.5, fig.cap="Potential speedup using parallelization functionality."----
 knitr::include_graphics("figs/parallel_timings.pdf")
 
 
@@ -247,7 +247,9 @@ tab[17,2] <- my_meansd(autotrader$mileage)
 tab[18,2] <- my_range(autotrader$mileage)
 
 tab %>% 
-  kable(booktabs = TRUE, linesep ="", caption = "Sample characteristics of `autotrader` data.") %>% 
+  kable(
+    format = ifelse(knitr::is_html_output(), "html", "latex"), booktabs = TRUE, 
+    linesep ="", caption = "Sample characteristics of `autotrader` data.") %>% 
   kable_styling(c("striped", "condensed"), full_width = FALSE)
 
 
@@ -263,7 +265,7 @@ tab %>%
 (yearsoldBN <- bestNormalize(autotrader$yearsold))
 
 
-## ----hist_app, fig.height=3, fig.width=6, echo = FALSE, out.height="2.1in", out.width="4.2in", fig.cap = "Distributions of car variables before and after normalization."----
+## ----histapp, fig.height=3, fig.width=6, echo = FALSE, out.height="2.1in", out.width="4.2in", fig.cap = "Distributions of car variables before and after normalization."----
 par(mfcol = c(2, 3), mar = c(4,3,1,1))
 MASS::truehist(autotrader$price, main = "", xlab = "Price")
 MASS::truehist(priceBN$x.t, main = "", xlab = "Price (transformed)")
@@ -304,7 +306,9 @@ s$coefficients %>%
   rownames_to_column("Variable") %>% 
   mutate(Variable = c("Intercept", "g(Mileage)", "g(Age)"),
          `Pr(>|t|)` = pvalr(`Pr(>|t|)`)) %>% 
-  kable(align = c("lrrrr"), digits = 3, booktabs = TRUE, caption = "TBS regression results for autotrader data.") %>% 
+  kable(
+    format = ifelse(knitr::is_html_output(), "html", "latex"), booktabs = TRUE, 
+    align = c("lrrrr"), digits = 3, caption = "TBS regression results for autotrader data.") %>% 
   kable_styling(full_width = FALSE)
 
 
@@ -319,7 +323,7 @@ s$coefficients %>%
 #>        )
 
 
-## ----linear_visreg, out.width = "80%", echo = FALSE, fig.cap = "TBS regression visualized on transformed units (left) and original units (right)."----
+## ----linearvisreg, out.width = "80%", echo = FALSE, fig.cap = "TBS regression visualized on transformed units (left) and original units (right)."----
 mileage.xx <- seq(min(autotrader$mileage), max(autotrader$mileage), len = 100)
 price.xx <- seq(min(autotrader$price), max(autotrader$price), len = 100)
 yearsold.xx <- seq(min(autotrader$yearsold), max(autotrader$yearsold), len = 100)
@@ -361,7 +365,7 @@ legend(
 #> lines(new_yo, line_vals)
 
 
-## ----gam_tbs_model, out.width = "80%", eval = TRUE, echo = FALSE, fig.cap="Age effect on car price (re-transformed to original unit)."----
+## ----gam-tbs-model, out.width = "80%", eval = TRUE, echo = FALSE, fig.cap="Age effect on car price (re-transformed to original unit)."----
 new_yo <- seq(min(autotrader$yearsold), max(autotrader$yearsold), len = 100)
 newX <- data.frame(yearsold = new_yo, 
                   mileage = median(autotrader$mileage))
@@ -418,7 +422,9 @@ names(idx)[3] <- "RSQ"
 
 tab %>% 
   Reduce(rbind, .) %>% 
-  kable(digits = 3, booktabs = TRUE, caption = "CV prediction accuracy of various ML methods.") %>% 
+  kable(
+    format = ifelse(knitr::is_html_output(), "html", "latex"), booktabs = TRUE, 
+    digits = 3, caption = "CV prediction accuracy of various ML methods.") %>% 
   kable_styling(full_width = FALSE) %>%
   kableExtra::group_rows(index = idx)
 
@@ -442,7 +448,10 @@ colnames(res) <- toupper(results$glmnet$.metric)
 rownames(res) <- names(results)
 res <- rownames_to_column(data.frame(res), "Method")
 
-kable(res, digits = c(0, 0, 3, 0), booktabs = TRUE, caption = "Test data prediction accuracy of various ML methods. RMSE and MAE can be interpreted in terms of 2017 US dollars.") %>% 
+kable(
+  res, 
+  format = ifelse(knitr::is_html_output(), "html", "latex"), booktabs = TRUE, 
+  digits = c(0, 0, 3, 0), caption = "Test data prediction accuracy of various ML methods. RMSE and MAE can be interpreted in terms of 2017 US dollars.") %>% 
   kable_styling(full_width = FALSE)
 
 ```{.r .distill-force-highlighting-css}
