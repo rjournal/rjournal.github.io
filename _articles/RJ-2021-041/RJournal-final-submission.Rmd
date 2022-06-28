@@ -1,0 +1,697 @@
+---
+author:
+  - name: Ryan A. Peterson
+    affiliation: >
+      Department of Biostatistics and Informatics
+    address: >
+      University of Colorado Anschutz Medical Campus
+      13001 East 17th Place
+      Aurora, Colorado 80045 
+      ORCID: 0000-0002-4650-5798
+    email: \email{ryan.a.peterson@cuanschutz.edu}
+    url: https://petersonr.github.io/
+title: "Finding Optimal Normalizing Transformations via \\pkg{bestNormalize}"
+abstract: >
+  The \pkg{bestNormalize} R package was designed to help users find a transformation that
+  can effectively normalize a vector regardless of its actual distribution.
+  Each of the many normalization techniques that have been
+  developed has its own strengths and weaknesses, and deciding which to use
+  until data are fully observed is difficult or impossible. This package facilitates
+  choosing between a range of possible transformations and will automatically return 
+  the best one, i.e., the one that makes data look the *most* normal. To evaluate and compare 
+  the normalization efficacy across a suite of possible transformations, we developed a 
+  statistic based on a goodness of fit test divided by its degrees of freedom. 
+  Transformations can be seamlessly trained and applied to newly observed data 
+  and can be implemented in conjunction with \pkg{caret} and \pkg{recipes} for 
+  data preprocessing in machine learning workflows. Custom transformations and 
+  normalization statistics are supported. 
+keywords: preprocessing, caret, recipes, machine learning, normalization
+preamble: >
+  \usepackage{float}
+  \floatplacement{figure}{H} 
+  \floatplacement{table}{H}
+  \usepackage{lmodern}
+output: 
+  rticles::rjournal_article:
+    fig_caption: yes
+bibliography: RJournal-final-submission.bib 
+date: 2021-07-15
+year: 2021
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 5, fig.width = 7, 
+                      out.width = "100%", fig.align = "center", fig.path="figs/")
+# devtools::install_github("petersonR/bestNormalize")
+library(bestNormalize)
+library(kableExtra)
+library(recipes)
+library(caret)
+library(tibble)
+library(visreg)
+
+set.seed(100)
+```
+
+# Introduction
+
+The \CRANpkg{bestNormalize} package contains a suite of transformation-estimating functions that can be used to normalize data. The function of the same name attempts to find and execute the best of all of these potential normalizing transformations. In this package, we define "normalize" as in "to render data Gaussian", rather than transform them to a specific scale.
+
+There are many instances where researchers may want to normalize a variable. First, there is the (often problematic) assumption of normality of the outcome (conditional on the covariates) in the classical linear regression problem. Over the years, many methods have been used to relax this assumption: generalized linear models, quantile regression, survival models, etc. One technique that is still somewhat popular in this context is to "beat the data" to look normal via some kind of normalizing transformation. This could be something as simple as a log transformation or something as complex as a Yeo-Johnson transformation [@yeojohnson]. In fact, many complex normalization methods were designed expressly to find a transformation that could render regression residuals Gaussian. While perhaps not the most elegant solution to the problem, often, this technique works well as a quick solution. Another increasingly popular application of normalization occurs in applied regression settings with highly skewed distributions of the covariates [@kuhn2013APM]. In these settings, there exists the tendency to have high leverage points (and highly influential points), even when one centers and scales the covariates. When examining interactions, these influential points can become especially problematic since the leverage of that point gets amplified for every interaction in which it is involved. Normalization of such covariates can mitigate their leverage and influence, thereby allowing for easier model selection and more robust downstream predictor manipulations (such as principal components analysis), which can otherwise be sensitive to skew or outliers. As a result, popular model selection packages such as \CRANpkg{caret} [@caret] and \CRANpkg{recipes} [@recipes] have built-in mechanisms to normalize the predictor variables (they call this "preprocessing"). This concept is unique in that it forgoes the assumption of linearity between the outcome (Y) and the covariate, opting instead for a linear relationship between Y and the transformed value of the covariate (which in many cases may be more plausible). 
+
+This package is designed to make normalization effortless and consistent. We have also introduced Ordered Quantile (ORQ) normalization via the \code{orderNorm} function, which uses a rank mapping of the observed data to the normal distribution in order to guarantee normally distributed transformed data (if ties are not present). We have shown how ORQ normalization performs very consistently across different distributions, successfully normalizing left- or right-skewed data, multi-modal data, and even data generated from a Cauchy distribution [@orq_paper].
+
+In this paper, we describe our R package \pkg{bestNormalize}, which is available via the Comprehensive R Archive Network (CRAN). First, we describe normalization methods that have been developed and that we implement in the package. Second, we describe the novel cross-validation-based estimation procedure, which we utilize to judge the normalization efficacy of our suite of normalization transformations. Third, we go through some basic examples of \pkg{bestNormalize} functionality and a simple implementation of our methods within the \pkg{recipes} package. We illustrate a more in-depth use-case in a car pricing application, performing a transform-both-sides regression as well as comparing the performance of several predictive models fit via \pkg{caret}. Finally, we conclude by discussing the pros and cons of normalization in general and future directions for the package. 
+
+# Normalization methods
+
+Many normalization transformation functions exist, and though some can be implemented well in existing R packages, \pkg{bestNormalize} puts them all under the same umbrella syntax. This section describes each transformation contained in the \pkg{bestNormalize} suite. 
+
+## The Box-Cox transformation
+
+The Box-Cox transformation was famously proposed in @BoxCox1964 and can be implemented with differing syntax and methods in many existing packages in R (e.g., \pkg{caret}, \CRANpkg{MASS} [@MASS], and more). It is a straightforward transformation that typically only involves one parameter, $\lambda$:
+
+$$
+g(x; \lambda) = \boldsymbol 1 _{(\lambda \neq 0)} \frac{x^\lambda-1}{\lambda} 
++ \boldsymbol 1_{(\lambda = 0)} \log x\text{ ,}
+$$
+
+\noindent where $x$ refers to the datum in its original unit (pre-transformation). Given multiple observations, the $\lambda$ parameter can be estimated via maximum likelihood, and $x$ must be greater than zero. 
+
+## The Yeo-Johnson transformation
+
+The Yeo-Johnson transformation [@yeojohnson] attempts to find the value of $\lambda$ in the following equation that minimizes the Kullback-Leibler distance between the normal distribution and the transformed distribution. 
+
+$$
+\begin{aligned}
+g(x;\lambda) &= 
+\boldsymbol 1 _{(\lambda \neq 0, x \geq 0)} \frac{(x+1)^\lambda-1}{\lambda} \\
+&+ \boldsymbol 1_{(\lambda = 0, x \geq 0)} \log (x+1) \\
+&+ \boldsymbol 1_{(\lambda \neq 2, x < 0)} \frac{(1-x)^{2-\lambda}-1}{\lambda - 2} \\
+&+ \boldsymbol 1_{(\lambda = 2, x < 0)} -\log (1-x) \\
+\end{aligned}
+$$
+
+
+This method has the advantage of working without having to worry about the domain of $x$. As with the Box-Cox $\lambda$, this $\lambda$ parameter can be estimated via maximum likelihood.
+
+## The Lambert W x F transformation
+
+The Lambert W x F transformation, proposed in @goerg2011 and implemented in the \CRANpkg{LambertW} package, is essentially a mechanism that de-skews a random variable $X$ using moments. The method is motivated by a system theory and is alleged to be able to transform any random variable into any other kind of random variable, thus being applicable to a large number of contexts. One of the package's main functions is \code{Gaussianize}, which is similar in spirit to the purpose of this package. However, this method may not perform as well on certain shapes of distributions as other candidate transformations; see @orq_paper for some examples. 
+
+The \code{Gaussianize} transformation can handle three types of transformations: skewed, heavy-tailed, and skewed heavy-tailed. For more details on this transformation, consult the \pkg{LambertW} documentation.\footnote{As of version 1.2.0 of \pkg{bestNormalize}, \code{lambert} methods are not performed by default in \code{bestNormalize}, but they are still available via the \code{allow\textunderscore lambert} arguments.}
+While the transformations contained and implemented by \code{bestNormalize} are reversible (i.e., 1-1), in rare circumstances, we have observed that the \code{lambert} function can yield non-reversible transformations.
+
+## The Ordered Quantile technique 
+
+The ORQ normalization technique (\code{orderNorm}) is based on the following transformation (originally discussed, as far as we can find, in @bartlett1947 and further developed in @van1952):
+
+Let $\underline x$ refer to the original data. Then the transformation is:
+
+$$
+g(\underline x) = \Phi ^{-1} \left(\frac{\text{rank} (\underline x) - 1/2}{\text{length}(\underline x) }\right)
+$$
+
+This nonparametric transformation as defined works well on the observed data, but it is not trivial to implement in modern settings where the transformation needs to be applied on new data; we discussed this issue and our solution to it in @orq_paper. Basically, on new data *within* the range of the original data, ORQ normalization will linearly interpolate between two of the original data points. On new data *outside* the range of the original data, the transformation extrapolates using a shifted logit approximation of the ranks to the original data. This is visualized below via the \code{iris} data set on the \code{Petal.Width} variable. 
+
+```{r orq_vis, echo = FALSE, fig.cap="ORQ normalization visualization on Fisher's iris data."}
+
+x <- iris$Petal.Width
+on <- orderNorm(x, warn = FALSE)
+xx <- seq(min(x) - 1, max(x) + 1, length = 1000)
+yy <- suppressWarnings(predict(on, xx))
+r <- ((rank(x) - .5) / (length(x)))
+f  <- suppressWarnings(glm(r ~ x, family = "binomial"))
+p <- qnorm(predict(f, newdata = data.frame(x = xx), type = 'response'))
+
+plot(x, on$x.t, pch = 20, xlim = range(xx), ylim = range(p, yy), main = "ORQ Normalization",
+      xlab = "Original Value", ylab = "Transformed Value")
+lines(xx, p, col = '1', lwd = 1, lty =2)
+lines(xx, yy, col = 'slateblue', lwd = 2)
+
+# Add legend
+legend('bottomright', 
+       c('Original data', 'Transformed values for new data', 
+         'Approximation for extrapolation'), 
+       bty = 'n', lty = c(0, 1, 2), lwd = c(0, 2,1), 
+       pch = c(20, NA, NA), 
+       col = c(1, "slateblue", 1, 1))
+```
+
+The shifted logit extrapolation ensures that the function is 1-1 and can handle data outside the original (observed) domain. The effects of the approximation will usually be relatively minimal since we should not expect to see many observations outside the observed range if the training set sample size is large relative to the test set. The ORQ technique will not guarantee a normal distribution in the presence of ties, but it still could yield the best normalizing transformation when compared to the other possible approaches. More information on ORQ normalization can be found in @orq_paper or in the \pkg{bestNormalize} documentation. 
+
+## Other included transformations
+
+In addition to the techniques above, the \pkg{bestNormalize} package performs and evaluates: 
+
+- $\log_b(x + a)$ where $a = \max(0, -\min(x) + \epsilon)$ and $b = 10$ by default
+- $\sqrt{x + a}$ where $a = \max(0, -\min(x))$ by default
+- $\exp(x)$ 
+- $\text {arcsinh}(x) = log(x + \sqrt{x^2 + 1})$
+
+## Other not-included transformations
+
+A range of other normalization techniques has been proposed that are not included in this package (at the time of writing). These include (but are not limited to): Modified Box-Cox [@BoxCox1964], Manly's Exponential [@Manly], John/Draper's Modulus [@JohnDraper], and Bickel/Doksum's Modified Box-Cox [@BickelDoksum]. However, it is straightforward to add new transformations into the same framework as other included transformations; each one is treated as its own S3 class, so in order to add other transformations, all one must do is define a new S3 class and provide the requisite S3 methods. To this end, we encourage readers to submit a pull request to [the package's GitHub page](https://github.com/petersonR/bestNormalize) with new transformation techniques that could be then added as a default in \code{bestNormalize}. Otherwise, in a later section, we show how users can implement custom transformations alongside the default ones described above. 
+
+# Which transformation "best normalizes" the data?
+
+The \code{bestNormalize} function selects the best transformation according to an extra-sample estimate of the Pearson P statistic divided by its degrees of freedom ($DF$). This P statistic is defined as
+
+$$
+P = \sum_{i=1}^{k} \frac{(O_i - E_i)^2}{E_i}\text{ ,}
+$$
+
+\noindent where $O_i$ is the number observed, and $E_i$ is the number of expected (under the hypothesis of normality) to fall into "bin" $i$. The bins (or "classes") are built such that observations will fall into each one with equal probability under the hypothesis of normality. A variety of alternative normality tests exist, but this particular one is relatively interpretable as a goodness of fit test, and the ratio $P/DF$ can be compared between transformations as an absolute measure of departure from normality. Specifically, if the data in question follow a normal distribution, this ratio will be close to 1 or lower. The transformation which produces data with the lowest normality statistic is thus the most effective at normalizing the data, and gets selected by \code{bestNormalize}. The \pkg{bestNormalize} package utilizes \CRANpkg{nortest} [@nortest] to compute this statistic; more information on its computation and degrees of freedom can be found in @d1986goodness and @thode2002testing. 
+
+Normality statistics for all candidate transformations can be estimated and compared with one simple call to \code{bestNormalize}, whose output makes it easy to see which transformations are viable and which are not. We have found that while complicated transformations are often *most* effective and therefore selected automatically, sometimes a simple transformation (e.g., the log or identity transforms) may be almost as effective, and ultimately the latter type will yield more interpretable results. 
+
+It is worth noting that when the normality statistic is estimated on in-sample data, the ORQ technique is predestined to be most effective since it is forcing its transformed data to follow a normal distribution exactly [@orq_paper]. For this reason, by default, the \code{bestNormalize} function calculates an *out-of-sample* estimate for the $P/DF$ statistic. Since this method necessitates cross-validation, it can be computationally frustrating for three reasons: (1) the results and the chosen transformation can depend on the seed, (2) it takes considerably longer to estimate than the in-sample statistic, and (3) it is unclear how to choose the number of folds and repeats.
+
+In order to mediate these issues, we have built several features into \pkg{bestNormalize}. Issue (1) is only important for small sample sizes, and when it is a concern, the best transformations should look similar to one another. We address two solutions to (2) in the next section. In short, we have methods to parallelize or simplify the estimation of the statistic. For (3), we recommend 10-fold cross-validation with 5 repeats as the default, but if the sample is small, we suggest using 5 (or fewer) folds instead with more repeats; accurate estimation of $P/DF$ requires a relatively large fold size (as a rule of thumb, 20 observations per fold seems to be enough for most cases, but this unfortunately depends on the distribution of the observed data).  
+
+# Simple examples
+
+In this section, we illustrate a simple use-case of the functions provided in \pkg{bestNormalize}.
+
+## Basic implementation
+
+First, we will generate and plot some skewed data:
+```{r gen_data}
+x <- rgamma(250, 1, 1)
+```
+
+```{r simple_hist, echo = FALSE, fig.height=4, fig.width=6, out.height="1.3in", out.width="2.5in", fig.cap="Simulated skewed data for simple example."}
+MASS::truehist(x, nbins = 12)
+```
+
+To perform a suite of potential transformations and see how effectively they normalized this vector, simply call \code{bestNormalize}:
+
+```{r vis_code}
+(BNobject <- bestNormalize(x))
+```
+
+Evidently, the Box-Cox transformation performed the best, though many other transformations performed similarly. We can visualize the suite of transformations using the built-in \code{plot} method:
+
+```{r bn_plot, fig.cap="The suite of transformations estimated by default in \\pkg{bestNormalize} (trained on simulated right-skewed data)."}
+plot(BNobject, leg_loc = "topleft")
+```
+
+Finally, we can execute the best performing normalization on new data with \code{predict(BNobject,\ new\textunderscore x)} or reverse the transformation with \code{predict(BNobject,\ new\textunderscore x\textunderscore t, inverse = TRUE)}. Note that normalized values can either be obtained using \code{predict} or by extracting \code{x.t} from the object. The best transformation, in this case, is plotted in Figure 4.
+
+```{r hist_best, warning=FALSE, echo = FALSE, fig.height=8, fig.width = 7.8, fig.cap="Summary of transformations performed on simulated right-skewed data."}
+par(mfrow = c(2,2), mar = c(4, 4, 4, 1))
+MASS::truehist(x, main = "Original Data")
+MASS::truehist(BNobject$x.t, main = paste("Best Normalizing Transformation:", class(BNobject$chosen_transform)[1]), nbins = 12)
+xx <- seq(min(x), max(x), length = 100) # vector of values over domain of x
+pp <- predict(BNobject, newdata = xx)
+plot(BNobject, main = "Normalizing transformations", leg_loc = "topleft")
+lines(xx, pp, lwd = 5)
+plot(BNobject, main = "Normalizing transformations (inverse)", inverse = TRUE, leg_loc = "topleft")
+lines(pp, predict(BNobject, newdata = pp, inverse = TRUE),  lwd = 5)
+```
+
+## Performing transformations individually 
+
+Each method can be performed (and stored) individually:
+```{r}
+(arcsinh_obj <- arcsinh_x(x))
+(boxcox_obj <- boxcox(x))
+(yeojohnson_obj <- yeojohnson(x))
+(lambert_obj <- lambert(x, type = "s"))
+(orderNorm_obj <- orderNorm(x))
+```
+
+All normalization techniques in \code{bestNormalize} have their own class with convenient S3 methods and documentation. For instance, we can use the \code{predict} method to perform the transformation on new values using the objects we have just created, visualizing them in a plot:
+
+```{r vis_data, eval = FALSE}
+xx <- seq(min(x), max(x), length = 100)
+plot(xx, predict(arcsinh_obj, newdata = xx), type = "l", col = 1)
+lines(xx, predict(boxcox_obj, newdata = xx), col = 2)
+lines(xx, predict(yeojohnson_obj, newdata = xx), col = 3)
+lines(xx, predict(orderNorm_obj, newdata = xx), col = 4)
+```
+
+```{r vis_data2, echo = FALSE, fig.height = 4, fig.width = 6, out.height = "2.5in", out.width = "4.375in", fig.cap="Manually plotting transformations trained on simulated right-skewed data."}
+xx <- seq(min(x), max(x), length = 100) # vector of values over domain of x
+plot(xx, predict(arcsinh_obj, newdata = xx), type = "l", col = 1, ylim = c(-4, 4),
+     xlab = 'x', ylab = "g(x)")
+lines(xx, predict(boxcox_obj, newdata = xx), col = 2)
+lines(xx, predict(yeojohnson_obj, newdata = xx), col = 3)
+lines(xx, predict(orderNorm_obj, newdata = xx), col = 4)
+
+legend("bottomright", legend = c("arcsinh", "Box-Cox", "Yeo-Johnson", "OrderNorm"), 
+       col = 1:4, lty = 1, bty = 'n')
+```
+
+## In-sample normalization efficacy
+
+To examine how each of the normalization methods performed (in-sample), we can visualize the transformed values in histograms (Figure 6), which plot the transformed data, \code{x.t}, stored in the transformation objects we created previously. 
+
+```{r hist_trans, fig.height=6, fig.width = 6, echo = FALSE, out.height="4in", out.width="4in", fig.cap="Normalized values for trained transformations on simulated right-skewed data."}
+par(mfrow = c(2,2))
+MASS::truehist(arcsinh_obj$x.t, main = "Arcsinh transformation", nbins = 12)
+MASS::truehist(boxcox_obj$x.t, main = "Box-Cox transformation", nbins = 12)
+MASS::truehist(yeojohnson_obj$x.t, main = "Yeo-Johnson transformation", nbins = 12)
+MASS::truehist(orderNorm_obj$x.t, main = "OrderNorm (ORQ) transformation", nbins = 12)
+```
+
+Evidently, ORQ normalization appears to have worked perfectly to normalize the data (as expected), and the Box-Cox method seemed to do quite well too.
+
+## Out-of-sample normalization efficacy
+
+The \code{bestNormalize} function performs repeated (r=5) 10-fold cross-validation (CV) by default and stores the estimated normality statistic for each left-out fold/repeat into \code{oos\textunderscore preds}. Users can access and visualize these results via a boxplot (see below), which may give some insight into whether the transformation is truly preferred by the normality statistic or if another (possibly simpler) transformation can be applied that would achieve the approximately the same results. In this example, Box-Cox, square-root, Yeo-Johnson, and ORQ seem to do similarly well, whereas the identity transform\footnote{Since \code{standardize=TRUE}, the identity transformation is represented in Figure 7 by \code{center\textunderscore scale}, which yields the exact same normality statistic.}, hyperbolic arc-sine, logging, and exponentiation are performing worse.
+
+```{r boxplot, fig.width=11, out.width="100%", fig.cap="Cross-validation results for each normalization method, where our estimated normality statistic is plotted on the y-axis."}
+boxplot(BNobject$oos_preds, log = 'y')
+abline(h = 1, col = "green3")
+```
+
+Leave-one-out CV can be optionally performed in \code{bestNormalize} via the \code{loo} argument, which, if set to \code{TRUE}, will compute the leave-one-out CV transformations for each observation and method. Specifically, \code{bestNormalize} will be run $n$ separate times where each observation is individually left out of the fitting process and subsequently plugged back in to get a "leave-one-out transformed value". Instead of taking the mean across repeats and folds, in this case, we estimate normalization efficacy using the full distribution of leave-one-out transformed values. This option is computationally intensive. Note that as with the "in-sample" normality statistics, the leave-one-out CV approach tends to select the ORQ transformation since ORQ's performance improves as the number of points in the training set relative to the testing set increases. 
+
+```{r}
+bestNormalize(x, loo = TRUE)
+```
+
+# Important features
+
+## Improving speed of estimation
+
+Because \code{bestNormalize} uses repeated CV by default to estimate the out-of-sample normalization efficacy, it can be quite slow for larger objects. There are several means of speeding up the process. Each comes with some pros and cons. The first option is to specify \code{out\textunderscore of\textunderscore sample = FALSE}. This will highly speed up the process. However, for reasons previously discussed, ORQ normalization will always be chosen unless \code{allow\textunderscore orderNorm = FALSE}. Therefore, a user might as well use the \code{orderNorm} function directly as opposed to only setting \code{out\textunderscore of\textunderscore sample = FALSE} since the end result will be the same (and \code{orderNorm}  will run much faster). Note below that the in-sample normality results may differ slightly from the leave-one-out even when this may be unexpected (i.e., for the log transformation); this is due to slight differences in the standardization statistics.
+
+```{r bn_output}
+bestNormalize(x, allow_orderNorm = FALSE, out_of_sample = FALSE)
+```
+
+Another option to improve estimation efficiency is to use the built-in parallelization functionality. The repeated CV process can be parallelized via the \code{cluster} argument and the \CRANpkg{parallel} and \CRANpkg{doRNG} [@doRNG] packages. A cluster can be set up with \code{makeCluster} and passed to \code{bestNormalize} via the \code{cluster = } argument. 
+
+```{r, eval = FALSE}
+cl <- parallel::makeCluster(5)
+b <- bestNormalize(x, cluster = cl, r = 10, quiet = TRUE)
+parallel::stopCluster(cl)
+```
+
+The amount by which this parallelization will speed up the estimation of out-of-sample estimates depends (for the most part) on the number of repeats, the number of cores, and the sample size of the vector to be normalized. The plot below shows the estimation time for a run of \code{bestNormalize} with 15 repeats of 10-fold CV on a gamma-distributed random variable with various sample sizes and numbers of cores. 
+
+```{r parallel_timings, echo = FALSE, fig.height = 4, fig.width = 4.5, fig.cap="Potential speedup using parallelization functionality."}
+knitr::include_graphics("figs/parallel_timings.pdf")
+```
+
+## Implementation with caret, recipes
+
+The \code{step\textunderscore best\textunderscore normalize} and the \code{step\textunderscore orderNorm} functions can be utilized in conjunction with the \pkg{recipes} package to preprocess data in machine learning workflows with \CRANpkg{tidymodels} [@tidymodels] or in combination with \pkg{caret}. The basic usage within \pkg{recipes} is shown below; for implementation with \pkg{caret}, refer to this paper's application. 
+
+```{r, message = FALSE}
+rec <- recipe( ~ ., data = iris)  %>%                       # Initialize recipe
+  step_best_normalize(all_predictors(), -all_nominal()) %>% # Transform predictors
+  prep(iris) %>%                                            # Prep (train) recipe
+  bake(iris)                                                # Bake (apply) recipe
+```
+
+Options can be supplied to \code{step\textunderscore best\textunderscore normalize} to speed up or alter performance via the \code{transform\textunderscore options} argument, which passes a list of options to \code{bestNormalize}. 
+
+## Additional customization
+
+Two important means of customization are available: 1) users may add custom transformation functions to be assessed alongside the default suite of normalization methods, and 2) users may change the statistic used "under the hood" by \code{bestNormalize} to estimate the departure from normality of the transformed data. This section contains examples and guidance for both extensions. 
+
+### 1) Adding user-defined functions
+
+Via the \code{new\textunderscore transforms} argument, users can use \code{bestNormalize}'s machinery to compare custom, user-defined transformation functions to those included in the package. Below, I consider an example where a user may wish to compare the cube-root function with those provided in the package. \code{bestNormalize} requires two functions to implement this: the transformation function and an associated \code{predict} method. The custom cube-root transformation shown below is simple, but its skeleton can readily be made arbitrarily more complex.
+
+```{r}
+## Define custom function
+cuberoot_x <- function(x, ...) {
+  x.t <- (x)^(1/3)
+  
+  # Get in-sample normality statistic results
+  ptest <- nortest::pearson.test(x.t)
+  
+  val <- list(
+    x.t = x.t,
+    x = x,
+    n = length(x.t) - sum(is.na(x)), 
+    norm_stat = unname(ptest$statistic / ptest$df)
+  )
+  
+  # Assign class, return
+  class(val) <- c('cuberoot_x')
+  val
+}
+
+# S3 method that is used to apply the transformation to newly observed data
+predict.cuberoot_x <- function(object, newdata = NULL, inverse = FALSE, ...) {
+  
+  # If no data supplied and not inverse
+  if (is.null(newdata) & !inverse)
+    newdata <- object$x
+  
+  # If no data supplied and inverse transformation is requested
+  if (is.null(newdata) & inverse)
+    newdata <- object$x.t
+  
+  # Perform inverse transformation
+  if (inverse) {
+    # Reverse-cube-root (cube)
+    val <-  newdata^3
+    
+    # Otherwise, perform transformation as estimated
+  } else if (!inverse) {
+    val <- (newdata)^(1/3)
+  }
+  
+  # Return transformed data
+  unname(val)
+}
+
+## Optional: print S3 method
+print.cuberoot_x <- function(x, ...) {
+  cat('cuberoot(x) Transformation with', x$n, 'nonmissing obs.\n')
+}
+
+```
+
+\noindent These functions can then be passed as a named list to \code{bestNormalize}:
+
+```{r}
+custom_transform <- list(
+  cuberoot_x = cuberoot_x,
+  predict.cuberoot_x = predict.cuberoot_x,
+  print.cuberoot_x = print.cuberoot_x
+)
+
+set.seed(123129)
+x <- rgamma(100, 1, 1)
+(b <- bestNormalize(x = x, new_transforms = custom_transform))
+```
+
+Evidently, the cube-root was the best normalizing transformation for this gamma-distributed random variable, performing comparably to the Box-Cox transformation.
+
+### 2) Re-defining normality
+
+The question "what is normal?" outside of a statistical discussion is quite loaded and subjective. Even in statistical discussions, many authors have contributed to the question of how to best detect departures from normality; these solutions are diverse, and several have been implemented well in \pkg{nortest} already. In order to accommodate those with varying opinions on the best definition of normality, we have included a feature that allows users to specify a custom definition of a normality statistic. This customization can be accomplished via the \code{norm\textunderscore stat\textunderscore fn} argument, which takes a function that will then be applied in lieu of the Pearson test statistic divided by its degree of freedom to assess normality. 
+
+The user-defined function must take an argument \code{x}, which indicates the data on which a user wants to evaluate the statistic.
+
+Here is an example using the Lilliefors (Kolmogorov-Smirnov) normality test statistic: 
+
+```{r}
+bestNormalize(x, norm_stat_fn = function(x) nortest::lillie.test(x)$stat)
+```
+
+Here is an example using the Lillifors (Kolmogorov-Smirnov) normality test's \textit{p}-value: 
+
+```{r}
+(dont_do_this <- bestNormalize(x, norm_stat_fn = function(x) nortest::lillie.test(x)$p))
+```
+
+Note: \code{bestNormalize} will attempt to minimize this statistic by default, which is definitely not what you want to do when calculating the \textit{p}-value. This is seen in the example above, where the **worst** normalization transformation, exponentiation, is chosen. In this case, a user is advised to either manually select the best one or reverse their defined normalization statistic (in this case by subtracting it from 1): 
+
+```{r}
+best_transform <- names(which.max(dont_do_this$norm_stats))
+do_this <- dont_do_this$other_transforms[[best_transform]]
+or_this <- bestNormalize(x, norm_stat_fn = function(x) 1-nortest::lillie.test(x)$p)
+```
+
+A \textit{p}-value for normality should not be routinely used as the sole selector of a normalizing transformation. A normality test's \textit{p}-value, as a measure of the departure from normality, is confounded by the sample size (a high sample size may yield strong evidence of a practically insignificant departure from normality). Therefore, we suggest the statistic used should estimate the departure from normality rather the strength of evidence against normality [e.g., @normality]. 
+
+# Application to Autotrader data
+
+## Background
+
+The \code{autotrader} data set was scraped from the [autotrader website](https://www.autotrader.com/) as part of this package (and because at the time of data collection in 2017, the package author needed to purchase a car). We apply the \pkg{bestNormalize} functionality to de-skew mileage, age, and price in a pricing model. See \code{?autotrader} for more information on this data set.
+
+```{r load_appdata}
+data("autotrader")
+autotrader$yearsold <- 2017 - autotrader$Year
+```
+
+```{r, echo = FALSE}
+tab <- arsenal::tableby(~Make + price + mileage + Year + yearsold, data = autotrader, digits = 1) %>% 
+  summary(text = TRUE, labelTranslations = list("price" = "Price ($)", "mileage" = "Mileage", "yearsold" = "Age (years old)")) %>% 
+  as.data.frame()
+
+
+# Fix formatting
+names(tab)[2] <- "Overall (N=6,283)"
+
+my_meansd <- function(x) {
+  m <- format(round(mean(x)), big.mark = ",")
+  s <- format(round(sd(x)), big.mark = ",")
+  
+  paste0(m, " (", s, ")")
+}
+
+my_range <- function(x) {
+  m <- format(round(min(x)), big.mark = ",")
+  s <- format(round(max(x)), big.mark = ",")
+  
+  paste0(m, " - ", s)
+}
+
+
+tab[4,2] <- paste0(format(1257, big.mark = ","), " (20.0%)")
+tab[6,2] <- paste0(format(1029, big.mark = ","), " (16.4%)")
+tab[11,2] <- paste0(format(1202, big.mark = ","), " (19.1%)")
+
+tab[14,2] <- my_meansd(autotrader$price)
+tab[15,2] <- my_range(autotrader$price)
+tab[17,2] <- my_meansd(autotrader$mileage)
+tab[18,2] <- my_range(autotrader$mileage)
+
+tab %>% 
+  kable(booktabs = TRUE, linesep ="", caption = "Sample characteristics of `autotrader` data.") %>% 
+  kable_styling(c("striped", "condensed"), full_width = FALSE)
+```
+
+## Transform-both-sides regression
+
+Transform-both-sides (TBS) regression has several benefits that have been explored thoroughly elsewhere (see @harrell for an overview). Importantly, TBS regression can often (though not always) yield models that better satisfy assumptions of linear regression and mitigate the influence of outliers/skew. This approach has been shown to be useful in shrinking the size of prediction intervals while maintaining closer to nominal coverage in this data set [@orq_paper]. 
+
+First, we will normalize the outcome (price).
+
+```{r bn_price}
+(priceBN <- bestNormalize(autotrader$price))
+```
+
+We can see that the estimated normality statistic for the ORQ transformation is close to 1, so we know it is performing quite well despite the ties in the data. It is also performing considerably better than all of the other transformations. 
+
+```{r bn_mileage}
+(mileageBN <- bestNormalize(autotrader$mileage))
+```
+
+Similarly, the ORQ normalization performed best for mileage.
+
+```{r bn_yearsold}
+(yearsoldBN <- bestNormalize(autotrader$yearsold))
+```
+
+For age, we see something peculiar; none of the normalizing transformations performed well according to the normality statistics. By plotting the data, it becomes evident that the frequency of ties in age makes it very difficult to find a normalizing transformation (see figure below). Even so, \code{orderNorm} is chosen as it has the lowest estimated $P/DF$ statistic. 
+
+```{r hist_app, fig.height=3, fig.width=6, echo = FALSE, out.height="2.1in", out.width="4.2in", fig.cap = "Distributions of car variables before and after normalization."}
+par(mfcol = c(2, 3), mar = c(4,3,1,1))
+MASS::truehist(autotrader$price, main = "", xlab = "Price")
+MASS::truehist(priceBN$x.t, main = "", xlab = "Price (transformed)")
+MASS::truehist(autotrader$mileage, xlab = "Mileage")
+MASS::truehist(mileageBN$x.t, xlab = "Mileage (transformed)")
+MASS::truehist(autotrader$yearsold, xlab = "Age")
+MASS::truehist(yearsoldBN$x.t, xlab = "Age (transformed)")
+```
+
+Next, we will fit a linear model on the transformed values of each variable for our TBS regression. The reverse-transformation functions will allow us to visualize how these variables affect model predictions in terms of their original units.
+
+```{r tbs_model}
+p.t <- priceBN$x.t; m.t <- mileageBN$x.t; yo.t <- yearsoldBN$x.t
+fit <- lm(p.t ~ m.t + yo.t)
+```
+
+```{r, echo = FALSE}
+
+pvalr <- function (pvals, sig.limit = 0.001, digits = 3) {
+    roundr <- function(x, digits = 1) {
+        res <- sprintf(paste0("%.", digits, "f"), x)
+        zzz <- paste0("0.", paste(rep("0", digits), collapse = ""))
+        res[res == paste0("-", zzz)] <- zzz
+        res
+    }
+    sapply(pvals, function(x, sig.limit) {
+        if (is.na(x)) 
+            return(x)
+        if (x < sig.limit) 
+            return(sprintf("< %s", format(sig.limit)))
+        if (x > 0.1) 
+            return(roundr(x, digits = 2))
+        else return(roundr(x, digits = digits))
+    }, sig.limit = sig.limit)
+}
+
+s <- summary(fit)
+s$coefficients %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Variable") %>% 
+  mutate(Variable = c("Intercept", "g(Mileage)", "g(Age)"),
+         `Pr(>|t|)` = pvalr(`Pr(>|t|)`)) %>% 
+  kable(align = c("lrrrr"), digits = 3, booktabs = TRUE, caption = "TBS regression results for autotrader data.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+
+Unsurprisingly, we find that there are very significant relationships between transformed car price, mileage, and age. However, to interpret these values, we must resort to visualizations since there is no inherent meaning of a "one-unit increase" in the ORQ normalized measurements. We utilize the \CRANpkg{visreg} package [@visreg] to perform our visualizations, using \code{predict.bestNormalize} in conjunction with \pkg{visreg}'s \code{trans} and \code{xtrans} options to view the relationship in terms of the original unit for the response and covariate respectively (formatting omitted).\footnote{Alternatively, one can use \CRANpkg{scales} \citep{scales} and \CRANpkg{ggplot2} \citep{ggplot2} to visualize any transformation fit using \pkg{bestNormalize}; instructions are included in the package vignette.} For the sake of illustration, we have also plotted the estimated effect of a generalized additive (spline) model fit with \CRANpkg{mgcv} [@mgcv]. 
+
+```{r linear_visreg_code, eval = FALSE}
+visreg(fit, "m.t")
+visreg(fit, "m.t", 
+       partial = TRUE,
+       trans = function(price.t) 
+         predict(priceBN, newdata = price.t, inverse = TRUE)/1000, 
+       xtrans = function(mileage.t) 
+         predict(mileageBN, newdata = mileage.t, inverse = TRUE)
+       )
+```
+
+
+```{r linear_visreg, out.width = "80%", echo = FALSE, fig.cap = "TBS regression visualized on transformed units (left) and original units (right)."}
+mileage.xx <- seq(min(autotrader$mileage), max(autotrader$mileage), len = 100)
+price.xx <- seq(min(autotrader$price), max(autotrader$price), len = 100)
+yearsold.xx <- seq(min(autotrader$yearsold), max(autotrader$yearsold), len = 100)
+
+par(mfrow = c(1,2), mar = c(4, 4, 1, 1))
+visreg(fit, "m.t", ylab = "g(Price)", xlab = "g(Mileage)", 
+       points.par = list(col = grey(.1, alpha = .2)))
+fit_gam <- mgcv::gam(price ~ s(yearsold) + s(mileage), data = autotrader)
+newX <- data.frame(mileage = mileage.xx, yearsold = median(autotrader$yearsold))
+p_gam <- predict(fit_gam, newdata = newX, se.fit = TRUE)
+# pi_ub <- p_gam$fit + p_gam$se.fit*1.96
+# pi_lb <- p_gam$fit - p_gam$se.fit*1.96
+visreg(fit, "m.t", ylab = "Price ($1000)", xlab = "Mileage", 
+       points.par = list(col = grey(.1, alpha = .2)),
+       trans = function(price.t) predict(priceBN, newdata = price.t, inverse = TRUE)/1000, 
+       xtrans = function(mileage.t) predict(mileageBN, newdata = mileage.t, inverse = TRUE), 
+       partial = TRUE)
+lines(mileage.xx, p_gam$fit/1000, lwd = 2, col = 'green3')
+# polygon(c(mileage.xx, rev(mileage.xx)), c(pi_ub, rev(pi_lb))/1000, col = rgb(0,1,0,.3), border = NA)
+legend(
+  'topright',
+  c("GAM", "TBS model"),
+  lwd = 2,
+  col = c("green3", "slateblue"),
+  bty = "n"
+  )
+```
+
+Below, we visualize the age effect, demonstrating how one might visualize the effect outside of \pkg{visreg} (plot formatting is omitted).
+
+```{r, eval = FALSE}
+# Set up data for plotting line
+new_yo <- seq(min(autotrader$yearsold), max(autotrader$yearsold), len = 100)
+newX <- data.frame(yearsold = new_yo, mileage = median(autotrader$mileage))
+newXt <- data.frame(yo.t = predict(yearsoldBN, newX$yearsold), 
+                    m.t = predict(mileageBN, newX$mileage))
+
+line_vals_t <- predict(fit, newdata = newXt) # Calculate line (transformed)
+line_vals <- predict(priceBN, newdata = line_vals_t, inverse = TRUE)
+plot(autotrader$yearsold, autotrader$price)
+lines(new_yo, line_vals)
+```
+
+```{r gam_tbs_model, out.width = "80%", eval = TRUE, echo = FALSE, fig.cap="Age effect on car price (re-transformed to original unit)."}
+new_yo <- seq(min(autotrader$yearsold), max(autotrader$yearsold), len = 100)
+newX <- data.frame(yearsold = new_yo, 
+                  mileage = median(autotrader$mileage))
+newXt <- data.frame(yo.t = predict(yearsoldBN, newX$yearsold), 
+                    m.t = predict(mileageBN, newX$mileage))
+plot(jitter(autotrader$yearsold, 1.5), autotrader$price, pch = 20,
+     col = grey(.1, alpha = .1), 
+     main = "",
+     xlab = "Age (Jittered)", ylab = "Price")
+line_vals <- predict(fit, newdata = newXt)
+lines(new_yo, 
+      predict(priceBN, newdata = line_vals, inverse = TRUE),
+      lwd = 2, col = "slateblue")
+lines(yearsold.xx, 
+      predict(fit_gam, newdata = newX), 
+      lwd = 2, col = 'green3')
+legend('topright', c("GAM", "TBS model"),  lwd = 2,
+       col = c("green3", "slateblue"),  bty = "n")
+```
+
+## Implementation with recipes
+
+To build a predictive model for the price variable that uses each vehicle's model and make in addition to its mileage and age, we can utilize the \pkg{caret} and \pkg{recipes} functionality to do so. This section outlines how to use \pkg{bestNormalize} in conjunction with these other popular ML packages. Price is logged instead of ORQ transformed in order to facilitate the interpretation of measures for prediction accuracy.
+
+```{r, eval = FALSE}
+library(tidymodels)
+library(caret)
+library(recipes)
+
+set.seed(321)
+df_split <- initial_split(autotrader, prop = .9)
+df_train <- training(df_split)
+df_test <- testing(df_split)
+
+rec <- recipe(price ~ Make + model +  mileage + status + Year, df_train) %>% 
+  step_mutate(years_old = 2017 - Year) %>% 
+  step_rm(Year) %>% 
+  step_log(price) %>% 
+  step_best_normalize(all_predictors(), -all_nominal()) %>% 
+  step_other(all_nominal(), threshold = 10) %>% 
+  step_dummy(all_nominal()) %>% 
+  prep()
+
+fit1 <- train(price ~ ., bake(rec, NULL), method = 'glmnet')
+fit2 <- train(price ~ ., bake(rec, NULL), method = 'earth')
+fit3 <- train(price ~ ., bake(rec, NULL), method = 'rf')
+
+r <- resamples(fits <- list(glmnet = fit1, earth = fit2, rf = fit3))
+summary(r) # Extra-sample CV results
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+source("caret_application.R")
+tab <- summary(r)$statistics
+idx <- sapply(tab, nrow)
+names(idx)[3] <- "RSQ"
+
+tab %>% 
+  Reduce(rbind, .) %>% 
+  kable(digits = 3, booktabs = TRUE, caption = "CV prediction accuracy of various ML methods.") %>% 
+  kable_styling(full_width = FALSE) %>%
+  kableExtra::group_rows(index = idx)
+```
+
+Evidently, the random forest generally performed better in cross-validated prediction metrics, achieving a higher R-squared (RSQ), lower root-mean-squared error (RMSE), and lower mean absolute error (MAE). Since price was logged, RMSE and MAE are on the log scale. For the test set, we calculate these quantities in price's original unit (2017 US dollars) using the \CRANpkg{yardstick} package [@yardstick].  
+
+```{r, eval = FALSE}
+# Out of sample prediction accuracy
+results <- lapply(fits, function(x) {
+  p <- c(predict(x, newdata = bake(rec, df_test)))
+  yardstick::metrics(data.frame(est = exp(p), truth = df_test$price), 
+                     truth = truth, estimate = est)
+})
+results
+```
+
+```{r, message=FALSE, echo = FALSE}
+# Runs application unless the results file is located (may take a while)
+res <- lapply(results, function(x) x$.estimate) %>% 
+  Reduce(rbind, .)
+
+colnames(res) <- toupper(results$glmnet$.metric)
+rownames(res) <- names(results)
+res <- rownames_to_column(data.frame(res), "Method")
+
+kable(res, digits = c(0, 0, 3, 0), booktabs = TRUE, caption = "Test data prediction accuracy of various ML methods. RMSE and MAE can be interpreted in terms of 2017 US dollars.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+After normalization of mileage and age, a random forest had the optimal predictive performance on car price given a car's make, model, age, and mileage compared to other ML models, achieving out-of-sample R-squared 0.853 on a left-out test data set. We conjecture that the random forest performs best because it can better capture differential depreciation by make and model than the other methods. 
+
+# Discussion
+
+We have shown how the \pkg{bestNormalize} package can effectively and efficiently find the best normalizing transformation for a vector or set of vectors. However, normalization is by no means something that should be applied universally and without motivation. In situations where units have meaning, normalizing prior to analysis can contaminate the relationships suspected in the data and/or reduce predictive accuracy. Further, depending on the type of transformations used, interpreting regression coefficients post-transformation can be difficult or impossible without using a figure since the transformation function itself will look completely different for different distributions. So, while normalization transformations may well be able to increase the robustness of results and mitigate violations to the classical linear regression assumption of Gaussian residuals, it is by no means a universal solution. 
+
+On the other hand, when hypotheses are exploratory or when data is of poor quality with high amounts of skew/outliers, normalization can be an effective means of mitigating downstream issues this can cause in the analyses. For example, in machine learning contexts, some predictor manipulations rely on second-order statistics (e.g., principal components analysis or partial least squares), for which the variance calculation can be sensitive to skew and outliers. Normalizing transformations can improve the quality and stability of these calculations. Similarly, predictor normalization reduces the tendency for high-leverage points to have their leverage propagated into engineered features such as interactions or polynomials. Ultimately, these benefits can often produce predictive models that are more robust and stable. 
+
+We focused on making this package useful in a variety of machine learning workflows. We are enthusiastic in our support of \pkg{bestNormalize}, and will continue to maintain the package while it is found to be useful by R users. We hope to continue to build up the repertoire of candidate transformations using the same infrastructure so that additional ones can be considered by default in the future. 
+
+
+# References
