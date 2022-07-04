@@ -1,15 +1,11 @@
 ## ---- tourism-shared
 library(tsibble)
 library(tsibbletalk)
-library(dplyr)
-tourism_shared <- tourism_monthly %>%
-  # Comment out the next line to run the full example
-  filter(State %in% c("Tasmania", "Western Australia")) %>%
-  mutate(Region = stringr::str_replace(Region, "Australia's ", "WA's ")) %>%
+tourism_shared <- tourism_monthly %>% 
   as_shared_tsibble(spec = (State / Region) * Purpose)
 
 ## ---- plotly-key-tree
-p_l <- plotly_key_tree(tourism_shared, height = 800, width = 800)
+p_l <- plotly_key_tree(tourism_shared, height = 1100, width = 800)
 
 ## ---- tourism-series
 library(ggplot2)
@@ -31,8 +27,8 @@ p_br <- tourism_feat %>%
 library(plotly)
 subplot(p_l,
   subplot(
-    ggplotly(p_tr, tooltip = "Region", width = 700),
-    ggplotly(p_br, tooltip = "Region", width = 700),
+    ggplotly(p_tr, tooltip = "Region", width = 1100),
+    ggplotly(p_br, tooltip = "Region", width = 1100),
     nrows = 2),
   widths = c(.4, .6)) %>%
-  plotly::highlight(dynamic = TRUE)
+  highlight(dynamic = TRUE)
