@@ -1,0 +1,6 @@
+source("test/t-Beta.R")
+source("test/t-Gamma.R")
+source("test/t-Polya.R")
+source("test/t-Weibull.R")
+source("test/t-Cauchy.R")
+source("test/t-Pareto.R")
