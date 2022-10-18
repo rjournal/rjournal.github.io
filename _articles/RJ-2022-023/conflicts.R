@@ -1,0 +1,5 @@
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+conflict_prefer("pluck", "purrr")
+conflict_prefer("map", "purrr")
+conflict_prefer("pull", "dplyr")
