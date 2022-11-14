@@ -18,6 +18,7 @@ knitr::opts_chunk$set(warning = FALSE,
 #suppressMessages(source("conflicts.R"))
 library("tidyverse")
 library("brolgar")
+library("conflicted")
 library("colorspace")
 library("dotenv")
 library("future")
@@ -48,7 +49,6 @@ load("model_time.rda")
 
 
 ## ----conflicts, echo=FALSE----------------------------------------------------
-library("conflicted")
 conflict_prefer("filter", "dplyr")
 conflict_prefer("select", "dplyr")
 conflict_prefer("pluck", "purrr")
