@@ -1,0 +1,394 @@
+## ----include = FALSE----------------------------------------------------------
+library("kableExtra")
+
+
+## ----message = FALSE, warning = FALSE-----------------------------------------
+library("rbw")
+data("advertisement")
+
+
+## ----include = FALSE----------------------------------------------------------
+library("tidyverse")
+library("CBPS")
+library("ipw")
+
+
+## ----include = FALSE----------------------------------------------------------
+rbwPoint_start <- Sys.time()
+rbwPoint_fit <-
+  rbwPoint(
+    treatment = treat,
+    baseline_x = c(
+      log_TotalPop,
+      PercentOver65,
+      log_Inc,
+      PercentHispanic,
+      PercentBlack,
+      density,
+      per_collegegrads,
+      CanCommute
+    ),
+    data =
+      advertisement
+  )
+rbwPoint_end <- Sys.time()
+rbwPoint_time <- rbwPoint_end - rbwPoint_start
+
+
+## ----eval = FALSE-------------------------------------------------------------
+#> rbwPoint_fit <-
+#>   rbwPoint(
+#>     treatment = treat,
+#>     baseline_x = c(
+#>       log_TotalPop,
+#>       PercentOver65,
+#>       log_Inc,
+#>       PercentHispanic,
+#>       PercentBlack,
+#>       density,
+#>       per_collegegrads,
+#>       CanCommute
+#>     ),
+#>     data =
+#>       advertisement
+#>   )
+
+
+## -----------------------------------------------------------------------------
+advertisement$rbwPoint_weights <- rbwPoint_fit$weights
+
+
+## ----message = FALSE, warning = FALSE-----------------------------------------
+library("survey")
+rbwPoint_design <- svydesign(ids = ~ 1,
+                             weights = ~ rbwPoint_weights,
+                             data = advertisement)
+
+
+## -----------------------------------------------------------------------------
+rbwPoint_msm <- svyglm(Cont ~ treat + factor(StFIPS),
+                       design = rbwPoint_design)
+
+
+## -----------------------------------------------------------------------------
+dose <- log(1000 + 1)
+
+
+## -----------------------------------------------------------------------------
+rbwPoint_tau <- 1000 * coef(rbwPoint_msm)[2] * dose
+
+
+## -----------------------------------------------------------------------------
+rbwPoint_vcov <- stats::vcov(rbwPoint_msm)
+rbwPoint_se <- 1000 * dose * sqrt(rbwPoint_vcov[2, 2]) 
+
+
+## ----include = FALSE, cache = TRUE--------------------------------------------
+CBPS_pscore_form <- treat ~ log_TotalPop + PercentOver65 +
+  log_Inc + PercentHispanic + PercentBlack +
+  density + per_collegegrads + CanCommute
+
+CBPS_start <- Sys.time()
+CBPS_fit <- CBPS(
+  CBPS_pscore_form,
+  data = advertisement,
+  twostep = TRUE,
+  method = "exact"
+)
+CBPS_end <- Sys.time()
+CBPS_time <- CBPS_end - CBPS_start
+
+npCBPS_start <- Sys.time()
+npCBPS_fit <- npCBPS(CBPS_pscore_form,
+                     data = advertisement,
+                     corprior = 0.1 / nrow(advertisement))
+npCBPS_end <- Sys.time()
+npCBPS_time <- npCBPS_end - npCBPS_start
+
+ipw_start <- Sys.time()
+ipw_fit <- ipwpoint(
+  exposure = treat,
+  family = "gaussian",
+  numerator = ~ 1,
+  denominator = ~ log_TotalPop + PercentOver65 +
+  log_Inc + PercentHispanic + PercentBlack +
+  density + per_collegegrads + CanCommute,
+  data = advertisement
+)
+ipw_end <- Sys.time()
+ipw_time <- ipw_end - ipw_start
+
+advertisement$CBPS_weights <- CBPS_fit$weights
+advertisement$npCBPS_weights <- npCBPS_fit$weights
+advertisement$ipw_weights <- ipw_fit$ipw.weights
+
+CBPS_design <- svydesign(ids = ~ 1,
+                         weights = ~ CBPS_weights,
+                         data = advertisement)
+npCBPS_design <- svydesign(ids = ~ 1,
+                           weights = ~ npCBPS_weights,
+                           data = advertisement)
+ipw_design <- svydesign(ids = ~ 1,
+                         weights = ~ ipw_weights,
+                         data = advertisement)
+
+CBPS_msm <- svyglm(Cont ~ treat + factor(StFIPS),
+                   design = CBPS_design)
+npCBPS_msm <- svyglm(Cont ~ treat + factor(StFIPS),
+                     design = npCBPS_design)
+ipw_msm <- svyglm(Cont ~ treat + factor(StFIPS), 
+    design = ipw_design)
+
+CBPS_vcov <- stats::vcov(CBPS_msm)
+npCBPS_vcov <- stats::vcov(npCBPS_msm)
+ipw_vcov <- stats::vcov(ipw_msm)
+
+CBPS_tau <- 1000 * coef(CBPS_msm)[2] * dose
+npCBPS_tau <- 1000 * coef(npCBPS_msm)[2] * dose
+ipw_tau <- 1000 * coef(ipw_msm)[2] * dose
+
+CBPS_se <- 1000 * sqrt(dose ^ 2 * CBPS_vcov[2, 2]) 
+npCBPS_se <- 1000 * sqrt(dose ^ 2 * npCBPS_vcov[2, 2]) 
+ipw_se <- 1000 * sqrt(dose ^ 2 * ipw_vcov[2, 2]) 
+
+
+## ----echo = FALSE-------------------------------------------------------------
+point_treatment_comparsion_df <- data.frame(c("RBW", "npCBPS", "CBPS", "IPW"),
+                                   c(round(rbwPoint_tau, 0), round(npCBPS_tau, 0), round(CBPS_tau, 0), round(ipw_tau, 0)),
+                                   c(round(rbwPoint_se, 0), round(npCBPS_se, 0), round(CBPS_se, 0), round(ipw_se, 0)),
+                                   c(round(as.numeric(rbwPoint_time, units="secs"), 2), round(as.numeric(npCBPS_time, units="secs"), 2), round(as.numeric(CBPS_time, units="secs"), 2), round(as.numeric(ipw_time, units="secs"), 2)))
+point_treatment_comparsion_table <- kable(point_treatment_comparsion_df, 
+                                          booktabs = T,
+                                          caption = "Comparison of RBW, npCBPS, CBPS, and IPW for a Point Treatment Situation",
+                                          linesep = "",
+                                          align = "l",
+                                          format = "latex",
+                                          label = "point-treatment-comparison",
+                                          col.names = linebreak(c("Method",
+                                                                  "Estimate",
+                                                                  "Standard Error",
+                                                                  "Computation Time\n(in Seconds)")),
+                                          escape = FALSE,
+                                          position = "ht"
+) 
+add_footnote(point_treatment_comparsion_table, c("Computation time may differ depending on system setup.", "System setup used to generate the results:","MacBook Pro (15-inch, 2018), 2.2 GHz 6-Core Intel Core i7, 16GB RAM."),
+             notation = "none")
+
+
+## ----message = FALSE----------------------------------------------------------
+data("peace")
+z1 <- lm(threatc ~ ally + trade + h1 + i1 + p1 + e1 + r1 +
+           male + white + age + ed4 + democ,
+         data = peace)
+z2 <- lm(cost ~ ally + trade + h1 + i1 + p1 + e1 + r1 +
+           male + white + age + ed4 + democ,
+         data = peace)
+z3 <- lm(successc ~ ally + trade + h1 + i1 + p1 + e1 + r1 +
+           male + white + age + ed4 + democ,
+         data = peace)
+
+
+## ----message = FALSE----------------------------------------------------------
+zmodels <- list(z1, z2, z3)
+
+
+## ----include = FALSE----------------------------------------------------------
+rbwMed_fit <- rbwMed(
+  treatment = democ,
+  mediator = immoral,
+  zmodels = zmodels,
+  baseline_x = c(ally, trade, h1, i1,
+                 p1, e1, r1, male, white, age, ed4),
+  data = peace
+)
+
+
+## ----eval = FALSE-------------------------------------------------------------
+#> rbwMed_fit <- rbwMed(
+#>   treatment = democ,
+#>   mediator = immoral,
+#>   zmodels = zmodels,
+#>   baseline_x = c(ally, trade, h1, i1,
+#>                  p1, e1, r1, male, white, age, ed4),
+#>   data = peace
+#> )
+
+
+## -----------------------------------------------------------------------------
+peace$rbwMed_weights <- rbwMed_fit$weights
+
+
+## ----message = FALSE----------------------------------------------------------
+rbwMed_design <- svydesign(ids = ~ 1,
+                           weights = ~ rbwMed_weights,
+                           data = peace)
+
+
+## ----message = FALSE----------------------------------------------------------
+rbwMed_msm <- svyglm(strike ~ democ * immoral,
+                     design = rbwMed_design)
+
+
+## ----include = FALSE----------------------------------------------------------
+rbwMed2_fit <- rbwMed(
+  treatment = democ,
+  mediator = immoral,
+  zmodels = zmodels,
+  data = peace
+)
+peace$rbwMed2_weights <- rbwMed2_fit$weights
+rbwMed2_design <- svydesign(ids = ~ 1,
+                            weights = ~ rbwMed2_weights,
+                            data = peace)
+rbwMed2_msm <- svyglm(strike ~ ally + trade + h1 + i1 + p1 +
+                        e1 + r1 + male + white + age + ed4 + democ * immoral,
+                      design = rbwMed2_design)
+
+
+## ----eval = FALSE-------------------------------------------------------------
+#> rbwMed2_fit <- rbwMed(
+#>   treatment = democ,
+#>   mediator = immoral,
+#>   zmodels = zmodels,
+#>   data = peace
+#> )
+#> peace$rbwMed2_weights <- rbwMed2_fit$weights
+#> rbwMed2_design <- svydesign(ids = ~ 1,
+#>                             weights = ~ rbwMed2_weights,
+#>                             data = peace)
+#> rbwMed2_msm <- svyglm(strike ~ ally + trade + h1 + i1 + p1 +
+#>                         e1 + r1 + male + white + age + ed4 + democ * immoral,
+#>                       design = rbwMed2_design)
+
+
+## -----------------------------------------------------------------------------
+data("campaign_long")
+data("campaign_wide")
+x1 <-
+  lm(dem.polls ~ (neg.dem.l1 + dem.polls.l1 + undother.l1) * factor(week),
+     data = campaign_long)
+x2 <-
+  lm(undother ~ (neg.dem.l1 + dem.polls.l1 + undother.l1) * factor(week),
+     data = campaign_long)
+
+
+## ----message = FALSE----------------------------------------------------------
+xmodels <- list(x1, x2)
+
+
+## ----include = FALSE----------------------------------------------------------
+rbwPanel_fit <- rbwPanel(
+  treatment = neg.dem,
+  xmodels = xmodels,
+  id = id,
+  time = week,
+  data = campaign_long,
+  future = 0
+)
+
+
+## ----eval = FALSE-------------------------------------------------------------
+#> rbwPanel_fit <- rbwPanel(
+#>   treatment = neg.dem,
+#>   xmodels = xmodels,
+#>   id = id,
+#>   time = week,
+#>   data = campaign_long,
+#>   future = 0
+#> )
+
+
+## ----message = FALSE, warning = FALSE-----------------------------------------
+library("dplyr")
+campaign_wide <- campaign_wide %>%
+  left_join(rbwPanel_fit$weights, by = "id")
+
+
+## -----------------------------------------------------------------------------
+campaign_wide <- campaign_wide %>%
+  rename(rbwPanel_weights = rbw)
+
+
+## -----------------------------------------------------------------------------
+rbwPanel_design <- svydesign(ids = ~ 1,
+                             weights = ~ rbwPanel_weights,
+                             data = campaign_wide)
+
+
+## ----message = FALSE----------------------------------------------------------
+rbwPanel_msm <- svyglm(demprcnt ~ ave_neg * deminc + camp.length +
+                         factor(year) + office,
+                       design = rbwPanel_design)
+
+
+## ----include = FALSE, cache = TRUE--------------------------------------------
+m1 <-
+  lm(dem.polls ~ (d.gone.neg.l1 + dem.polls.l1 + undother.l1) * factor(week),
+     data = campaign_long)
+m2 <-
+  lm(undother ~ (d.gone.neg.l1 + dem.polls.l1 + undother.l1) * factor(week),
+     data = campaign_long)
+
+xmodels <- list(m1, m2)
+
+rbwPanel_start <- Sys.time()
+rbwPanel_fit <- rbwPanel(
+  treatment = neg.dem,
+  xmodels = xmodels,
+  id = id,
+  time = week,
+  data = campaign_long,
+  future = 0
+)
+rbwPanel_end <- Sys.time()
+rbwPanel_time <- rbwPanel_end - rbwPanel_start
+
+
+## ----eval = FALSE-------------------------------------------------------------
+#> m1 <-
+#>   lm(dem.polls ~ (d.gone.neg.l1 + dem.polls.l1 + undother.l1) * factor(week),
+#>      data = campaign_long)
+#> m2 <-
+#>   lm(undother ~ (d.gone.neg.l1 + dem.polls.l1 + undother.l1) * factor(week),
+#>      data = campaign_long)
+#> 
+#> xmodels <- list(m1, m2)
+#> 
+#> rbwPanel_start <- Sys.time()
+#> rbwPanel_fit <- rbwPanel(
+#>   treatment = d.gone.neg,
+#>   xmodels = xmodels,
+#>   id = id,
+#>   time = week,
+#>   data = campaign_long,
+#>   future = 0
+#> )
+#> rbwPanel_end <- Sys.time()
+#> rbwPanel_time <- rbwPanel_end - rbwPanel_start
+
+
+## ----message = FALSE, cache = TRUE--------------------------------------------
+CBPSPanel_form <-
+  "d.gone.neg ~ d.gone.neg.l1 + dem.polls + undother + camp.length + deminc + office + factor(year)"
+
+CBPSPanel_start <- Sys.time()
+CBPSPanel_fit <-
+  CBMSM(
+    formula = CBPSPanel_form,
+    time = campaign_long$week,
+    id = campaign_long$demName,
+    data = campaign_long,
+    type = "MSM",
+    iterations = NULL,
+    twostep = TRUE,
+    msm.variance = "approx",
+    time.vary = TRUE
+  )
+CBPSPanel_end <- Sys.time()
+CBPSPanel_time <- CBPSPanel_end - CBPSPanel_start
+
+
+## -----------------------------------------------------------------------------
+rbwPanel_time
+CBPSPanel_time
+

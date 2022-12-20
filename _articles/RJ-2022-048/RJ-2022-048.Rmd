@@ -1,0 +1,507 @@
+---
+title: 'did2s: Two-Stage Difference-in-Differences'
+author:
+- name: Kyle Butts
+  affiliation: University of Colorado Boulder
+  url: https://www.kylebutts.com/
+  orcid: 0000-0002-9048-8059
+  email: buttskyle96@gmail.com
+- name: John Gardner
+  affiliation: University of Mississippi
+  url: https://jrgcmu.github.io/
+  email: jrgardne@olemiss.edu
+abstract: |
+  Recent work has highlighted the difficulties of estimating difference-in-differences models when the treatment is adopted at different times for different units. This article introduces the R package \CRANpkg{did2s} which implements the estimator introduced in @Gardner_2021. The article provides an approachable review of the underlying econometric theory and introduces the syntax for the function `did2s`. Further, the package introduces functions, event_study and plot_event_study, which uses a common syntax to implement all of the modern event-study estimators.
+bibliography: did2s.bib
+header-includes:
+- \usepackage{threeparttable}
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{adjustbox}
+- \usepackage{lscape}
+- \usepackage{enumitem}
+- \usepackage{array}
+- \newcolumntype{L}[1]{>{\raggedright\let\newline\\\arraybackslash\hspace{0pt}}p{#1}}
+output:
+  rjtools::rjournal_web_article:
+    self_contained: yes
+    toc: no
+date: '2022-12-20'
+date_received: '2021-10-04'
+volume: 14
+issue: 3
+slug: RJ-2022-048
+draft: no
+journal:
+  lastpage: 173
+  firstpage: 162
+
+---
+
+
+
+```{r setup, include = F}
+library(did2s)
+library(ggplot2)
+par(family = "HersheySans") # Nicer fonts for base R plots
+```
+
+
+## Introduction
+
+A rapidly growing econometric literature has identified difficulties in traditional difference-in-differences estimation when treatment turns on at different times for different groups and when the effects of treatment vary across groups and over time [@Callaway_SantAnna_2020; @Sun_Abraham_2020; @Goodman-Bacon_2018; @Borusyak_Jaravel_Spiess_2021; @deChaisemartin_DHaultfoeuille_2019]. @Gardner_2021 proposes an estimator of the two-way fixed-effects model that is quick and intuitive. The estimator relies on the standard two-way fixed-effect model (see the following section) and forms an intuitive estimate: the average difference in outcomes between treated and untreated units after removing fixed unit- and time-invariant shocks. 
+
+This article first discusses the modern difference-in-differences theory in an approachable way and second discusses the software package, \CRANpkg{did2s}, which implements the two-stage estimation approach proposed by @Gardner_2021 to estimate robustly the two-way fixed-effects (TWFE) model. There are two notable technical features of this package. First, `did2s` utilizes the incredibly fast package, \CRANpkg{fixest} [@Berge_2018], which can estimate regressions with a high number of fixed-effects very quickly. Second, since there are a few alternative TWFE event-study estimators implemented in `R`, each with their own syntax and data formatting requirements, the package also has a set of functions that allow quick estimation and plotting of every alternative event study estimator using a standardized syntax. This allows for easy comparison between the results of different methods. 
+
+## Difference-in-differences theory
+
+Researchers commonly use the difference-in-differences (DiD) methodology to estimate the effects of treatment in the case where treatment is non-randomly assigned. Instead of random assignment giving rise to identification, the DiD method relies on the so-called "parallel trends" assumption, which asserts that outcomes would evolve in parallel between the treated and untreated groups *in a world where the treated were untreated*. This is formalized with the *two-way fixed-effects* (TWFE) model. In a static setting where treatment effects are *constant* across treatment groups and over time, researchers estimate the **static TWFE model**:
+\begin{equation}\label{eq:twfe}
+  y_{igt} = \mu_g + \eta_t + \tau D_{gt} + \varepsilon_{igt},
+\end{equation}
+where $y_{igt}$ is the outcome variable of interest, $i$ denotes the individual, $t$ denotes time, and $g$ denotes group membership where a "group" is defined as all units that start treatment at time $g$.^[In the literature, never treated units often are given a value of $g = \infty$.] \(\mu_g\) is a vector of time-invariant group fixed-effects, \(\eta_t\) is a vector of shocks in a given time period that is experienced by all individuals equally, and \(D_{gt}\) is an indicator for whether initial-treatment group \(g\) is receiving treatment in period \(t\), i.e. $D_{gt} \equiv \mathbb{1}(g \leq t)$. The coefficient of interest is \(\tau\), which is the **(*constant*) average effect of the treatment on the treated** (ATT). If it is indeed true that the treatment effect is constant across groups and over time, then the estimate formed by estimating the static TWFE model will be consistent for \(\tau\) under a parallel trends assumption on the error term.
+
+However, treatment effects are not constant in most settings. The magnitude of a unit's treatment effect can differ based on group status $g$ (e.g. if groups that benefit more from a policy implement it earlier) and treatment duration (e.g. if treatment effects grow as the policy has been in place for longer periods). Therefore to enrich our model, we allow heterogeneity in treatment effects across $g$ and $t$ by introducing the **group-time average treatment effect**, $\tau_{gt}$. Correspondingly, we modify the TWFE model as follows:
+$$
+  y_{igt} = \mu_g + \eta_t + \tau_{gt} D_{gt} + \varepsilon_{igt}.
+$$
+The key difference is that treatment effects are allowed to differ based on group status $g$ and time period $t$. Estimating any individual $\tau_{gt}$ may not be desirable since there would be too few observations. Instead, researchers aggregate group-time average treatment effects into the **overall average treatment effect**, \(\tau\), which averages across $\tau_{gt}$:
+$$
+  \tau \equiv \sum_{g, t} \frac{N_{gt}}{N_{post}} \tau_{gt},
+$$
+where $N_{gt}$ denotes the number of observations in $(g, t)$ and $N_{post}$ is the number of post-treatment observations ($t \geq g$). The natural question is, "does the static TWFE model, (\ref{eq:twfe}), produce a consistent estimate for the overall average treatment effect?" Except for a few specific scenarios, the answer is no [@Sun_Abraham_2020; @Goodman-Bacon_2018; @Borusyak_Jaravel_Spiess_2021; @deChaisemartin_DHaultfoeuille_2019].
+
+One way of thinking about this disappointing result is through the Frisch--Waugh--Lovell (FWL) theorem [@Frisch_Waugh_1933]. This theorem says that estimating the Static TWFE model is equivalent to estimating 
+$$
+y_{igt} - \hat{\mu}_g - \hat{\eta}_t = \tau \tilde{D}_{gt} + \tilde{\varepsilon}_{gt},
+$$
+where $\tilde{D}_{gt}$ denotes the residuals from regressing $D_{gt}$ on $\mu_g$ and $\eta_t$; $\hat{\mu}_g$ and $\hat{\eta}_t$ are estimates for the group and time fixed-effects, respectively. The left-hand side of this equation, under a parallel trends restriction on the error term \(\varepsilon_{it}\), is our estimate for $\tau_{gt}$. Therefore, the FWL theorem tells us estimating the static TWFE model is equivalent to estimating^[This is a minor abuse of notation since $y_{igt} - \hat{\mu}_g - \hat{\eta}_t$ is an estimate for $\tau_{igt}$ which can be different from $\tau_{gt}$ if there is within group-time heterogeneity.]
+
+$$
+\hat{\tau}_{gt} = \tau \tilde{D}_{gt} + \tilde{\varepsilon}_{gt}
+$$
+
+The resulting estimate for $\tau$ can be written as:
+$$
+\hat{\tau} \equiv \sum_{g,t} w_{gt} \hat{\tau}_{gt},
+$$
+where $w_{gt}$ is the weight put on the corresponding $\hat{\tau}_{gt}$. Results of @Gardner_2021, @Borusyak_Jaravel_Spiess_2021, and @deChaisemartin_DHaultfoeuille_2019 all characterize the weights $w_{gt}$ from this regression. There are only two cases where the $\hat{\tau}$ is a consistent estimate for the overall average treatment effect. First, when treatment occurs at the *same time* for all treated units, then $w_{gt}$ is equal to $N_{gt}/N_{post}$ for all $\{g, t\}$ and therefore $\hat{\tau}$ is a consistent estimate for the overall average treatment effect. The other scenario where $\hat{\tau}$ estimates the overall average treatment effect is when $\tau_{gt}$ is constant across group and time, i.e. $\tau_{gt} = \tau$. Since the weights, $w_{gt}$, always sum to one, we have that $\hat{\tau} = \sum w_{gt} \hat{\tau}_{gt} \to \sum w_{gt} \tau = \tau$. 
+
+The above cases are not the norm in research. If there is heterogeneity in group-time treatment effects *and* units get treated at different times, then $\hat{\tau}$ is not a consistent estimate for the average treatment effect $\tau$. Instead, $\hat{\tau}$ will be a weighted average of group-time treatment effects with some weights, $w_{gt}$, being potentially negative. This yields a treatment effect estimate that does not provide a good summary of the "average" treatment effect. It is even possible for the sign of $\hat{\tau}$ to differ from that of the overall average treatment effect. This would occur, for example, if negative weights are placed primarily on the largest (in magnitude) group-time treatment effects.
+
+To summarize the modern literature, the fundamental problem faced in estimating the TWFE model is the potential negative weighting. The proposed methodology in @Gardner_2021 is based on the fact that if $\hat{\tau}_{gt}$ is regressed on $D_{gt}$, instead of $\tilde{D}_{gt}$, the resulting weights would be exactly equal to $N_{gt}/N_{post}$ and the coefficient of $D_{gt}$ would estimate the overall average treatment effect.
+
+### Event-study estimates
+
+Researchers have attempted to model treatment effect heterogeneity by allowing treatment effects to change over time. To do this, they introduce a (dynamic) event-study TWFE model:
+\begin{equation}
+  y_{igt} = \mu_g + \eta_t + \sum_{k = -L}^{-2} \tau^k D_{gt}^k + \sum_{k = 0}^{K} \tau^k D_{gt}^k + \varepsilon_{igt},
+\end{equation} 
+where \(D_{gt}^k\) are lags/leads of treatment ($k$ periods from initial treatment date). The coefficients of interests are the \(\tau^k\), which represent the average effect of being treated for \(k\) periods. For negative values of \(k\), \(\tau^k\) are known as "pre-trends," and represent the average deviation in outcomes for treated units $k$ periods away from treatment, relative to their value in the reference period. These pre-trend estimates are commonly used as a test of the parallel counterfactual trends assumption. 
+
+Our goal is to estimate the **average treatment effect of being exposed for $k$ periods**, an average of $\tau_{gt}$ for only the set of $\{g,t\}$ where $k$ periods have elapsed since $g$, i.e. $t - g = k$:
+$$
+  \tau^k = \sum_{g,t \ : \ t - g = k} \frac{N_{gt}^k}{N^k} \tau_{gt},
+$$
+where the sum is over $\{g,t\}$ with $t - g = k$, $N_{gt}^k$ is the number of observations in group $g$ and $N^k$ is the total number of observations with $t - g = k$. The results of @Sun_Abraham_2020 show that even though we allow for our average treatment effects to vary over time $\tau^k$, the negative weighting problems would arise if units are treated at different times *and* there is group-heterogeneity in treatment effects. Similar to the static TWFE model, the estimates of $\tau^k$ from running the event-study model form non-intuitively weighted averages of $\tau_{gt}$ with $w_{gt}^k \neq N_{gt}^k/N^k$. Even worse, the group-time treatment effects for $t-g \neq k$ will be included in the estimate of $\hat{\tau}^k$. Hence, the need for a robust difference-in-differences estimator remains even in the event-study model.
+ 
+
+### Two-stage difference-in-differences estimator
+
+@Gardner_2021 proposes an estimator to resolve the problem with the two-way fixed-effects approaches. Rather than attempting to estimate the group and time effects  simultaneously with the ATT (causing $D_{it}$ to be residualized), Gardner's approach proceeds from the observation that, under parallel trends, the group and time effects are identified from the subsample of untreated/not-yet-treated observations ($D_{gt} = 0$). This suggests a simple two-stage difference-in-differences estimator:
+
+1. Estimate the model
+\[
+	y_{igt} = \mu_g + \eta_t + \varepsilon_{igt},
+\] 
+using the subsample of untreated/not-yet-treated observations (i.e., all observations for which $D_{gt}=0$), retaining the estimated group and time effects to form the adjusted outcomes $\tilde{y}_{igt} \equiv y_{igt} - \hat{\mu}_g - \hat{\eta}_t$.
+
+2. Regress adjusted outcomes $\tilde{y}_{igt}$ on treatment status $D_{gt}$ or $D_{gt}^k$ in the full sample to estimate treatment effects $\tau$ or $\tau^k$.
+
+To see why this procedure works, note that parallel trends implies that outcomes can be expressed as
+\begin{align*}
+  y_{igt} &= \mu_g + \eta_t + \tau_{gt} D_{gt} + \varepsilon_{igt} \\
+  &= \mu_g + \eta_t + \bar{\tau} D_{gt} + (\tau_{gt} - \bar{\tau}) D_{gt} + \varepsilon_{igt},
+\end{align*}
+where $\tau_{gt} = E(Y^1_{igt} - Y^0_{igt} \ | \ g, t)$ is the average treatment effect for group $g$ in period $t$^[i.e., the average difference between treated and untreated potential outcomes $y^1_{igt}$ and $y^0_{igt}$, conditional on the observed treatment-adoption times.] and $\bar{\tau} = E(\tau_{gt} | D_{gt}=1)$ is the overall average treatment effect^[i.e., the population-weighted average of the group-time specific ATTs, $\tau_{gt}$.]. Note from parallel trends, $E(\varepsilon_{igt} | D_{gt}, g, t) = 0$. Rearranging, this gives
+\[
+  y_{igt} - \mu_g - \eta_t = \bar{\tau} D_{gt} + (\tau_{gt} - \bar{\tau}) D_{gt} + \varepsilon_{igt}.
+\]
+Suppose you knew the time and group fixed-effects and were able to directly observe the left-hand side (later we will estimate the left-hand side). Regressing the adjusted $y$ variable, on $D_{gt}$ will produce a consistent estimator for $\bar{\tau}$. To see this, note that $E[(\tau_{gt} - \bar{\tau}) D_{gt} \ | \ D_{gt}] = 0$. Hence, the treatment dummy is uncorrelated with the omitted variable and the average treatment effect is identified in the second-stage. Since we are not able to directly observe $\mu_g$ and $\eta_t$, we estimate them using the untreated/not-yet-treated observations in the first-stage. However, standard errors need adjustment to account for the added uncertainty from the first-stage estimation.
+
+This approach can be extended to dynamic models by replacing the second stage of the procedure with a regression of residualized outcomes onto the leads and lags of treatment status, $D_{gt}^k$, $k \in \{-L, \dots, K\}$. Under parallel trends, the second-stage coefficients on the lags identify the overall average effect of being treated for $k$ periods (where the average is taken over all units treated for at least that many periods). The second-stage coefficients on the leads identify the average deviation from predicted counterfactual trends among units that are $k$ periods away from treatment, which under parallel trends should be zero for any pre-treatment value of $k$. Hence, the coefficients on the leads represent a test of the validity of the parallel trends assumption.
+
+
+### Inference
+
+The standard variance-covariance matrix from the second-stage regression will be incorrect since it fails to account for the fact that the dependent variable is generated from the first-stage regression. However, this estimator takes the form of a joint generalized method of moments (GMM) estimator whose asymptotic variance is well understood [@newey_mcfadden_1994].
+
+Specifically, the estimator takes the form of a two-stage GMM estimator with the following two moment conditions: 
+\begin{align}
+  m(\theta) = (Y-X_{10}'\gamma)X_{10}, \\
+  g(\gamma, \theta) = (Y - X_1'\gamma - X_2'\theta) X_2,
+\end{align} 
+where \(X_1\) is the matrix of group and time fixed-effects, \(X_{10}\) corresponds to the matrix \(X_1\), but with rows corresponding to observations for which \(D_{gt} = 1\) replaced with zeros (as only observations with \(D_{gt} = 0\) are used in the first stage) and \(X_2\) is the matrix of treatment variable(s). The first equation corresponds with the first stage and the second equation corresponds with the second stage. From Theorem 6.1 of @newey_mcfadden_1994, the asymptotic variance of the two-stage estimator is 
+\begin{equation}
+  V = G_\theta^{-1} E\left[ (g + G_\gamma \psi)(g + G_\gamma \psi)' \right] G_\theta^{-1'},
+\end{equation} 
+where from our moment conditions, we have: 
+\[
+  G_\theta = - E\left(X_2X_2' \right),
+\] 
+\[
+  G_\gamma = - E\left(X_2X_1'\right),
+\] 
+\[
+  \psi = E(X_{10}X_{10}')^{-1} \varepsilon_{10} X_{10}.
+\]
+
+This can be estimated using 
+\begin{equation}
+  \left(X_2'X_2\right)^{-1} \left(\sum_{g=1}^G W_g' W_g\right) \left(X_2'X_2\right)^{-1},
+\end{equation} where 
+\[
+  W_g = X_{2g}'\hat{\varepsilon}_{2g} - \hat{\varepsilon}_{10g}' X_{1g}\left(X_{1g}'X_{1g}\right)^{-1} \left(X_{1g}'X_{2g}\right),
+\] 
+and matrices indexed by \(g\) correspond to the \(g\)th cluster.
+
+
+
+## The \CRANpkg{did2s} package
+
+The \CRANpkg{did2s} package introduces two sets of functions. The first is the `did2s` command which implements the two-stage difference-in-differences estimator as described above. The second is the `event_study` and `plot_event_study` commands that allow individuals to implement alternative 'robust' estimators using a singular common syntax.
+
+### The `did2s` command
+
+The command `did2s` implements the two-stage difference-in-differences estimator following @Gardner_2021. The general syntax is
+
+```{r}
+#| echo = T, eval = F
+did2s(data, yname, first_stage, second_stage, 
+      treatment, cluster_var, weights = NULL, 
+      bootstrap = FALSE, n_bootstraps = 250, 
+      verbose = TRUE)
+```
+
+and full details on the arguments is available in the help page, available by running `?did2s`. There are a few arguments that are worth discussing in more detail. 
+
+The `first_stage` and `second_stage` arguments require formula arguments. These formulas are passed to the `fixest::feols` function from \CRANpkg{fixest} and can therefore utilize two non-standard formula options that are worth mentioning [@Berge_2018]. First, fixed-effects can be inserted after the covariates, e.g. `~ x1 | fe_1 + fe_2`, which will make estimation much faster than using `factor(fe_1)`. Second, the function `fixest::i` can be used for treatment indicators instead of `factor`. The advantage of this is that you can easily specify the reference values, e.g. for event-study indicators where researchers typically want to drop time $t = -1$, `~ i(rel_year, ref = c(-1))` would be the correct second-stage formula. Additionally, \CRANpkg{fixest} has a number of post-estimation exporting commands to make tables with `fixest::etable` and event-study plots with `fixest::iplot`/`fixest::coefplot`. The `fixest::i` function is better integrated with these functions as we will see below.
+
+The option `treatment` is the variable name of a $0/1$ variable that denotes when treatment is active for a given unit, $D_{gt}$ in the above notation. Observations with $D_{gt} = 0$ will be used to estimate the first stage, which removes the problem of treatment effects contaminating estimation of the unit and time fixed-effects. However, as an important note, if you suspect anticipation effects before treatment begins, the `treatment` variable should be shifted forward by $x$ periods for observations to prevent the aforementioned contamination. For example, if you suspect that units could experience treatment effects 1 period ahead of treatment (a so-called anticipatory effect), then the `treatment` should begin one period ahead. These anticipation effects can be estimated, after adjusting the `treatment` variable, by using a reference year of say, $t = -2$ and looking at the estimate for relative year $-1$.
+
+
+#### Example usage of `did2s`
+
+For basic usage, I will use the simulated dataset, `df_het`, that comes with the \CRANpkg{did2s} package with the command
+
+```{r, results = 'hide'}
+data(df_het, package = "did2s")
+```
+
+The data-generating process is displayed in Figure `r ifelse(knitr::is_html_output(), "\\@ref(fig:ex-data)", "\\ref{fig:ex-data}")`. The lines represent the mean outcome for each treatment group and the never-treated group. In the absence of treatment, each group is simulated to be on parallel trends. There is heterogeneity in treatment effects both within a treatment group over time and across treatment groups.
+
+```{r ex-data}
+#| echo = F, fig.width = 6, fig.height = 4, out.width="100%",
+#| fig.cap = "This figure plots simulated data with two treated groups and a never-treated group. Each line represents the average outcome (y-value) in a given year (x-value) for each of the three groups. In the absence of treatment, all three groups would exhibit parallel trends (staying around a value of 4 in each period). Each of the treated groups are experience different treatment effect magnitudes that grow over time. This treatment effect heterogeneity creates problems for the classical two-way fixed effect OLS estimator.",
+#| fig.alt = "This figure contains 3 lines which represent three different groups: the never-treated units, units starting treatment in 2000, and units starting treatment in 2010. The x-axis is year and the y-axis is the average outcome value for the three groups. The lines evolve in parallel until 2000 when the treated in 2000 group experiences a jump. Then in 2010, the treated in 2010 group experiences a jump as well, but of a different size than then treated in 2000 group."
+# Mean for treatment group-year
+agg <- aggregate(df_het$dep_var, by=list(g = df_het$g, year = df_het$year), FUN = mean)
+
+agg$g <- as.character(agg$g)
+agg$g <- ifelse(agg$g == "0", "Never Treated", agg$g)
+
+never <- agg[agg$g == "Never Treated", ]
+g1 <- agg[agg$g == "2000", ]
+g2 <- agg[agg$g == "2010", ]
+
+
+plot(0, 0, xlim = c(1990,2020), ylim = c(2, 8), type = "n",
+     main = "Data-generating Process", ylab = "Outcome", xlab = "Year")
+lines(never$year, never$x, col = "#8e549f", type = "b", pch = 15)
+lines(g1$year, g1$x, col = "#497eb3", type = "b", pch = 17)
+lines(g2$year, g2$x, col = "#d2382c", type = "b", pch = 16)
+legend(x = 1990, y = 8, col = c("#8e549f", "#497eb3", "#d2382c"), 
+       pch = c(15, 17, 16),
+       legend = c("Not Treated", "2000", "2010"))
+
+
+```
+
+First, we will calculate a static difference-in-differences estimate using the `did2s` function. 
+
+```{r static}
+#| cache = T
+ 
+static = did2s(
+	data = df_het, 
+	yname = "dep_var", 
+	treatment = "treat",
+    first_stage = ~ 0 | unit + year, 
+    second_stage = ~ i(treat, ref = FALSE),
+    cluster_var = "unit", 
+	verbose = FALSE
+)
+
+summary(static)
+```
+
+Since the returning object is a `fixest` object, all the accompanying output commands from \CRANpkg{fixest} are available to use. For example, we can create regression tables:
+
+```{r static-output-html}
+#| include = knitr::is_html_output()
+fixest::etable(static, fitstat = c("n"),
+  title = "Estimate of Static TWFE Model", 
+  notes = "This table presents the estimated overall treatment effect. The effect is estimated using Two-Stage Difference-in-Differences proposed by Gardner (2021). The estimated effect is close to the true value.")
+```
+
+```{r static-output-tex}
+#| results = "asis", include = knitr::is_latex_output()
+fixest::etable(static, fitstat = c("n"), tex = TRUE,
+  title = "Estimate of Static TWFE Model", 
+  notes = "This table presents the estimated overall treatment effect. The effect is estimated using Two-Stage Difference-in-Differences proposed by Gardner (2021). The estimated effect is close to the true value.")
+```
+
+However, since there are dynamic treatment effects in this example, it is much better to estimate the dynamic effects themselves using an event-study specification. We will then plot the results using `fixest::iplot`, which plots coefficients corresponding to an `i()` variable. Note that `rel_year` is coded as `Inf` for never-treated units, so this has to be noted in the reference part of the formula.
+
+```{r dynamic}
+#| cache = T, fig.width = 6, fig.height = 4, out.width = "100%",
+#| fig.cap = "This figure plots the true treatment effect and estimates using the Two-Stage Difference-in-Differences proposed by Gardner (2021). The x-axis of this figure is the relative time to treatment, i.e. how many years pre-/post- treatment that period is. The y-axis is estimated treatment effects. There are two sets of points. The first is for the true effect which is equal to 0 in all pre-periods and in the post-period starts at 1.5 and linearly grows to 3 by post-period 20. The second set of points is the estimates from the two-stage difference-in-difference estimates which follows closely the true effects but with additional noise from estimation error.",
+es = did2s(
+	data = df_het, 
+	yname = "dep_var", 
+	treatment = "treat",
+	first_stage = ~ 0 | unit + year, 
+    second_stage = ~ i(rel_year, ref = c(-1, Inf)),
+    cluster_var = "unit", 
+	verbose = FALSE
+)
+
+fixest::iplot(
+	es, 
+	main = "Event study: Staggered treatment", 
+	xlab = "Relative time to treatment", 
+	col = "steelblue", ref.line = -0.5
+)
+
+# Add the (mean) true effects
+true_effects = tapply((df_het$te + df_het$te_dynamic), df_het$rel_year, mean)
+true_effects = head(true_effects, -1)
+points(-20:20, true_effects, pch = 20, col = "grey60")
+
+# Legend
+legend(x=-20, y=3, col = c("steelblue", "grey60"), 
+       pch = c(20, 20), 
+       legend = c("Two-stage estimate", "True effect"))
+```
+
+The event study estimates are found in Figure `r ifelse(knitr::is_html_output(), "\\@ref(fig:dynamic)", "\\ref{fig:dynamic}")` and match closely to the true average treatment effects. For comparison to traditional OLS estimation of the event-study specification, Figure `r ifelse(knitr::is_html_output(), "\\@ref(fig:dynamic-w-twfe)", "\\ref{fig:dynamic-w-twfe}")` plots point estimates from both methods. As pointed out by @Sun_Abraham_2020, treatment effect heterogeneity between groups biases the estimated pre-trends. In the figure below, the OLS estimates appear to show violations of pre-trends even though the data was simulated under parallel pre-trends.
+
+```{r dynamic-w-twfe}
+#| fig.width = 6, fig.height = 4, out.width = "100%",
+#| fig.cap = "This figure adds the standard ordinary-least squares estimates to the true effect and the `did2s` estimates present in Figure 2. The x-axis of this figure is the relative time to treatment, i.e. how many years pre-/post- treatment that period is. The y-axis is estimated treatment effects. There are three sets of points. The first two sets of points are the same as in Figure 2. The third set of points is the ordinary-least squares estimates. These points exhibit show evidence of parallel pre-trends failing.",
+#| fig.alt = "The x-axis of this figure is the relative time to treatment, i.e. how many years pre-/post- treatment that period is. The y-axis is estimated treatment effects. There are three sets of points. The first is for the true effect which is equal to 0 in all pre-periods and in the post-period starts at 1.5 and linearly grows to 3 by post-period 20. The second set of points is the estimates from the two-stage difference-in-difference estimates which follows closely the true effects but with additional noise from estimation error. The third set of points is for the ordinary-least squares estimate of the two-way fixed effect model. They follow the true-effect less closely than the two-stage difference-in-differences estimate, but still somewhat close."
+
+twfe = feols(dep_var ~ i(rel_year, ref=c(-1, Inf)) | unit + year, data = df_het) 
+
+fixest::iplot(list(es, twfe), sep = 0.2, ref.line = -0.5,
+      col = c("steelblue", "#82b446"), pt.pch = c(20, 18), 
+      xlab = "Relative time to treatment", 
+      main = "Event study: Staggered treatment (comparison)")
+
+# True Effects
+points(-20:20, true_effects, pch = 20, col = "grey60")
+
+# Legend
+legend(x=-20, y=3, col = c("steelblue", "#82b446", "grey60"), pch = c(20, 18, 20), 
+       legend = c("Two-stage estimate", "TWFE", "True Effect"))
+```
+
+
+### The `event_study` and `plot_event_study` command
+
+The command `event_study` presents a common syntax that estimates the event-study TWFE model for treatment-effect heterogeneity robust estimators recommended by the literature and returns all the estimates in a data.frame for easy plotting by the command `plot_event_study`. The general syntax is
+
+```{r}
+#| echo = T, eval = F
+
+event_study(
+	data, yname, idname, tname, gname, 
+	estimator,
+	xformla = NULL, horizon = NULL, weights = NULL
+)
+```
+
+The option `data` specifies the data set that contains the variables for the analysis. The four other required options are all names of variables: `yname` corresponds with the outcome variable of interest; `idname` is the variable corresponding to the (unique) unit identifier, $i$; `tname` is the variable corresponding to the time period, $t$; and `gname` is a variable indicating the period when treatment first starts (group status). 
+
+```{r estimators-html}
+#| echo = F, layout="l-page", include = knitr::is_html_output(),
+#| 
+
+methods <- tibble::tribble(
+  ~`Estimator and R package`, ~Type, ~`Comparison group`, ~`Main Assumptions`,
+  "Gardner (2021) <br /> <code>{did2s}</code>", "Imputes \\(Y(0)\\)", "Not-yet- and/or Never-treated", "<ul><li>Parallel Trends for all units</li><li>Limited anticipation<sup>*</sup></li><li>Correct specification of \\(Y(0)\\)</li></ul>",
+  "Borusyak, Jaravel, and Spiess (2021) <br /> <code>{didimputation}</code>", "Imputes \\(Y(0)\\)", "Not-yet- and/or Never-treated", "<ul><li>Parallel Trends for all units</li><li>Limited anticipation<sup>*</sup></li><li>Correct specification of \\(Y(0)\\)</li></ul>",
+  "Callaway and Sant'Anna (2021) <br /> <code>{did}</code>", "2x2 Aggregation", "Either Not-yet- or Never-treated", "<ul><li>Parallel Trends for Not-yet-treated <i>or</i> Never-treated</li><li>Limited anticipation<sup>*</sup></li></ul>",
+  "Sun and Abraham (2020) <br /> <code>{fixest/sunab}</code>", "2x2 Aggregation", "Not-yet- and/or Never-treated", "<ul><li>Parallel Trends for all units</li><li>Limited anticipation<sup>*</sup></li></ul>",
+  "Roth and Sant'Anna (2021) <br /> <code>{staggered}</code>", "2x2 Aggregation", "Not-yet-treated", "<ul><li>Treatment timing is random</li><li>Limited anticipation<sup>*</sup></ul>",
+) |> 
+  dplyr::mutate(`Main Assumptions` = purrr::map(`Main Assumptions`, gt::html))
+
+gt::gt(methods, caption="Event Study Estimators") |>
+  gt::cols_align(
+    align = "left",
+    columns = c(`Main Assumptions`)
+  ) |> 
+  gt::tab_options(
+  	table.font.size = 16,
+    data_row.padding = gt::px(10),
+    table.width = gt::px(1000),
+    source_notes.font.size = gt::px(14)
+  ) |>
+  gt::fmt_markdown(
+  	columns = c(`Main Assumptions`, `Estimator and R package`)
+  ) |>
+  gt::tab_source_note(
+    source_note = gt::html("This table summarizes the differences between various proposed event-study estimators in the econometric literature. It highlights the two different strategies that different estimators use, namely imputation and 2x2 aggregation. Importantly, it tries to show the differences in assumptions for each different estimator.<br/><sup>*</sup> Anticipation can be accoufnted for by adjusting 'initial treatment day' back \\(x\\) periods, where \\(x\\) is the number of periods before treatment that anticipation can occur.")
+  )
+```
+
+
+
+```{r estimators-latex}
+#| results = "asis", echo = F , layout="l-page", include = knitr::is_latex_output()
+
+cat(r"(
+\begin{landscape}
+\begin{table}
+\caption{Event Study Estimators \label{tab:estimators-latex}}
+\begin{threeparttable}
+
+\begin{tabular}{L{0.2\textwidth}L{0.2\textwidth}L{0.3\textwidth}p{0.5\textwidth}c}
+\toprule
+\multicolumn{1}{l}{Estimator and} & \multicolumn{1}{l}{Type} & \multicolumn{1}{l}{Comparison group} & \multicolumn{1}{c}{Main Assumptions} \\
+\multicolumn{1}{l}{\texttt{R} package} & & &\\
+
+\midrule
+Gardner (2021) 
+\{\texttt{did2s}\}
+& Imputes $Y(0)$ 
+& Not-yet- and/or Never-treated 
+& 
+\vspace{-5mm}
+\begin{itemize}[leftmargin=*]
+  \item Parallel Trends for all units
+  \item Limited anticipation${^*}$
+  \item Correct specification of $Y(0)$
+\end{itemize}
+& \\
+
+Borusyak, Jaravel, and Spiess (2021) 
+\{\texttt{didimputation}\}
+& Imputes $Y(0)$ 
+& Not-yet- and/or Never-treated 
+& 
+\vspace{-5mm}
+\begin{itemize}[leftmargin=*]
+  \item Parallel Trends for all units
+  \item Limited anticipation${^*}$
+  \item Correct specification of $Y(0)$
+\end{itemize}
+& \\
+
+Callaway and Sant'Anna (2021) 
+\{\texttt{did}\}
+& 2$\times$2 Aggregation 
+& Either Not-yet- or Never-treated 
+& 
+\vspace{-5mm}
+\begin{itemize}[leftmargin=*]
+  \item Parallel Trends for Not-yet-treated {\it or} Never-treated
+  \item Limited anticipation${^*}$
+\end{itemize}
+& \\
+
+Sun and Abraham (2020) 
+\{\texttt{fixest}/\texttt{sunab}\}
+& 2$\times$2 Aggregation 
+& Not-yet- and/or Never-treated 
+& 
+\vspace{-5mm}
+\begin{itemize}[leftmargin=*]
+  \item Parallel Trends for all units
+  \item Limited anticipation${^*}$
+\end{itemize}
+& \\
+
+Roth and Sant'Anna (2021) 
+\{\texttt{staggered}\}
+& 2$\times$2 Aggregation 
+& Not-yet-treated 
+& 
+\vspace{-5mm}
+\begin{itemize}[leftmargin=*]
+  \item Treatment timing is random
+  \item Limited anticipation${^*}$
+\end{itemize}
+& \\
+\bottomrule
+\end{tabular}
+
+\begin{tablenotes}
+\item { This table summarizes the differences between various proposed event-study estimators in the econometric literature. It highlights the two different strategies that different estimators use, namely imputation and 2x2 aggregation. Importantly, it tries to show the differences in assumptions for each different estimator.}
+\item[$^{*}$] { Anticipation can be accounted for by adjusting 'initial treatment day' back $x$ periods, where $x$ is the number of periods before treatment that anticipation can occur.}
+\end{tablenotes}
+
+\end{threeparttable}
+\end{table}
+\end{landscape}
+)")
+```
+
+There are five main estimators available and the choice is specified for the `estimator` argument and are described in Table `r ifelse(knitr::is_html_output(), "\\@ref(tab:estimators-html)", "\\ref{tab:estimators-latex}")`.^[Except for Sun and Abraham, the `estimator` option is the package name. For Sun and Abraham, the `estimator` option is `sunab`. A value of "all" will estimate all 5 estimators.] The following paragraphs will aim to highlight the differences and commonalities between estimators. These estimators fall into two broad categories. First, \CRANpkg{did2s} and \CRANpkg{didimputation} [@didimputation] are `imputation-based` estimators as described above. Both rely on "residualizing" the outcome variable $\tilde{Y} = Y_{it} - \hat{\mu}_g - \hat{\eta}_t$ and then averaging those $\tilde{Y}$ to estimate the event-study average treatment effect $\tau^k$. These two estimators return identical point estimates for post-treatment effects, but differ in their asymptotic regime and hence their standard errors. 
+
+The second type of estimator, which we label `2x2 aggregation`, takes a different approach for estimating event-study average treatment effects. The packages \CRANpkg{did} [@did], \CRANpkg{fixest} and \CRANpkg{staggered} [@staggered] first estimate $\tau_{gt}$ for all group-time pairs. To estimate a particular $\tau_{gt}$, they use a two-period (periods $t$ and $g-1$) and two-group (group $g$ and a "control group") difference-in-differences estimator, known as a `2x2` difference-in-differences. The particular "control group" they use will differ based on estimator and is discussed in the next paragraph. Then, the estimator manually aggregate $\tau_{gt}$ across all groups that were treated for (at least) $k$ periods to estimate the event-study average treatment effect $\tau^k$.
+
+These estimators do not all rely on the same underlying assumptions, so the rest of the table summarizes the primary differences between estimators. The comparison group column describes which units are utilized as comparison groups in the estimator and hence will determine which units need to satisfy a parallel trends assumption. For example, in some circumstances, treated units will look very different from never-treated units. In this case, parallel trends may only hold between units that receieve treatment at some point and hence only these units should be used in estimation. In other cases, for example if treatment is assigned randomly, then it's reasonable to assume that both not-yet- and never-treated units would all satisfy parallel trends. 
+
+For estimators labeled "Not-yet- and/or never-treated", the default is to use both not-yet- and never-treated units in the estimator. However, if all never-treated units are dropped from the data set before using the estimator, then these estimators will use only not-yet-treated groups as the comparison group. \CRANpkg{did} provides an option to use either the not-yet- treated *or* the never- treated group as a comparison group depending on which group a researcher thinks will make a better comparison group. \CRANpkg{staggered} will automatically drop units that are never treated from the sample and hence only use not-yet-treated groups as a comparison group. 
+
+The next column, `Main Assumptions`, summarize concisely the main theoretical assumptions underlying each estimator. First, the assumptions about parallel trends match the previous discussion on the correct comparison group. The only estimator that doesn't rely on a parallel trends assumption is \CRANpkg{staggered} which relies on the assumption that *when* a unit receives treatment is random. 
+
+The next assumption, that is common across all estimators, is that there should be "limited anticipation" of treatment. In general, anticipatory effects are when units respond to treatment before it is *actually* implemented. For example, this can be common if the news of a policy triggers behavior responses before the treatment is put in place. "Limited anticipation" is when these anticipatory effects can only exist in a "few" pre-periods.^[There should be more periods before treatment in the sample than whatever number a "few" is.] In any of these cases, "treatment" should be manually moved back by the maximum number of periods where anticipation can occur. For example, if treatment starts in 2012 and anticipatory effects are reasonably only possible 2 years before, this units' "group" should be labeled as 2010 in the data.
+
+The `imputation-based` estimators require an additional assumption that the parametric model of $Y(0) = \mu_i + \eta_t + \varepsilon_{it}$ is correctly specified. This is because in the first stage, you have to accurately impute $Y(0)$ when residualizing $Y$ which relies on the correct specification of $Y(0)$. The `2x2 aggregation` models do not estimate a parametric form of $Y(0)$ and hence only relies on a parallel trends assumption. While not in the table, it is worth noting that \CRANpkg{did} allows for uniform inference of estimates. This addresses the problem that multiple hypotheses tests are being done by researchers (e.g. checking individually if all post period estimates are significant) by creating standard errors that adjust for multiple testing. 
+
+#### Example usage of `event_study`
+
+The result of `event_study` is a tibble in a `tidy` format [@broom] that contains point estimates and standard errors for each relative time indicator for each estimator. The results of `event_study` are stored as a dataframe with event-study term, the estimate, standard error, and a column containing which estimator is used for that estimate. This output dataframe will in turn be passed to `plot_event_study` for easy comparison. `plot_event_study` will return a `ggplot` object [@ggplot2]. We return to the `df_het` dataset to see example usage of these functions. 
+
+
+```{r es-estimate}
+#| cache = TRUE, results='hide', message = FALSE, warning = FALSE
+data(df_het, package = "did2s")
+out = event_study(
+  data = df_het, yname = "dep_var", idname = "unit",
+  tname = "year", gname = "g", estimator = "all"
+)
+```
+
+```{r es-estimate-head}
+head(out)
+```
+
+
+```{r es-alternatives}
+#| cache = TRUE, fig.width = 12, fig.height = 8, 
+#| out.width = "100%", layout = "l-page",
+#| fig.cap = "This figure contains six plots displayed in a grid of different event study estimators. The estimators are labeled 'TWFE', 'Borusyak, Jaravel, Spiess (2021)', 'Callaway and Sant'Anna (2020)', 'Gardner (2021)', 'Roth and Sant'Anna (2021)', and 'Sun and Abraham (2020)'. Each estimator's necessary assumptions are described above. Each plot in the figure displays point estimates from pre-treatment year -5 through post-treatment year 10. Each estimator is approximately 0 for all pre-treatment periods. In post-periods, each figure follows the true treatment effect starting at 1.5 in post-period 1 and growing afterwards.",
+
+plot_event_study(out, horizon = c(-5, 10))
+```
+
+
+## Conclusion
+
+This article introduced the package \CRANpkg{did2s} which provides a fast, memory-efficient, and treatment-effect heterogeneity robust way to estimate two-way fixed-effect models. The package also includes the `event_study` and `plot_event_study` functions to allow for a single syntax for the various estimators introduced in the literature. A companion package in Stata is also available with similar syntax for the `did2s` function.
+
+While this package includes an event_study function that aims to help individuals implement any of the proposed modern "solutions" to the difference-in-differences estimation, further research on this topic is needed to help practitioners be able to more precisely determine which estimators work best in their settings. Potentially, there could be data-driven methods to try to identify the plausibility of the different assumptions. Additionally, there is still more work to be done to formalize under what conditions covariates can flexibly be used in estimation. There is some initial work from @Caetano_Callaway_Payne_Rodrigues_2022, but there does not yet exist statistical software to perform their proposed estimator.
