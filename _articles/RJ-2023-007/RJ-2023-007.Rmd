@@ -1,0 +1,570 @@
+---
+title: 'populR: a Package for Population Downscaling in R'
+abstract: |
+  Population data provision is usually framed by regulations and restrictions and hence spatially aggregated in predefined enumeration units such as city blocks and census tracts. Many applications require population data at finer scale, and therefore, one may use downscaling methods to transform population counts from coarse spatial units into smaller ones. Although numerous methods for downscaling of population data have been reported in the scientific literature, only a limited number of implementation tools exist. In this study, we introduce populR, an R package that responds to this need. populR provides two downscaling methods, namely Areal Weighted Interpolation and Volume Weighted Interpolation, which are illustrated and compared to alternative implementations in the sf and areal packages using a case study from Mytilini, Greece. The results provide evidence that the vwi approach outperforms the others, and thus, we believe R users may gain significant advantage by using populR for population downscaling.
+draft: no
+author:
+- name: Marios Batsaris
+  affiliation: University of the Aegean
+  address:
+  - Department of Geography
+  - Mytilini, Greece
+  url: https://www.mbatsaris.gr
+  orcid: 0000-0002-1805-3528
+  email: m.batsaris@aegean.gr
+- name: Dimitris Kavroudakis
+  url: https://www.britannica.com/animal/bilby
+  email: dimitrisk@aegean.gr
+  orcid: 0000-0001-5782-3049
+  affiliation: University of the Aegean
+  address:
+  - Department of Geography
+  - Mytilini, Greece
+type: package
+output:
+  rjtools::rjournal_web_article:
+    self_contained: yes
+    toc: no
+bibliography: RJreferences.bib
+date: '2023-02-10'
+date_received: '2021-09-27'
+volume: 14
+issue: 4
+slug: RJ-2023-007
+journal:
+  lastpage: 234
+  firstpage: 223
+
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(areal)
+library(sf)
+library(classInt)
+library(RColorBrewer)
+library(maptools)
+library(microbenchmark)
+library(rjtools)
+
+```
+
+# Introduction
+
+Information about the spatial distribution of the population is crucial in addressing a wide range of geographical information science problems [@Dobson2000; @Ahola2007; @Freire2012; @Bian2015; @Calka2017; @Batsaris2019; @Bahadori2021; @Wang2021; @Han2020]. One of the most common sources of population data is the Census of Population [@Tenerelli2015; @Liu2008]. In the EU, censuses are carried out every ten years and are regulated by the EU 763/2008 law [@EU2009]. During the census, detailed information about the population is collected with a high level of granularity. This information is confidential, and due to personal data laws and privacy concerns, census data are de-identified via spatial aggregation into coarse administrative units.
+
+Aggregated representations of census data may not reflect the spatial heterogeneity of the population within the reported administrative units, and therefore, one may need to use downscaling methods to transform population counts from the predefined coarse boundaries (source) into finer-scale sub-units (target). Areal interpolation is broadly used in population downscaling [@Tenerelli2015].
+
+Areal interpolation methods can be categorized according to usage of additional information such as land use data and night lights to guide the interpolation process. Ancillary information independent methods are further distinguished in: a) point-based and b) area-based [@Wu2005; @Comber2019]. Areal Weighted Interpolation (*AWI*) is one of the most common methods of areal interpolation of population without exploiting ancillary information [@Comber2019; @Kim2010;] in a Geographic Information System (GIS). *AWI* guides the interpolation process on the basis of areal weights calculated by the area of intersection between the source and target features [@Goodchild1980]. This method has four main advantages: a) It is easy and straightforward to implement; b) it does not require ancillary information; c) it preserves the initial volume (i.e., the total population within the source zone); and d) it may be implemented in both vector and raster environments [@Comber2019; @Fisher1995; @Kim2010; @Lam1983; @Qiu2012]. On the other hand, one of the main disadvantages of *AWI* is its assumption of homogeneity within source zone features [@Comber2019; @Qiu2012].
+
+\CRANpkg{sf} [@Pebesma2018] and \CRANpkg{areal} [@Prener2019] provide *AWI* functionality in R. \CRANpkg{sf} comes up with a formula either for extensive (population) or intensive (population density) interpolation that calculates the areal weights based on the total area of the source features (*total weights*), which makes it suitable for completely overlapping data. \CRANpkg{areal} extends sf functionality by providing an additional formula for weight calculation for data without complete overlap. In this case, areal weights are calculated using the sum of the remaining source areas after the intersection (*sum weights*) [@Prener2019].
+
+When the case involves downscaling of urban population data (small scale applications) where the source features (such as city blocks or census tracts) are somehow larger than target features (such as buildings) in terms of footprint area, the \CRANpkg{sf} functionality is unable to calculate the areal weights correctly. Additionally, \CRANpkg{areal} may be confusing for novice R (or GIS) users as it is not obvious that the weight option should be set to *sum* to calculate areal weights properly.
+
+To overcome such limitations, we introduce \CRANpkg{populR} [@populr], a package for downscaling of population data using areal interpolation methods. \CRANpkg{populR} provides an *AWI* approach that matches \CRANpkg{areal} functionality using *sum weights* and a *VWI* (Volume Weighted Interpolation) approach that uses the area of intersection between source and target features multiplied by the building height or number of floors (volume) to guide the interpolation process. 
+
+The remainder of the paper is structured as follows. The next section lists the methods included in the \CRANpkg{populR} package, further explains and demonstrates using examples. The numerical experiments section illustrates and discusses the results obtained by \CRANpkg{populR} and compares the results to other alternatives in R. Finally, the paper concludes with a summary, along with future improvements, in the conclusions section.
+
+# The populR package
+
+\CRANpkg{populR} is available to R users through the CRAN and Github repositories and may be installed as shown in the code block below. 
+
+```{r include=TRUE, echo=TRUE, eval=FALSE}
+
+# CRAN installation
+install.packages("populR")
+
+# Github installation
+devtools::install_github("mbatsaris/populR")
+
+```
+
+The \CRANpkg{populR} functionality focuses on three main pillars, namely downscaling, rounding, and comparing. Additionally, sample data (objects of class *sf* [@Pebesma2018]) representing city blocks, including population counts (*src*) and individual buildings attributed by the number of floors (*trg*) from a small part of the city of Mytilini, Greece, are also available for further experimentation with the package’s functionality.
+
+## Downscaling
+
+Population downscaling is carried out by the primary ``pp_estimate`` function.
+
+Suppose a set of $j = 1, ..., J$ city block polygons (source) accompanied by population counts and an incongruent yet superimposed set of $i = 1, ..., B_j$ individual building polygons (target), along with their characteristics such as footprint area and/or number of floors (or height), the ``pp_estimate``, aims to transform population counts from the source to the target using *AWI* and *VWI* approaches. The mathematics behind both approaches is presented in the next two subsections and graphically illustrated in  figure \@ref(fig:methods).
+
+```{r methods, out.width = "100%", fig.cap = "Illustration of the populR package's functionality. populR uses two areal interpolation methods to convert population values from city block polygons (left) to a set of individual building polygons (center). AWI (top) solely relies on the area of intersection between blocks and buildings (top-right). VWI (bottom) uses the area of intersection between blocks and buildings multiplied by the height or number of floors to aid the transformation process (bottom-right).", fig.alt="An image to graphically explain awi and vwi methods."}
+knitr::include_graphics("img/methods.png")
+```
+
+### AWI
+
+*AWI* proportionately interpolates the population value of the source features based on areal weights calculated by the area of intersection between the source and target zones and algebraically explained by equations \@ref(eq:eq1) and \@ref(eq:eq2) [@Goodchild1980]. In equation \@ref(eq:eq1), areal weights $w^a_{ij}$ are calculated by standardizing the measured footprint area of individual building $i$ in block $j$ ($a_{ij}$) over the sum of building footprint areas in the $j-th$ city block. Finally, building population values for building $i$ in block $j$ ($p_{ij}$) may be calculated by multiplying the areal weights of building $i$ in block $j$ with the population value of $j-th$ block ($P_j$).
+
+\begin{equation} 
+  w_{ij}^a = \frac{a_{ij}}{\sum_{i=1}^{B_{j}} a_{ij}} \text{ , }
+  (\#eq:eq1)
+\end{equation}
+
+\begin{equation}
+	p_{ij}^a = w_{ij}^a \times P_j \text{ . }
+	(\#eq:eq2)
+\end{equation}
+
+A demonstration of the *AWI* approach is presented in the code block below. In the first line of code,
+\CRANpkg{populR} is attached to the script. The next two lines load the package’s built-in data, and the last line
+demonstrates the usage of the ``pp_estimate`` function. As a result, ``pp_estimate`` returns an object
+of class sf including individual buildings (*target*) with population estimates.
+
+```{r include=TRUE, echo=TRUE, eval=FALSE}
+
+# attach package
+library(populR)
+
+# load data
+data('src')
+data('trg')
+
+# downscaling using awi
+awi <- pp_estimate(target = trg, source = src, spop = pop, sid = sid,
+method = awi)
+
+```
+
+Where:
+
+1. *target*: An object of class *sf* that is used to interpolate data to. Usually, target may include
+   polygon features representing building units
+2. *source*: An object of class *sf* including data to be interpolated. Source may be a set of coarse
+   polygon features, such as city blocks or census tracts
+3. *sid*: Source identification number
+4. *spop*: Source population values to be interpolated
+5. *method*: Two methods provided: *AWI* (Areal Weighted Interpolation) and *VWI* (Volume Weighted
+   Interpolation). *AWI* proportionately interpolates the population values based on areal weights
+   calculated by the area of intersection between the source and target zones. *VWI* proportionately
+   interpolates the population values based on volume weights calculated by the area of inter-
+   section between the source and target zones multiplied by the volume information (height or
+   number of floors)
+
+### VWI
+
+Given the number of floors (or height) of individual buildings, *VWI* applies the same logic as *AWI*. Instead of areal weights, *VWI* proportionately dis-aggregates source population counts using volume weights measured by the area of intersection multiplied either by individual building height (if available) or number of floors. *VWI* may be mathematically expressed by equations \@ref(eq:eq3) to \@ref(eq:eq5). First, the volume of building $i$ in block $j$ ($v_{ij}$) is measured by multiplying the footprint area ($a_{ij}$) of building $i$ in block $j$ with the number of floors or height ($n_{ij}$) as shown in equation \@ref(eq:eq3). Next, volume weights ($w^v_{ij}$) are calculated by standardizing the volume of building $i$ in block $j$ ($v_{ij}$) by the sum of the total volume of buildings in the $j-th$ block \@ref(eq:eq4). Then, building population values for building $i$ in block $j$ ($p^v_{ij}$) may be calculated by multiplying the volume weights ($w^v_{ij}$) of building $i$ in block $j$ with the population value of block $j$ ($P_J$) as shown in \@ref(eq:eq5).
+
+\begin{equation} 
+	v_{ij} = a_{ij} \times n_{ij} \text{ , }
+	(\#eq:eq3)
+\end{equation}
+
+\begin{equation} 
+	w_{ij}^v = \frac{v_{ij}}{\sum_{i=1}^{B_{j}} v_{ij}} \text{ , }
+	(\#eq:eq4)
+\end{equation}
+
+\begin{equation} 
+	p_{ij}^v = w_{ij}^v \times P_j \text{ . }
+	(\#eq:eq5)
+\end{equation}
+
+The code block below provides an example of the *VWI* approach.
+
+```{r include=TRUE, echo=TRUE, eval=FALSE}
+
+# downscaling using vwi
+vwi <- pp_estimate(target = trg, source = src, spop = pop, sid = sid,
+volume = floors, method = vwi)
+
+```
+
+Where:
+
+1. *volume*: Target feature volume information (height or number of floors). Required when method
+   is set to *vwi*
+   
+It is important to mention that when volume information (number of floors or building height)
+is not available for the entire target dataset, users may replace missing values with $1$ if they want to
+include them as buildings with 1 floor; otherwise, users may replace missing values with $0$ if they
+want to exclude them from the downscaling process.
+
+## Rounding
+
+*AWI* is volume-preserving [@Comber2019] (as *VWI*) and returns an object of class *sf* with
+decimal population counts for each target feature. To increase the readability of the results as well
+as to maintain the initial source population values, it is essential for many applications to provide
+integer values by rounding off to the closest integer. This transformation may result in a shortage or
+surplus in comparison to the initial values (source values), and therefore, to cope with this problem,
+the ``pp_round`` function is proposed.
+
+First, estimated population values are converted into integer numbers. Next, the ``pp_round`` function calculates the differences between the initial population counts and the sum of the integer values for each city block; it is activated only if the quantified difference is either positive or negative. In either case, during this process, target-based differences are also calculated and used to refine the integer counts by adding or removing one population unit in order to preserve the initial source counts when summed up.
+
+An example of the ``pp_round`` function is provided below.
+
+```{r include=TRUE, echo=TRUE, eval=FALSE}
+
+# downscaling using awi
+awi <- pp_round(x = awi, tpop = pp_est, spop = pop, sid = sid)
+
+# downscaling using awi
+vwi <- pp_round(x = vwi, tpop = pp_est, spop = pop, sid = sid)
+
+```
+
+Where:
+
+1. *x*: An object of class sf obtained by the ``pp_estimate`` function
+2. *tpop*: Target population estimates obtained by the ``pp_estimate`` function
+3. *spop*: Initial source population values (included after the implementation of the ``pp_estimate``
+   function)
+4. *sid*: Source identification number
+
+As a result, ``pp_round`` returns an object of class *sf* with integer estimates of population values
+with respect to the initial source population values.
+
+## Comparing
+
+Volume-preserving means that estimated values should sum up to the initial population counts for each source unit, and therefore, one may need to compare target estimates to the initial source values. For this purpose, a function is introduced under the alias ``pp_compare``. The ``pp_compare`` function measures the root mean squared error (RMSE), the mean absolute error (MAE), and finally, the statistical relationship between the initial source values and the estimated ones, which is calculated and depicted on a 2D scatter diagram along with the value of the correlation coefficient $R^2$.
+
+A short example of the ``pp_compare`` function is presented in the code block below, where *src_awi* (and *src_vwi*) is a *data.frame* created by grouping the sum of the estimated values along with the initial population values for each source feature.
+
+```{r include=TRUE, echo=TRUE, eval=FALSE}
+
+# attach library
+library(dplyr)
+
+# group estimated and actual values by source identification number - awi
+src_awi <- awi %>%
+  group_by(sid) %>%
+  summarise(est = sum(pp_est), act = unique(pop))
+
+# awi approach compare to source values
+pp_compare(x = src_awi, estimated = est, actual = act, title = "awi vs source")
+
+# group estimated and actual values by source identification number - vwi
+src_vwi <- vwi %>%
+  group_by(sid) %>%
+  summarise(est = sum(pp_est), act = unique(pop))
+
+# vwi approach compare to source values
+pp_compare(x = src_vwi, estimated = est, actual = act, title = "vwi vs source")
+
+
+```
+
+
+Where:
+
+1. *x*: An object of class *sf* or a *data.frame* including estimated and actual values
+2. *estimated*: Target population estimates obtained by the ``pp_estimate`` function
+3. *actual*: Actual population values
+4. *title*: Scatterplot title (quoted)
+
+``pp_compare`` returns a list of elements with RMSE, MAE, linear regression, and $R^2$ coefficient
+information.
+
+# Numerical Experimentation
+
+In this section, the results of the \CRANpkg{populR} package are illustrated and further compared to \CRANpkg{sf} and \CRANpkg{areal}. The analysis focus on implementation, comparison to a reference data set, and performance.
+
+## Case study
+
+To examine the efficacy and efficiency of the \CRANpkg{populR} extension based on actual data, a small part of
+the city of Mytilini was chosen as the subject for a case study (Figure \@ref(fig:studyarea)). The study area consists of 9
+city blocks (*src*), 179 buildings (*trg*), and 911 residents.
+
+```{r studyarea, out.width = "100%", fig.cap = "Part of the city of Mytilini used as the case study for numerical experiments. The study area is represented by 9 city blocks and 179 buildings (in orange). The study area counts 911 residents.", fig.alt="An image of a small part of the city of Mytilini used as the case study. The image shows city block and building polygons."}
+knitr::include_graphics("img/study_area.png")
+```
+
+```{r include=FALSE, echo=FALSE}
+t1 <- data.frame(
+  Title = c('City block population counts', 'City blocks', 'Buildings'),
+  Format = c('Tabular', 'Spatial', 'Spatial'),
+  Source = c('Hellenic Statistical Authority', 'Hellenic Statistical Authority', 'Hellenic Statistical Authority'),
+  Year = c('2011', '2011', '2011')
+)
+
+```
+
+
+```{r dtbl-html, eval = knitr::is_html_output(), layout = "c-body-outset"}
+
+knitr::kable(t1, align = 'c', format = "html", caption = "Data used for numerical experiments") %>%
+  kableExtra::kable_styling(position = "center")
+
+```
+
+
+```{r dtbl-ltx, eval = knitr::is_latex_output()}
+
+knitr::kable(t1, format = "latex", caption = "Data used for numerical experiments") %>% 
+  kableExtra::kable_styling(font_size = 7)
+
+``` 
+
+
+Table  `r knitr::asis_output(ifelse(knitr::is_html_output(), '\\@ref(tab:dtbl-html)', '\\@ref(tab:dtbl-ltx)'))` presents the data used in this case study. City block population counts were retrieved in tabular format while city blocks (source - *src*) and buildings (target - *trg*) were provided in spatial format. City block population counts and city blocks and buildings correspond to the 2011 Census of Housing and Population [@HSA2014].
+
+## Implementation
+
+In this section, a demonstration of the \CRANpkg{sf}, \CRANpkg{areal} and \CRANpkg{populR} packages takes place. First, the packages are attached to the script and next, \CRANpkg{populR} built-in data are loaded. Then, areal interpolation
+implementation follows for each one of the aforementioned packages.
+
+For the reader’s convenience, names were shortened as follows: a) *awi*: \CRANpkg{populR} *AWI* approach, b)
+*VWI*: \CRANpkg{populR} *vwi* approach, c) *aws*: \CRANpkg{areal} using extensive interpolation and *sum weights*, d) *awt*: \CRANpkg{areal} using extensive interpolation and *total weights*, and e) *sf*: \CRANpkg{sf} using extensive interpolation and *total weights*.
+
+```{r include=TRUE, echo=TRUE, eval=TRUE}
+
+# attach libraries
+library(populR)
+library(areal)
+library(sf)
+
+# load data
+data("trg", package = "populR")
+data("src", package = "populR")
+
+# populR - awi
+awi <- pp_estimate(target = trg, source = src, spop = pop, sid = sid,
+method = awi)
+
+# populR - vwi
+vwi <- pp_estimate(target = trg, source = src, spop = pop, sid = sid,
+volume = floors, method = vwi)
+
+# areal - sum weights
+aws <- aw_interpolate(trg, tid = tid, source = src, sid = 'sid',
+weight = 'sum', output = 'sf', extensive = 'pop')
+
+# areal - total weights
+awt <- aw_interpolate(trg, tid = tid, source = src, sid = 'sid',
+weight = 'total', output = 'sf', extensive = 'pop')
+
+# sf - total weights
+sf <- st_interpolate_aw(src['pop'], trg, extensive = TRUE)
+
+
+```
+
+```{r include=FALSE, echo=FALSE, eval=TRUE}
+colnames(aws)[colnames(aws) == 'pop'] <- 'pp_est'
+colnames(awt)[colnames(awt) == 'pop'] <- 'pp_est'
+colnames(sf)[colnames(sf) == 'pop'] <- 'pp_est'
+
+awi <- awi[order(awi$tid),]
+vwi <- vwi[order(vwi$tid),]
+data <- data.frame(
+  nr = 1:nrow(awi),
+  rf = round(awi$rf, digits = 2),
+  awi = round(awi$pp_est, digits = 2),
+  vwi = round(vwi$pp_est, digits = 2),
+  aws = round(aws$pp_est, digits = 2),
+  awt = round(awt$pp_est, digits = 2),
+  sf = round(sf$pp_est, digits = 2))
+
+
+```
+
+
+Evidently, \CRANpkg{sf} requires less arguments than \CRANpkg{populR} and \CRANpkg{areal}, which makes it very easy to implement. \CRANpkg{populR} requires at least 5 arguments, and \CRANpkg{areal} at least 7, which may increase the implementation complexity.
+
+The study area counts 911 residents, as already mentioned in previous section. *awi*, *vwi* and *aws*
+correctly estimated population values as they sum to 911, while *awt* and *sf* underestimated values.
+This is expected as both methods use the total area of the source features during the interpolation
+process and are useful when source and target features completely overlap.
+
+Moreover, identical results were obtained by the *awi* and *aws* approaches, but somehow different
+results were obtained by the *vwi*, as shown in Table `r knitr::asis_output(ifelse(knitr::is_html_output(), '\\@ref(tab:rtbl-html)', '\\@ref(tab:rtbl-ltx)'))`.
+
+```{r rtbl-html, eval = knitr::is_html_output(), layout = "c-body-outset"}
+
+knitr::kable(data[1:10, c(1,3:7)], format = "html", caption = "Implementation results obtained by awi, vwi, awt, aws and sf for 10 buildings of the study area.") %>%
+  kableExtra::kable_styling(position = "center")
+
+```
+
+
+```{r rtbl-ltx, eval = knitr::is_latex_output()}
+
+knitr::kable(data[1:10, c(1,3:7)], format = "latex", caption = "Implementation results obtained by awi, vwi, awt, aws and sf for 10 buildings of the study area.") %>% 
+  kableExtra::kable_styling(font_size = 7)
+
+``` 
+
+Finally, visual representations of the results are shown in Figure \@ref(fig:maps).
+
+```{r maps, out.width = "49%", out.height="20%", fig.show='hold', fig.cap = "Cartographic representation of the downscaling results acquired by a) awt (top-left), b) sf (top-right), c) awi (center-left), d) aws (center-right), and e) vwi (bottom). awt and sf use the same formula therefore, they provide similar results. Additionally, the same results obtained by aws and awi as they are based on the same formula. vwi provide somehow different distribution because of the influence of the volume weights during the interpolation process.", fig.alt="An image of 5 maps. One for each method presented in this article."}
+knitr::include_graphics(c("img/result_maps/map_awt.png", "img/result_maps/map_sf.png", "img/result_maps/map_awi.png", "img/result_maps/map_aws.png", "img/result_maps/map_vwi.png"))
+
+
+
+```
+
+
+
+## Comparison to reference data
+
+Due to confidentiality concerns, population data at the granularity of building are not publicly available in Greece. Therefore, an alternate population distribution previously published in @Batsaris2019 was used as reference data (*rf*). *rf* population values are also included in the build-in *trg* data set.
+
+Using the ``pp_compare`` function as shown in the example below, we investigated the statistical relationship between *rf* and the results obtained by \CRANpkg{populR}, \CRANpkg{areal}, and \CRANpkg{sf} packages.
+
+```{r include=TRUE, echo=TRUE, eval=FALSE}
+
+# compare awi to rf
+pp_compare(data, estimated = awi, actual = rf, title = "awi vs rf")
+
+# compare vwi to rf
+pp_compare(data, estimated = vwi, actual = rf, title = "vwi vs rf")
+
+# compare sf to rf
+pp_compare(data, estimated = sf, actual = rf, title = "sf vs rf")
+
+# compare awt to rf
+pp_compare(data, estimated = awt, actual = rf, title = "awt vs rf")
+
+# compare aws to rf
+pp_compare(data, estimated = aws, actual = rf, title = "aws vs rf")
+
+```
+
+Table `r knitr::asis_output(ifelse(knitr::is_html_output(), '\\@ref(tab:2rtbl-html)', '\\@ref(tab:2rtbl-ltx)'))` presents the results obtained for the first 10 individual buildings for each implementation in comparison to *rf* values. Additionally, $RMSE$, $MAE$, and $R^2$ values are measured and depicted in
+Table `r knitr::asis_output(ifelse(knitr::is_html_output(), '\\@ref(tab:ertbl-html)', '\\@ref(tab:ertbl-ltx)'))` and finally, scatter diagrams provided in Figure \@ref(fig:scatterplots).
+
+Generally the scatter diagrams (Figure `r knitr::asis_output(ifelse(knitr::is_html_output(), '\\@ref(fig:scatterplots)', '\\@ref(fig:scatterplots-ltx)'))`)) suggest strong and positive relationships in all cases. However, the *vwi* approach obtained the best results and achieved the smallest $RMSE$ (1.44824) and $MAE$ (0.9358159) values and the largest $R^2$ (0.9878) value as shown in Table and Figure. Moreover, *aws* and *awi* provided the same error and $R^2$ measurements ($RMSE$: 5.325914, $MAE$: 2.748126 and $R^2$: 0.8215). *sf* and *awt* provided the same results and performed poorly in comparison to *vwi* by obtaining the largest error measurements and the smallest $R^2$ ($RMSE$: 7.416329, $MAE$: 3.664695, and $R^2$: 0.80367).
+
+```{r 2rtbl-html, eval = knitr::is_html_output(), layout = "c-body-outset"}
+
+knitr::kable(data[1:10, ], format = "html", caption = "Implementation results obtained by awi, vwi, awt, aws and sf for 10 buildings of the study area in comparison to reference data (rf).") %>%
+  kableExtra::kable_styling(position = "center")
+
+```
+
+
+```{r 2rtbl-ltx, eval = knitr::is_latex_output()}
+
+knitr::kable(data[1:10, ], format = "latex", caption = "Implementation results obtained by awi, vwi, awt, aws and sf for 10 buildings of the study area in comparison to reference data (rf).") %>% 
+  kableExtra::kable_styling(font_size = 7)
+
+``` 
+
+
+```{r include=FALSE, echo=FALSE, eval=TRUE}
+
+err <- data.frame(
+  Title = c('rf vs vwi', 'rf vs awi', 'rf vs aws', 'rf vs sf', 'rf vs awt'),
+  RMSE = c(1.45, 5.33, 5.33, 7.42, 7.42),
+  MAE = c(0.94, 2.75, 2.75, 3.66, 3.66),
+  R = c(0.988, 0.822, 0.822, 0.804, 0.804)
+)
+
+names(err)[4] <- 'R^2^'
+
+```
+
+```{r ertbl-html, eval = knitr::is_html_output(), layout = "c-body-outset"}
+
+knitr::kable(err, format = "html", caption = "RMSE, MAE and R^2^ values were calculated to assess the estimation accuracy using rf as the control variable. vwi provide the best measurements.", escape = F) %>%
+  kableExtra::kable_styling(position = "center")
+
+```
+
+
+```{r ertbl-ltx, eval = knitr::is_latex_output()}
+
+knitr::kable(err, col.names = c('Title', 'RMSE', 'MAE', 'R\\textsuperscript{2}'), escape = FALSE, format = "latex", caption = "RMSE, MAE and R\\textsuperscript{2} values were calculated to assess the estimation accuracy using rf as the control variable. vwi provide the best measurements.") %>% 
+  kableExtra::kable_styling(font_size = 7)
+
+``` 
+
+```{r scatterplots-ltx, eval = knitr::is_latex_output(), out.width = "49%", fig.show="hold", fig.cap = "Investigation of the relationship of the outcomes and reference data (rf) as the control variable. a) rf vs awt, R\\textsuperscript{2} = 0.804 (top-left), b) rf vs sf, R\\textsuperscript{2} = 0.804 (top-right), c) rf vs aws, R\\textsuperscript{2} = 0.822 (center-left), d) rf vs awi, R\\textsuperscript{2} = 0.822 (center-right) and e) rf vs vwi, R\\textsuperscript{2} = 0.988.", fig.alt="An image of five scatter plots produced by the pp\\_compare function."}
+knitr::include_graphics(c("img/result_figs/rf_vs_awt.png", "img/result_figs/rf_vs_sf.png", "img/result_figs/rf_vs_aws.png",
+                        "img/result_figs/rf_vs_awi.png", "img/result_figs/rf_vs_vwi.png"))
+```
+
+```{r scatterplots, eval = knitr::is_html_output(), out.width = "49%", fig.show="hold", fig.cap = "Investigation of the relationship of the outcomes and reference data (rf) as the control variable. a) rf vs awt, R^2^ = 0.804 (top-left), b) rf vs sf, R^2^ = 0.804 (top-right), c) rf vs aws, R^2^ = 0.822 (center-left), d) rf vs awi, R^2^ = 0.822 (center-right) and e) rf vs vwi, R^2^ = 0.988.", fig.alt="An image of five scatter plots produced by the pp\\_compare function.", fig.alt="An image of five scatter plots produced by the pp\\_compare function."}
+knitr::include_graphics(c("img/result_figs/rf_vs_awt.png", "img/result_figs/rf_vs_sf.png", "img/result_figs/rf_vs_aws.png",
+                        "img/result_figs/rf_vs_awi.png", "img/result_figs/rf_vs_vwi.png"))
+```
+
+## Performance
+
+In this section, a performance comparison (execution times) takes place using the \CRANpkg{microbenchmark}
+package. Performance tests are carried out using the sample data provided by \CRANpkg{populR} as well as
+external data sets from a significantly larger study area (Chios, Greece) with 845 city blocks and 15,946
+buildings.
+
+Execution time measurements for both cases are shown in Tables `r knitr::asis_output(ifelse(knitr::is_html_output(), '\\@ref(tab:bidp-html)', '\\@ref(tab:bidp-ltx)'))` and `r knitr::asis_output(ifelse(knitr::is_html_output(), '\\@ref(tab:chdp-html)', '\\@ref(tab:chdp-ltx)'))` accordingly. In both
+cases, execution time measurements suggest that \CRANpkg{populR} performs faster than \CRANpkg{areal} and \CRANpkg{sf}. Using the built-in data, *awi* and *vwi* scored the best mean execution time (about 76 milliseconds), which is about
+54 millisecond faster than *aws*, 61 milliseconds faster than *sf*, and almost 70 milliseconds faster than
+*awt.*
+
+```{r include=FALSE, echo=FALSE, eval=TRUE}
+
+bidp <- data.frame(
+  Name = c('vwi', 'awi', 'aws',  'awt', 'sf'),
+  Min = c(74.06, 74.31, 128.48, 172.08, 136.48),
+  Mean = c(76.23, 75.91, 132.56, 176.27, 142.33),
+  Max = c(84.39, 99.70, 143.97, 185.86, 289.38)
+)
+
+chdp <- data.frame(
+  Name = c('vwi', 'awi', 'aws',  'awt', 'sf'),
+  Min = c(1.55, 1.55, 2.26, 2.27, 2.63),
+  Mean = c(1.67, 1.68, 2.39, 2.42, 2.79),
+  Max = c(1.94, 1.95, 2.64, 2.62, 3.17)
+)
+
+```
+
+```{r bidp-html, eval = knitr::is_html_output(), layout = "c-body-outset"}
+
+knitr::kable(bidp, format = "html", caption = "Execution time measurement comparisons (in milliseconds) using microbenchmark and sample data") %>%
+  kableExtra::kable_styling(position = "center")
+
+```
+
+
+```{r bidp-ltx, eval = knitr::is_latex_output()}
+
+knitr::kable(bidp, format = "latex", caption = "Execution time measurement comparisons (in milliseconds) using microbenchmark and sample data") %>% 
+  kableExtra::kable_styling(font_size = 7)
+
+``` 
+
+```{r chdp-html, eval = knitr::is_html_output(), layout = "c-body-outset"}
+
+knitr::kable(chdp, format = "html", caption = "Execution time measurement comparisons (in seconds) using microbenchmark and external
+data") %>%
+  kableExtra::kable_styling(position = "center")
+
+```
+
+
+```{r chdp-ltx, eval = knitr::is_latex_output()}
+
+knitr::kable(chdp, format = "latex", caption = "Execution time measurement comparisons (in seconds) using microbenchmark and external
+data") %>% 
+  kableExtra::kable_styling(font_size = 7)
+
+``` 
+
+# Conclusions
+
+This study is an attempt to contribute to the continuously growing scientific literature of population
+downscaling using areal interpolation methods. Despite the fact that there are so many downscaling
+methods developed, only a few implementation tools are available to the GIS and R community, and
+therefore, it may be challenging for non-expert GIS users to take advantage of these methods [@Mennis2009; @Langford2007]. Due to this lack of implementation tools, this study attempts to fill this gap
+by introducing \CRANpkg{populR}, an R package for population downscaling using areal interpolation methods.
+
+This package implements two areal interpolation methods, namely *awi* and *vwi.* The *awi* approach
+guides the interpolation process using the area of intersection between source and target zones while
+*vwi* uses the number of floors as additional information to influence the downscaling process. The
+package is available to the R community though the CRAN and Github repositories.
+
+In order to show the efficacy and efficiency of the introduced package on actual data, a subset
+area of the city of Mytilini, Greece, was used in the case study. Moreover, a comparative analysis
+between \CRANpkg{populR}, \CRANpkg{areal}, and \CRANpkg{sf} was carried out, and the results showed that *vwi* outperformed others by achieving the smallest error measurements, easy implementation and faster execution times. Thus,
+we strongly believe that R users will gain significant advantage by using \CRANpkg{populR} for population
+downscaling.
+
+The evaluation of the results indicates the potential of \CRANpkg{populR} in providing better and faster results
+in comparison to existing R packages. However, we believe that the results may be further improved
+by incorporating new forms of data, such as Volunteered Geographic Information (VGI), acquired
+from either social media or open spatial databases such as Open Street Map [@Bakillah2014; @Guo2017; @Yang2019; @Comber2019]. By incorporating VGI as ancillary information, we can identify different types of buildings and therefore adjust the weight calculation accordingly. This will be an important improvement that would be helpful for R users interested in population
+downscaling.
+
+
