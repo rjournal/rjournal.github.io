@@ -40,7 +40,8 @@ knitr::kable(cran_sub$autolast, format = "pipe", align = "rr")
 ## ----cran_views_data, include=FALSE-------------------------------------------
 ## generate via cran_views(new = c("Agriculture", "MixedModels", "Phylogenetics"))
 cran_views <- readRDS("cran_views.rds")
-cran_views$active <- cran_views$ntotal/as.numeric(cran_zoo[Sys.Date()])
+# cran_views$active <- cran_views$ntotal/as.numeric(cran_zoo[Sys.Date()])
+cran_views$active <- cran_views$ntotal/as.numeric(tail(cran_zoo, 1))
 
 
 ## ----cran_views_new, echo=FALSE, results="asis"-------------------------------
