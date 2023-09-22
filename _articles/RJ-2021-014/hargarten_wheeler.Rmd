@@ -1,0 +1,668 @@
+---
+title: "miWQS: Multiple Imputation Using Weighted Quantile Sum Regression"
+author:
+ - name: Paul M. Hargarten
+   affiliation: Virginia Commonwealth University
+   address:             
+    -  One Capitol Square 
+    -  830 East Main Street Seventh Floor
+    -  Richmond, Virginia 23219
+   email: hargartenp@vcu.edu
+ - name: David C. Wheeler
+   affiliation: Virginia Commonwealth University
+   address:                   
+    -  One Capitol Square 
+    -  830 East Main Street Seventh Floor
+    -  Richmond, Virginia 23219
+   email: david.wheeler@vcuhealth.org
+abstract: >
+  The \pkg{miWQS} package in the Comprehensive R Archive Network (CRAN) utilizes weighted quantile sum regression (WQS) in the multiple imputation (MI) framework. The data analyzed is a set/mixture of continuous and correlated components/chemicals that are reasonable to combine in an index and share a common outcome. These components are also interval-censored between zero and upper thresholds, or detection limits, which may differ among the components. This type of data is found in areas such as chemical epidemiological studies, sociology, and genomics. The \pkg{miWQS} package can be run using complete or incomplete data, which may be placed in the first quantile, or imputed using bootstrap or Bayesian approach. This article provides a stepwise and hands-on approach to handle uncertainty due to values below the detection limit in correlated component mixture problems.
+keywords: missing data, multiple imputation, wqs regression, gibbs sampler, R, detection limit, biomarker
+output:
+    rticles::rjournal_article:
+      number_sections: TRUE
+      includes:
+        in_header: preamble.tex
+---
+
+<!-- 
+If I use bookdown::pdf_book(), I need to: 
+ convert \pkg{...} to **..** (make packages bold)
+ convert \code{...} to `...` 
+ convert \citep{...} to [@ ... ] 
+ convert R to $\mathcal{R}$
+ convert \fig::mi to \fig:mi
+I think I need to do this for more control over bibliography and format. bibliography: dischapterbibtex.bib
+csl: /Users/Shared/Zotero/styles/multidisciplinary-digital-publishing-institute.csl
+Use Regular Expression in RStudio (Find & Replace with regex.)
+
+
+
+---
+-->
+
+<!-- 
+7/13/20: Incorporated DW changes for most of reviewer's comments. 
+Given the reviewer's comments, I have adjusted the first two paragraphs of the introduction (now three paragraphs), the first paragraph on data structure, and added a sentence on page 10. I plan to address the remaining comments--namely, nature of independent imputation and modify the conclusion section of the paper after I submit it to the committee on Wednesday.
+
+
+5/30/20: Disserstation Chapter 
+ -- Based on miWQS_vignette_JSS submission 
+ [] Add "Chapter 3" to Title of vignette and Figure titles 
+ [] Change references to "Enviornmental Research"
+ [] 
+ *?? Removed "to help researchers for" in legend for Figure 6?
+
+6/3: Changes made to JSS post submission
+
+ADDED THESE ABBREVIATIONS TO JSS_POST_SUBMISSION: 
+AIC                 					32
+detection limit (DL)					21
+Multiple Imputation in Connection with the Weighted Quantile Sum Regression (MI-WQS)	5
+number of imputations (*K*)
+*n* 	sample size
+*c*	number of chemicals
+
+* REMOVE PDF: probability density function (PDF)			1
+
+* Edit Figure 6 caption. ???
+ A decision tree to help researchers in using the miWQS package. 
+to
+ Decision tree to use the MI-WQS package 
+
+5/30/20: Submitted to JSS. 
+
+5/1/20: Made all edits/changes match the R Journal from to JSS (i.e. Vignette_RJournal_2020APr) 
+Shock: Spaces not changed in pdf file. Reduced all spaces from 2 to 1. Also removed spaces before periods, (e.g. "Some sentence .")
+Shock: knitr options don't work if spaces are between options (e.g. "echo = FALSE")
+
+Going back and forth whether to captilize examples in specific case (as in Example 1). Decided to keep it upper case and made it consistent.
+
+Want to make Figures 3 and 4 smaller
+For some reason Figure 1 and 6, the figures I imported contain the # in the pdf. ?? 
+-->
+
+```{r libraries, echo=FALSE, message=FALSE}
+# The GGally and sessioninfo packages are also used in this vignette.
+if (!requireNamespace("GGally", quietly = TRUE)) {
+  message("You need to install the package GGally to show correlation plot.")
+} else {
+  library("GGally")
+}
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  message("You need to install the package ggplot2 to show correlation plot.")
+} else {
+  library("ggplot2")
+}
+if (!requireNamespace("knitr", quietly = TRUE)) {
+  message("You need to install the package knitr.")
+} else {
+  library("knitr")  
+}
+if (!requireNamespace("sessioninfo", quietly = TRUE)) {
+  message("You need to install the package sessioninfo to show computational details.")
+} else {
+  library("sessioninfo") 
+}
+```
+
+```{r setup,  echo=FALSE, cache=FALSE}
+# options(prompt = "> ", continue = "+ ", width = 70, useFancyQuotes = FALSE)
+
+knitr::opts_chunk$set(
+  cache = TRUE, 
+  collapse = TRUE, # If TRUE, all output would be in the code chunk.
+  results = "markup",
+  comment = NA,
+  prompt = TRUE,
+  strip.white = TRUE,
+  tidy = "styler",
+  tidy.opts = list(width.cutoff = 60), # options for tidy to remove blank lines [blank = FALSE] and set the approximate line width to be 80.
+  fig.pos = "h",
+  fig.show = "asis",
+  fig.align = "center"
+  # fig.height = 4,  #inches  #Default figure size for vingette is 3 x 3.
+  #  fig.width = 4   #inches
+)
+options(tinytex.verbose = TRUE)
+```
+
+```{r function.f, echo=FALSE}
+#' Summary Statistics calculated in the imputed bootstrapped and Bayesian arrays using apply()
+f <- function(x) {
+  a <- c(min(x), quantile(x, 0.05), mean(x), max(x))
+  names(a) <- c("min", "P.5", "mean", "max")
+  # noquote(sprintf(a, fmt = '%#.4f'))
+  a
+}
+
+```
+
+# Introduction 
+
+  When studying public health, researchers want to determine if a set/mixture of continuous and correlated components/chemicals is associated with an outcome and if so, which components are important in that mixture \citep{braunWhatCanEpidemiological2016}. These components share a common univariate outcome but are interval-censored between zero and low thresholds, or detection limits, that may be different across the components.  
+  
+  We have created the \pkg{miWQS} package to analyze epidemiological studies with chemical exposures, but researchers may also apply the package to public health, genomics, or other areas in public health and medicine.  Epidemiologists examine chemical mixtures because human exposure to a large number of chemicals may increase the risk of disease \citep{braunWhatCanEpidemiological2016}. Researchers may also create a socioeconomic status (SES) index that is generally composed of continuous correlated variables in the following domains: educational achievement, race, income, housing, and employment \citep{wheelerEstimatingAreaLevelSocioeconomic2017, wheelerExplainingVariationElevated2019}. For example, race may be represented by percent of the population that is white. There are several examples of this in the literature \citep{wheelerBayesianDeprivationIndex2019, wheelerNeighborhoodDisadvantageTobacco2020}. Although these variables may have missing values throughout the distribution, researchers may use the \pkg{miWQS} package to create SES index even in the presence of missing data.  Alternatively, genome-wide association studies (GWAS's) analyze DNA sequence variation using single nucleotide polymorphisms (SNPs) \citep{bushChapter11GenomeWide2012}. As SNPs constitute high-frequency changes of a single base in the DNA sequence throughout the genome, SNPs serve as markers of a genomic region \citep{bushChapter11GenomeWide2012}. Thus, SNPs are highly correlated \citep{bushChapter11GenomeWide2012, ferberModelingDiscreteSurvival2015}. The research aim of a GWAS is to find associations between genes and common and complex diseases like schizophrenia and to identify specific associated genes. The \pkg{miWQS} package can answer this research aim while simultaneously accounting for the correlation between SNPs. 
+  
+  In the <!--chemical exposure 5/15 --> data, an approach to account for the correlation among completely observed components is the weighted quantile sum (WQS) regression \citep{carricoCharacterizationWeightedQuantile2014, czarnotaAssessmentWeightedQuantile2015, genningsCohortStudyEvaluation2013}. The application of WQS regression to censored data has been limited statistically and computationally on CRAN (the Comprehensive R Archive Network) \citep{czarnotaAnalysisEnvironmentalChemical2015, hortonCOOccurringExposurePerchlorate2015, czarnotaWqsWeightedQuantile2015, renzettiGWQSGeneralizedWeighted2020}. In order to fully account for the uncertainty due to censoring, the \pkg{miWQS} package utilizes WQS regression in the multiple imputation (MI) framework \citep{hargartenMiWQSMultipleImputation2020, hargartenAccountingUncertaintyDue2020}.
+
+<!--$#@#$
+  In addition, the package could be used to analyze correlated socioeconomic variables, correlated protein levels [@margolisFunctionalConnectivityReading2020], correlated genetic data and an outcome.
+A WQS analysis of 74 miRNA probe on gestational outcome. (Sanders 2017)
+ !-->  
+  
+  As compared to other WQS packages in R, the \pkg{miWQS} package is specifically designed to use highly correlated data that include interval-censoring. The \pkg{wqs} \citep{czarnotaWqsWeightedQuantile2015} package performs WQS regression only on complete mixtures that share a continuous or binary outcome. The \code{wqs.est()} function in the \pkg{wqs} package can be used for continuous outcomes and displays an error if fed incomplete information. The \code{gwqs()} function in the \pkg{gWQS} package runs WQS regression when the outcome is continuous, binary, binomial, multinomial, or a count. If incomplete components are inputted into \code{gwqs()}, the function uses non-missing data without warning \citep{renzettiGWQSGeneralizedWeighted2020}. By contrast, the \pkg{miWQS} functions are constructed to handle both complete and incomplete mixture data that share a continuous, binary, or count <!--- or rate --> outcome by using MI. 
+  
+```{r fig.mi, echo=FALSE, fig.pos="h", fig.scap=NULL, fig.ext="pdf", fig.cap="\\label{fig::mi} Multiple Imputation in connection with the Weighted Quantile Sum regression (MI-WQS). Given partially observed correlated chemical exposures that share a common outcome and covariates, (stage 1) researchers impute the below detection limit values (dark circles) K times to form complete datasets. In stage 2, each imputed dataset is analyzed using WQS regression. In stage 3, the coefficient estimates from the K WQS regressions (diamonds) are combined into a final estimate (square)."}
+
+knitr::include_graphics("figure-word/fig_mi_intro.pdf")
+```
+ 
+  The MI approach provides valid statistical inference in estimating regression parameters when data are missing \citep{dongPrincipledMissingData2013, rubinMultipleImputationNonresponse1987, whiteMultipleImputationUsing2011}. Specifically, MI consists of three stages: (1) imputation, (2) analysis, and (3) pooling (Figure \ref{fig::mi}). First, we create several imputed datasets by replacing the below the detection limit (BDL) values by plausible data values. The complete datasets are identical for the observed data but are different in the imputed values. Second, we analyze each complete dataset using WQS regression to obtain estimates \citep{carricoCharacterizationWeightedQuantile2014, czarnotaAssessmentWeightedQuantile2015, genningsCohortStudyEvaluation2013, hargartenAccountingUncertaintyDue2020}. Lastly, we combine each WQS estimate from different analyses to form one final estimate, to find its variance, and to perform statistical tests in order to determine the significance of the exposure effects. 
+<!-- 5/15 Edits WQS regression selects variables that include a weighted index of the correlated components scored as quantiles-->
+
+  Other MI packages in R have functions that combine estimates, but these are different than the \code{pool.mi()} function used in the \pkg{miWQS} package. The \pkg{mice} (multiple imputation by chained equations) package implements a strategy to impute multivariate missing data using fully conditional densities \citep{vanbuurenMiceMultivariateImputation2011}. Its pool function combines one estimate at a time, while \code{pool.mi()} combines all estimates simultaneously. The \pkg{norm} package allows users to impute values with an assumed multivariate normal distribution \citep{novoNormAnalysisMultivariate2013}. Its pool function, \code{mi.inference()}, does not allow the user to adjust the degree of freedom due to small sample sizes in contrast to \code{pool.mi()}. The \pkg{mi} package performs multiple imputation with missing values and saves the results as a \code{mi-class} object \citep{gelmanMultipleImputationDiagnostics2011}. As a \code{mi-class} object is used to pool estimates inside the \pkg{mi} package, we cannot use it to pool estimates obtained in other packages. 
+  
+  Contrasting with the other packages on CRAN, the purpose of the \pkg{miWQS} package is to find an association of interval-censored mixture data with an outcome. The \pkg{miWQS} package can be run using complete or incomplete data. Incomplete data may be placed in the first quantile of the index or imputed using bootstrap or Bayesian approach. In this vignette, we will discuss how the data are formatted and then answer the research objectives using the \pkg{miWQS} package in four different ways: (1) with complete data, (2) with incomplete data placed in the first quantile, (3) with incomplete data imputed by bootstrapping, and (4) with incomplete data by using a Bayesian approach.
+
+# Data structure
+
+<!--OR This section describes the formatting of data necessary to use [TEMP NOTE] -->
+  This section describes what the data should look like in order to use the \pkg{miWQS} package. We wish to assess the association of the mixture of components, $\boldsymbol{X}$, and a univariate outcome, $y$, while accounting for other covariates, $\boldsymbol{Z}$. However, the continuous non-detects in the mixture ($\boldsymbol{X}$) are interval-censored between zero and different detection limits $DL$. Any missing values in the covariates or outcome are ignored and removed before imputation and analysis. Although $\boldsymbol{X}$ may refer to a variable with no obvious $DL$, we consider chemical concentrations $\boldsymbol{X}$ with each being partially observed in this vignette. 
+  
+  Our example demonstrating the use of the \pkg{miWQS} package is the provided dataset, \code{simdata87}. It is a list that consists of:  14 non-missing chemical concentrations, 14 chemical concentrations with each having 10% missing, 14 detection limits, a binary outcome representing cancer diagnosis, and three covariates. The dataset was generated as part of a simulation study with 1,000 subjects \citep{hargartenAccountingUncertaintyDue2020}. 
+  
+  After installing the R package \pkg{miWQS} from CRAN, load the package and the dataset as follows. 
+```{r data1}
+library("miWQS")
+data("simdata87")
+```
+
+  The numeric components of interest to combine into an index $\boldsymbol{X}$ are stored in a matrix or a data frame. Any missing values in $\boldsymbol{X}$ are denoted by NA's and are assumed to be censored between zero and an upper threshold, _DL_. The _DL_ is a numeric vector, where each element represents the detection limit (DL) for each chemical. In order to use the imputation techniques in \pkg{miWQS}, each chemical must have a known DL, or an upper bound. Otherwise, chemical values are placed in the first quantile (BDLQ1) of the weighted index (see [Example 2](#Example-2)). For instance, 14 non-missing chemical concentrations are saved as columns in a matrix \code{simdata87\$X.true}. The matrix \code{simdata87\$X.bdl} contains these 14 chemical concentrations, but 100 values are subbed as missing for each chemical between zero and different detection limits. These detection limits are saved in element \code{DL} of \code{simdata87} and are printed below along with their chemical names. 
+
+```{r dataDL}
+simdata87$DL
+```
+
+A heat map of the observed logarithmic chemical concentrations (\code{simdata87\$X.bdl}) shows the correlations among the components in our dataset (Figure \ref{fig::dataCorr}). The \pkg{miWQS} package handles such correlated component data to examine whether the mixture is associated with the outcome.
+
+```{r dataCorr, results="hold",  fig.pos="h", fig.width=5, fig.height=5, fig.cap="\\label{fig::dataCorr} Heat map of the correlations using the fourteen observed chemical logarithmic concentrations in dataset simdata87. The heat map was generated using the GGally package."}
+
+GGally::ggcorr(
+  log(simdata87$X.bdl),
+  method = c("pairwise", "spearman"),
+  geom = "tile", layout.exp = 2, hjust = 0.75,
+  size = 3, 
+  legend.position = "bottom"
+)
+```
+
+  Chemical exposure patterns often differ between individuals due to demographics and other confounders. The additional covariates $\boldsymbol{Z}$ can be represented as a vector, data frame, or matrix. For example, the element \code{Z.sim} in the list \code{simdata87} is a matrix that contains an individual's age, sex (Female/Male), ethnicity (Hispanic/Non-Hispanic), and race (White/non-White). Some statistics of the covariates are shown below. 
+```{r}
+summary(simdata87$Z.sim[, "Age"])
+apply(simdata87$Z.sim[, -1], 2, table)
+```
+
+  The univariate outcome shared among the components, $y$, may be continuous, count-based, or binary; it is represented as a numeric vector or a factor in R. The mean of the outcome, $\xi$, relates the covariates and chemicals by a link function _g()_ as in generalized linear models. Continuous, count-based, and binary outcomes all commonly arise in public health and medicine. First, exposure to a mixture of chemicals may be associated with continuous health outcomes, such as body mass index (BMI), systolic blood pressure, or cholesterol. When $y$ is continuous, we assume a Gaussian distribution using an identity link. Next, count health outcomes may arise in evaluations of socioeconomic data or environmental exposures in census regions. When $y$ is a count, we assume a Poisson distribution with a log link and use an offset if a rate is modeled. Finally, binary health outcomes are common in environmental exposure data and in case-control studies. When $y$ is binary, we assume a Bernoulli distribution using a logistic link. In our dataset, the \code{y.scenario} element of \code{simdata87} is binary. Suppose that \code{y.scenario} consists of cancer cases (represented by 1) and controls (represented by 0). The table below shows that 457 individuals (45.7%) are diagnosed with cancer. 
+
+```{r dataY, results="hold"}
+cat("Counts")
+table(simdata87$y.scenario)
+```
+```{r dataYii, echo=FALSE}
+# Percentages
+# table(simdata87$y.scenario)/1000
+```
+
+  In our dataset--\code{simdata87}--we will like to answer the following research questions: (1) Is the mixture of correlated chemicals associated with cancer; (2) if so, what are the important chemicals? In the examples that follow, we will use both non-missing and missing chemical concentrations that are handled in four different ways. 
+
+# Example 1: WQS regression using complete data
+
+  WQS regression allows us to estimate the effect of a chemical mixture on the disease while parsimoniously selecting important components \citep{carricoCharacterizationWeightedQuantile2014, czarnotaAssessmentWeightedQuantile2015, genningsCohortStudyEvaluation2013, hargartenAccountingUncertaintyDue2020}. Briefly, WQS regression was designed to select components in environmental exposure analysis. The correlated components are scored into quantiles. Let $q_{ij}$ represent the values of the $jth$ chemical exposed in the $ith$ subject. Ideally, the data should be randomly split into a training dataset and validation dataset.  While the training set is used to create the WQS index, the validation dataset is used to assess the association of the weighted index with the outcome.  Yet, small datasets should not be split as splitting them may result in inadequate power to detect a signal.
+  
+  In the training dataset, the weights are estimated from $B$ bootstrapped samples of size $n_T$ to form the weighted index. 
+<!-- In the training dataset, $B$ total bootstrap samples of the sample size $n_T$ are generated. Bootstrapping is optional, but including bootstraps increases senestivity in detecting important chemimcals in the data (Carrico et al 2014) \citep{carricoCharacterizationWeightedQuantile2014}. (Note to self: Decided to not include this, as to make this short.) --> Each bootstrap sample is used to estimate the unknown weights $w_j$ that maximize the likelihood in the following nonlinear model: 
+$$g( \xi_{i} ) = \beta_{0b}^{(T)} + \beta_{1b}^{(T)} \cdot \left( \sum_{j=1}^c w_{jb}\cdot q_{ij} \right) +  \boldsymbol{z}_{ib}^{\prime} \cdot \boldsymbol{\theta}^{(T)}, $$
+subject to 
+$$\beta_{1b}^{(T)} >0, \; 0 \le w_{jb} \le 1 , \; \text{and} \; \sum_{j=1}^c w_{jb} = 1 $$
+for the $b^{\text{th}}$ bootstrap sample. The parameters are as follows: $\beta_{0b}^{(T)}$ is the intercept, $\beta_{1b}^{(T)}$ is the overall mixture effect, and $\boldsymbol{\theta}$ are the covariate parameters. The term $\left( \sum_{j=1}^c w_{jb}\cdot q_{ij} \right)$ represents the weighted index of the $c$ chemicals of interest. The parameters in the training dataset are represented with superscript $T$. The final weight estimate $\bar{w_j}$ is calculated as an average of the bootstrap estimates $\hat{w}_{jb}$ for the jth chemical: 
+$$\bar{w_j} = \frac{1}{B} \sum_{b=1}^B \hat{w}_{jb}.$$
+
+
+A constraint is placed on $\beta_{1b}^{(T)}$ to allow for interpretation of the index \citep{carricoCharacterizationWeightedQuantile2014}. Often, exploratory single-chemical analyses, shown in [Appendix 1](#Appendix-1), show that some components in the mixture have a negative association with the outcome, while others have a positive association. In environmental risk analysis, researchers are often interested in a positive association between the mixture of components and an adverse health outcome. However, if a researcher hypothesizes that the overall mixture is protective of the outcome, the constraint $\beta_{1b}^{(T)} > 0$ should be switched to $\beta_{1b}^{(T)} < 0$. 
+
+Then, the weighted quantile index score of the $i^{\text{th}}$ individual is specified as: ${WQS}_{i} =  \sum_{j=1}^{c} \bar w_j \cdot q_{ij}$, which uses the quantiles in the validation dataset.  In the validation dataset, the significance of the WQS parameter ($\beta_{1}^{(V)}$) can be determined from:
+	$$ g(\xi_{i}) = \beta_{0}^{(V)} + \beta_{1}^{(V)} WQS_i + \boldsymbol{z}_i' \cdot \boldsymbol{\theta}^{(V)}, $$
+where superscript $V$ represents the regression coefficients in the validation dataset. While $\beta_{1}^{(V)}$ describes the effect of the chemical mixture on the health outcome, the mean weight $\bar w_j$ identifies the relative importance that chemical $j$ imposes on the outcome \citep{carricoCharacterizationWeightedQuantile2014, czarnotaAssessmentWeightedQuantile2015, genningsCohortStudyEvaluation2013, hargartenAccountingUncertaintyDue2020}.
+
+  The \code{estimate.wqs()} function performs WQS regression in the \pkg{miWQS} package.<!-- 5/15 Edits --> The data as specified in [Data structure](#Data-structure) section are placed in the first three arguments. The \code{y} argument takes the outcome, like \code{simdata87\$y.scenario}. As \code{y.scenario} is binary, the binomial distribution is specified by setting the \code{family} argument to \code{"binomial"}.<!-- 5/15 Edits --> The \code{X} argument takes the chemicals of interest, like \code{simdata87\$X.true}. If \code{X} contains \code{NA}'s (that represents missing values), the BDL values are placed in the first quantile by default (see [Example 2](#Example-2)). Any additional demographic covariates, like \code{simdata87\$Z.sim}, are placed into the \code{Z} argument. If no covariates are present, set \code{Z} to \code{NULL}. The \code{b1.pos} argument controls whether the overall mixture effect, $\beta_1^{(T)}$, is positively related to the outcome. A way to decide the direction is to use the \code{analyze.individually()} function, which is described in more detail in [Appendix 1](#Appendix-1). In our dataset, we assume a positive relationship between the mixture and an outcome; we consequently set \code{b1.pos} to \code{TRUE}. The \code{proportion.train} argument specifies the proportion of data given to the training dataset. As the sample size of our example dataset is large (n = 1000), we will use 50% of the data to train. The \code{B} argument is the number of bootstraps used to estimate the weights $w_j$'s. 
+  
+  We set a seed to ensure reproducibility as we bootstrapped the data. The execution of the \code{estimate.wqs()} function creates an object of class \code{wqs}, and printing it answers the main research questions. 
+
+```{r eg1_wqs, cache=TRUE}
+set.seed(50679)
+wqs.eg1 <- estimate.wqs(
+  y = simdata87$y.scenario, X = simdata87$X.true, Z = simdata87$Z.sim,
+  proportion.train = 0.5,
+  n.quantiles = 4,
+  place.bdls.in.Q1 = FALSE,
+  B = 100, b1.pos = TRUE, 
+  signal.fn = "signal.converge.only",
+  family = "binomial",
+  verbose = FALSE
+)
+wqs.eg1
+```
+
+  An increase in the chemical mixture is associated with an increase in the odds of being diagnosed with cancer by `r round(exp(coef(wqs.eg1))["WQS"], 2)`. The \code{coef(wqs.eg1)} gives us estimates on the logit scale of coefficients in the validation model. We identify chemicals in the mixture as important if their weight estimates are greater than the reciprocal of the number of chemicals. Alpha-chlordane, PCB 153, PCB 105, and p,p-DDE approximately constitute 88% of the effect in the index.<!-- 5/15 edits and--> Thus, these three chemicals are associated with increased cancer risk. The weight estimates are directly extracted with \code{wqs.eg1\$processed.weights}. The Akaike information criterion (AIC) is used as the goodness-of-fit measure of the WQS model and is directly computed using \code{AIC(wqs.eg1\$fit)}.
+
+  Plotting a WQS object gives a list of histograms: the distributions of the weight estimates, the overall effect of the mixture, and the WQS index score \citep{wickhamGgplot2ElegantGraphics2016}.
+```{r eg1-plots}
+eg1.plots <- plot(wqs.eg1)
+names(eg1.plots)
+```  
+
+  Commonly, researchers look at distributions of the weight estimates to determine which chemicals are important in the mixture (Figure \ref{fig::histWeight}). Looking at the histograms for complete WQS data, most chemicals have no effect among all bootstraps. However, this panel of histograms indicates that alpha-chlordane, p,p-DDE, PCB 153, and PCB 105 are important, which agrees with our above statistical analysis. 
+  
+```{r histWeight, warning=FALSE,  fig.height=5, fig.width=5, fig.pos="h", echo=FALSE, fig.cap="\\label{fig::histWeight} Histograms of chemical weight estimates across 100 bootstraps for Example 1. Weight estimates are constrained to be between zero and one."}
+eg1.plots$hist.weights + 
+  theme(axis.text.x = element_text(size = 7.5))
+```
+ 
+  The second histogram provides us insight into the distribution of the overall effect of the mixture on the outcome, $\beta^{(T)}_1$, across the bootstraps (Figure \ref{fig::histB1}). Most bootstraps indicate that the chemical mixture have no effect on the outcome (median around 1). 
+  
+```{r histB1, warning=FALSE, fig.height=3, fig.width=6, fig.pos="h",  echo=FALSE, fig.cap="\\label{fig::histB1} Histogram of overall chemical effect in the training dataset across 100 bootstraps for Example 1. Its constraint is governed by the b1.pos argument in the estimate.wqs() function. In the simdata87 dataset, the overall mixture is constrained to have a positive association with cancer."}
+eg1.plots$hist.beta1
+```
+<!---  Reason why I included histB1: Information from the histogram of $\beta^{(T)}_1$ might be helpful in adjusting the signal function, which is controlled by \code{signal.fn} argument in \code{estimate.wqs()} \citep{hargartenAccountingUncertaintyDue2020}. But I cannot say it in this vignette, because I didn't want to describe the signal function in detail. Using the signal function is not needed for basic use of the function.
+-->
+  
+  The third histogram shows us the distribution of the weighted quantile sum. Given constraints placed on the weights, WQS is a continuous index between zero and the number of quantiles - 1 (given by the \code{n.quantiles} argument in \code{estimate.wqs()} ) (Figure \ref{fig::histWQS}). In our example, the number of quantiles is four. Across the bootstrap samples, most values of the chemical mixture are between one and two.
+
+```{r histWQS, warning=FALSE, fig.height=3, fig.width=6, fig.pos="h",  echo=FALSE, fig.cap="\\label{fig::histWQS} Histogram of the weighted quantile sum (WQS) using validation quantiles for Example 1."} 
+eg1.plots$hist.WQS
+```
+
+# Example 2: BDLQ1 approach on interval-censored data
+
+## BDLQ1 approach 
+
+  Unlike [Example 1](#Example-1), many studies contain partially observed chemical concentrations that are measured to different detection limits.<!-- 5/15 Edits --> One approach to use WQS with missing data is to place the BDL values into the first quantile (BDLQ1), and to score the observed component values in the remaining quantiles. The \code{make.quantile.matrix()} function demonstrates this approach by creating \code{n.quantiles} quantiles from a matrix argument \code{X}. If \code{X} is completely observed, regular quantiles are made; however, if the first values in \code{X} are missing, they are placed in the first quantile. For example, suppose we are interested in making four quantiles of 14 chemicals using 1,000 subjects in our dataset. If we use the completely observed concentrations found in \code{X.true} element of \code{simdata87}, regular quantiles for all 14 chemicals are made with the following number of individuals per quantile. 
+
+```{r eg2-BDLQ1-1}
+q <- make.quantile.matrix(
+  X = simdata87$X.true,
+  n.quantiles = 4
+  )
+apply(q, 2, table)
+```
+
+However, if the chemical concentrations are incomplete (with the missing values indicated as \code{NA}'s), the BDLQ1 approach works as follows. Suppose we wish to make quartiles of the \code{X.bdl} matrix in our dataset, where each chemical has 100 BDL concentrations. Using BDLQ1, the 100 observations are placed into the first quartile, and the remaining quartiles are evenly split in which each contains 900/3 = 300 observations. The number of individuals in each quartile of each chemical, and the total number of missing values in each chemical are shown below. Note that the first row of the matrix matches the total number of missing values (100). 
+```{r BDLQ1-2}
+q <- make.quantile.matrix(
+  simdata87$X.bdl, 
+  n.quantiles = 4, 
+  verbose = TRUE
+  )
+```
+
+  The number of individuals in the first quantile in BDLQ1 increases if more BDL values exist. For instance, \code{X.80} substitutes 800 values for each chemical from \code{simdata87\$X.true} to be missing BDL. Applying the BDLQ1 approach to \code{X.80}, all 800 values are placed into the first quartile, while roughly $200/3 \approx 66$ values are placed in remaining quartiles. 
+
+```{r BDLQ1-3a, echo=FALSE}
+# First create chemical data X.80 with each chemical having 800 values missing.
+X.80 <- simdata87$X.true # Copy the true concentrations
+DL <- apply(X.80, 2, function(X) { quantile(X, 0.80) }) # Find the upper threshold
+for (j in 1:14) { # For each chemical, substitute...
+  X.80[ X.80[, j] < DL[j], j] <- NA
+}
+```
+
+```{r BDLQ1-3b}
+q <- make.quantile.matrix(X.80, n.quantiles = 4, verbose = TRUE)
+```
+Instead of quantiles, we could also categorize the chemicals into deciles by changing the \code{n.quantiles} argument to ten.<!-- 5/15 Edits --> Suppose now that we wish to form deciles in \code{simdata87\$X.bdl}. The first 100 BDL values are placed in the first decile, while the remaining 900 are evenly spread out in the remaining nine deciles (900/9 = 100). 
+
+```{r BDLQ1-4}
+q <- make.quantile.matrix(simdata87$X.bdl, n.quantiles = 10, verbose = TRUE)
+```
+
+  The BDLQ1 method has been used in single-chemical analyses \citep{metayerExposureHerbicidesHouse2013, wardResidentialLevelsPolybrominated2014, wardResidentialExposurePolychlorinated2009} and WQS \citep{hargartenAccountingUncertaintyDue2020}. However, it has not been coded in other WQS packages to the best of our knowledge.
+
+## WQS analysis
+
+  The BDLQ1 method works because WQS regression uses quantile scores from each chemical in the mixture. At this step, the \code{estimate.wqs()} function calls the \code{make.quantile.matrix()} function. Setting the argument \code{place.bdls.in.Q1} to \code{TRUE} allows us to use the WQS regression in conjunction with the BDLQ1 method. Yet, if the \code{X} argument contains any missing values, the BDLQ1 approach is automatically used. The incomplete data \code{X.bdl} is now assigned to the chemical mixture \code{X} argument. The remaining arguments in \code{estimate.wqs()} are the same as in [Example 1](#Example-1). Printing the resulting object answers the research questions of interest. The research aims are to determine the association of the mixture with cancer and to find the important chemicals (if the association exists). 
+  
+```{r wqs_BDLQ1, cache=TRUE}
+set.seed(50679)
+wqs.BDL <- estimate.wqs(
+  y = simdata87$y.scenario, X = simdata87$X.bdl, Z = simdata87$Z.sim,
+  proportion.train = 0.5, 
+  n.quantiles = 4,
+  place.bdls.in.Q1 = TRUE,
+  B = 100,
+  b1.pos = TRUE, 
+  signal.fn = "signal.converge.only",
+  family = "binomial",
+  verbose = FALSE
+)
+wqs.BDL
+```
+
+```{r eg.2.AIC, echo=FALSE}
+AIC.BDL <- round(AIC(wqs.BDL$fit), 0)
+AIC.Compl <- round(AIC(wqs.eg1$fit), 0)
+```
+
+<!-- 5/15 Edits --> An increase in one-quartile of the chemical mixture is associated with an increase in the odds of obtaining cancer by `r round(exp(coef(wqs.BDL))["WQS"], 2)`. Compared to the complete case analysis, PCB 105 and alpha-chlordane are still important, but DDT, PCB 170, and methoxychlor are also important in the BDLQ1 analysis. As we forced some complete concentrations \code{simdata87\$X.true} to be BDL values in creating \code{simdata87\$X.bdl}, we used AIC to compare fit between the two WQS models in Examples [1](#Example-1) and [2](#Example-2). Intuitively, a WQS model using the BDLQ1 approach (AIC: `r AIC.BDL`) fits the data worse than a WQS model using complete data (AIC: `r AIC.Compl `).
+
+# Example 3: Bootstrapping interval-censored data
+
+An alternative to the BDLQ1 approach is to perform multiple imputation of the missing chemical values by bootstrapping \citep{lubinEpidemiologicEvaluationMeasurement2004}. Given completely observed covariates $z_{i1},\ldots z_{\text{ik}}$ in $i=1, ...n$ subjects exposed to $j=1,...c$ chemicals, an independent log-normal distribution for each chemical $j$ with mean $\mu_{j}$ and variance $\sigma^2_j$ is assumed:
+$$\log(x_{ij})| z_1 \cdots z_p \sim ^{indep} N(\mu_j = \boldsymbol{z}_i^\prime \cdot \boldsymbol{\gamma}_j, \sigma^2_j) .$$
+Let $f(.)$ denote the normal probability density function and $F(.)$ denote its cumulative distribution function. For each chemical $j$, the dataset is bootstrapped $K$ times to form $K$ complete datasets. As each bootstrap $b$ is sampled with replacement from the original data, the number of times the $i^{\text{th}}$ subject is selected for $j^{\text{th}}$ chemical is represented by $w_{\text{ij}}$. The log likelihood function for the bootstrap data in $j^{\text{th}}$ chemical is given by:
+
+$$l(\boldsymbol{\gamma}_{j}, \sigma^2_j) = \sum_{i=1}^{n_{0j}} w_{ij} * \log \left [ P \left (0 < X_{ij} < DL_{j}; \boldsymbol{z}_i^\prime \cdot \boldsymbol{\gamma}_{j},\sigma^2_j \right) \right ] + \sum_{i=n_{0j}+1}^n \log \left[ f( x_{ij}; \boldsymbol{z}_i^\prime \cdot \boldsymbol{\gamma}_{j}, \sigma^2_j) \right],$$
+where $n_{0j}$ represents the number of BDL values for chemical $j$. The estimates that maximize the log likelihood are $\left({\tilde{\boldsymbol{\gamma}}}_{j},\tilde{\sigma}^2_j \right)$. Then, the BDL values are imputed by the following method. We generate an independent and identically distributed uniform sample between zero and $F \left( \log(DL_j); \boldsymbol{z}_i^\prime \cdot \tilde{\boldsymbol{\gamma}}_j, \tilde{\sigma}^2_j \right )$. Then, we assign value $F^{- 1} \left( u_{\text{ij}} \right)$ for each missing value $x_{\text{ij}}$ below the detection limit of the $j^{\text{th}}$ chemical $DL_{j}$ \citep{lubinEpidemiologicEvaluationMeasurement2004}. These imputed values are joined with the observed ones to form one complete set of exposures for the $j^{\text{th}}$ chemical.<!-- Redundant: This process is repeated to form *K* complete sets of *jth* chemical. --> 
+  The \code{impute.Lubin()} function performs multiple imputation by bootstrapping for one chemical. For instance, suppose we wish to impute the dieldrin concentrations BDL twice ($K = 2$) in \code{simdata87} by bootstrapping using the following covariates:  childhood age, sex, and child race/ethnicity. The dieldrin concentrations are found in the first column of \code{X.bdl} in \code{simdata87} dataset (e.g. \code{simdata87\$X.bdl[ , 1]}), and the detection limit of dieldrin is in the first entry in \code{DL} element (e.g. \code{simdata87\$DL[1]}). The \code{chemcol} argument is a numeric vector of chemical concentrations that we wish to impute (e.g. \code{simdata87\$X.bdl[ , 1]}). The \code{dlcol} argument is the detection limit of the chemical (e.g. \code{simdata87\$DL[1]}). The \code{Z} argument contains any covariates used in the imputation (e.g. \code{simdata87\$Z.sim} and <!--5/15 edits start-->\code{simdata87\$y.scenario}). We included the outcome in the imputation of BDL values because its omission assumes that it is not associated with the BDL values and thereby bias the subsequent WQS coefficients towards zero \citep{forerMissingData2014, barnardMultipleImputation2015}<!--5/15 edits end-->. The \code{K} argument is the number of imputed datasets (e.g. \code{2}). 
+
+```{r eg3-lubin.impute1}
+set.seed(472195)
+answer <- impute.Lubin(
+  chemcol = simdata87$X.bdl[, 1],
+  dlcol = simdata87$DL[1],
+  Z = cbind(simdata87$y.scenario, simdata87$Z.sim), 
+  K = 2
+)
+summary(answer$imputed_values)
+```
+  
+  The \code{answer\$imputed\_values} is a matrix with rows of 1000 subjects and two columns consisting of the imputed dieldrin concentrations. Since most concentrations are observed, the summaries of the two datasets should look the same. However, if we look at BDL values, the two imputed datasets are different, and both are under the detection limit (`r round(simdata87$DL[1], 3)`). 
+  
+```{r lubin.impute2, results="hold"}
+cat("Summary of BDL Values \n")
+imp <- answer$imputed_values[, 1] < simdata87$DL[1]
+summary(answer$imputed_values[imp, ])
+```
+  
+More than one chemical often needs to be imputed in many studies<!--5/15 edits-->. To implement the bootstrap approach, we use the \code{impute.boot()} function, which repeatedly executes the \code{impute.Lubin()} function. In \code{simdata87}, now suppose that we wish to impute the \code{X.bdl} matrix twice by bootstrapping using the covariates (\code{Z}) of age, sex, and race/ethnicity<!--5/15 edits-->. The \code{X} argument takes a matrix with incomplete data, like \code{simdata87\$X.bdl}. The next argument, \code{DL}, takes the detection limits of \code{X} as a numeric vector, like \code{simdata87\$DL}. The \code{K} and \code{Z} arguments are exactly the same as in \code{impute.Lubin()}. A seed is set before the function to ensure that the same bootstrap samples are selected for each chemical. The function returns a list \code{l.boot}. 
+  
+```{r lubin.impute3}
+set.seed(472195)
+l.boot <- impute.boot(
+  X = simdata87$X.bdl, 
+  DL = simdata87$DL, 
+  Z = cbind(simdata87$y.scenario, simdata87$Z.sim), 
+  K = 2
+  )
+results.Lubin <- l.boot$X.imputed
+```
+
+The \code{X.imputed} element of \code{l.boot} saves the imputed chemical values as an array, where the first dimension is the number of subjects ($n$), the second is the number of chemicals ($c$), and the third is the number of imputed datasets ($K$). The sample minima, fifth percentile (\code{P.5}), means, and maxima of the chemicals are calculated in each imputed dataset (by the function \code{f()}). As the two imputed datasets are different, the application of MI should yield different parameter estimates<!--5/15 edits-->. 
+
+<!-- Use " formatC() , format = "fg", digits = 2)" if too inconsistent. --> 
+```{r lubin.impute4}
+apply(results.Lubin, 2:3, f)
+```
+ 
+  Next, we implement WQS regression on the two complete datasets, which are saved in the \code{results.Lubin} object. Instead of performing WQS on one dataset as in Examples [1](#Example-1) and [2](#Example-2), the \code{do.many.wqs()} function repeatedly executes WQS regression on each dataset. The arguments for the \code{do.many.wqs()} function are the same as the \code{estimate.wqs()} function, with one exception. The \code{X.imputed} argument now is an array of the imputed chemical values, which has three dimensions:  *n* subjects, *c* chemicals, and *K* imputed datasets. This array is the output from the \code{impute.boot()} function:  \code{results.Lubin}.
+  
+```{r lubin.wqs, results="hold", message=FALSE, cache=TRUE}
+set.seed(50679)
+boot.wqs <- do.many.wqs(
+  y = simdata87$y.scenario, X.imputed = results.Lubin, Z = simdata87$Z.sim,
+  proportion.train = 0.5, 
+  n.quantiles = 4, 
+  B = 100,
+  b1.pos = TRUE,
+  signal.fn = "signal.converge.only",
+  family = "binomial"
+)
+```
+
+The \code{do.many.wqs()} function returns list and matrix versions of the output generated from the \code{estimate.wqs()} function. The \code{wqs.imputed.estimates} element of the \code{boot.wqs} list is a three-dimensional array that gives the WQS estimates for each imputed dataset. The first dimension consists of the total number parameters in the WQS model. The second dimension consists of two columns: the mean and standard deviation of estimates. The third dimension is the *K* imputation draws.<!-- Random and not needed: The overall WQS model fit is also saved.-->
+
+<!-- format(boot.wqs$wqs.imputed.estimates, digits = 1, scientific = FALSE) --> 
+```{r lubin.wqs2}
+formatC(boot.wqs$wqs.imputed.estimates, format = "fg", flag = "#", digits = 3)
+```
+
+  As expected, the weights and WQS parameter estimates are different across the two imputed datasets<!--5/15 edits-->. Finally, the \code{pool.mi()} function implements the pooling rules discussed in Rubin 1987 \citep{rubinMultipleImputationNonresponse1987} in order to form one estimate \citep{dongPrincipledMissingData2013, rubinMultipleImputationNonresponse1987, whiteMultipleImputationUsing2011}. The \code{to.pool} argument takes an array with rows referring to the number of parameters, columns referring to the mean and standard error, and the third dimension referring to the number of imputed datasets. This describes the WQS output, \code{boot.wqs\$wqs.imputed.estimates}, from the \code{do.many.wqs()} function. The second argument of \code{pool.mi()}, \code{n}, is the sample size, which is the number of rows in original data (i.e. \code{nrow(simdata87\$X.bdl)}). The additional Boolean argument \code{prt} allows the user to print out selective parts of the `pool.mi` object, if desired.<!-- 4/13 edits- Added this last sentence ->
+
+<!-- The whole table does not fit on the page, because the column names are too long. Switching the format to "markdown" allows all columns to fit, but the column names cannot be read. So I removed the less important columnsthat are not discussed. -->
+```{r lubin.pool1}
+boot.est <- pool.mi(
+  to.pool = boot.wqs$wqs.imputed.estimates, 
+  n = nrow(simdata87$X.bdl),
+  prt = FALSE
+)
+```
+
+```{r lubin.pool1b, echo=FALSE}
+print(round(boot.est[ , -(5)], 3))
+```
+
+```{r lubin.pool1c, echo=FALSE, include=FALSE}
+knitr::kable( 
+  boot.est[ , -(5)],
+  format = "latex", 
+  booktabs = TRUE, 
+  digits = 3,
+  label = "bootWQS",
+  caption = "WQS coefficient estimates from bootstrap multiple imputation across two datasets."
+)
+```
+
+  The \code{pool.mi()} function returns the statistics of the combined estimates for each WQS parameter<!--(Table \ref{bootWQS})-->. While the standard error between the imputed sets, \code{se.between}, measures the uncertainty due to the BDL values, the standard error within the imputed sets, \code{se.within}, measures the uncertainty in the WQS regression. Using the pooled mean and standard error, 95% $t$~confidence intervals are constructed in columns \code{CI.1} and \code{CI.2}. The $p$~values from the $t$~test whether the regression coefficient is zero are contained in the \code{p.value} column. The \code{frac.miss.info} column gives the fraction of missing information, which estimates the proportion of variability due to the BDL values for each WQS parameter. A larger fraction of missing information of any WQS parameter implies that we may need to increase the number of imputations (*K*). Yet, finding the optimal number of imputations remains an open area of research \citep{panFractionMissingInformation2016, savaleiObtainingEstimatesFraction2012}. For instance, some covariates have high fractions of missing information, such as 0.73 or 0.85, which suggests that more than two imputations are needed.
+
+```{r lubin.OR, echo = FALSE}
+ OR <- round(exp(boot.est["WQS", 1]), 2)
+ vec.ci <- round(exp(boot.est["WQS", c(7,8)]), 2)
+ OR.CI <- paste(vec.ci, collapse = ", ")
+```  
+  The WQS \code{pooled.mean} estimate answers the question of whether a chemical mixture is associated with cancer. To find the odds ratio, we can exponentiate the estimate and its 95% confidence interval (CI) like: \code{exp(boot.est["WQS", c(1, 7:8)])}. A one-quartile increase in the chemical mixture is `r print(OR)` (95% CI: `r print(OR.CI)`) times as likely to obtain cancer. The first 14 rows of \code{boot.est} give us summary statistics about the weight estimates. Using the criterion that the pooled mean of the weight estimate greater than 1/14 is important, the following chemicals have the largest contributions to the overall mixture. 
+ 
+```{r lubin.pool3}
+chemicals <- boot.est[1:14, ]
+row.names(chemicals)[chemicals$pooled.mean >= 1 / 14]
+```
+
+  We can also obtain an overall sense of how WQS model fits the data from bootstrapping imputation. In a similar spirit in combining the WQS parameter estimates, we combine the AIC from the two models. The \code{combine.AIC()} function takes the average and standard deviation of the individual AIC estimates from the separate WQS models. The only argument, \code{AIC}, takes a numeric vector of AIC's, which is saved in a \code{do.many.wqs()} object (eg. \code{boot.wqs\$AIC}). 
+   
+```{r lubin.pool4}
+boot.wqs$AIC
+boot.AIC <- combine.AIC(boot.wqs$AIC)
+```
+
+```{r AICs, echo=FALSE}
+BDLQ1.AIC <- sprintf(round(AIC(wqs.BDL$fit), 1), fmt = '%#.1f')
+complete.AIC <- round(AIC(wqs.eg1$fit), 1)
+```
+
+Compared to Examples [1](#Example-1) and [2](#Example-2), the bootstrapped MI-WQS model (AIC: `r boot.AIC`) fits the data similar to a WQS model using the BDLQ1 approach (AIC: `r BDLQ1.AIC`) and worse than a WQS model using complete data (AIC: `r complete.AIC`).
+ 
+# Example 4: Univariate Bayesian multiple imputation of BDL values
+
+Instead of using bootstrapping imputation, the \code{impute.univariate.bayesian.mi()} imputes the BDL values using a Bayesian paradigm. The logs of the observed chemicals $x_{\text{ij}}$ are assumed to independently follow normal distributions with mean $\mu_{j}$ and standard error $\sigma_{j}$. We place a Jeffrey's prior of the univariate normal on the parameters. In order to sample from the posterior predictive density of missing values ($X_{j,\text{miss}}$) given the observed values ($X_{j,\text{obs}}$), we run a Gibbs sampler of length $T$ for each chemical. In step $t$ of the sampler:
+
+ (Step 0): Given complete data $X = (X_{\text{miss}}^{(t-1)}, X_{\text{obs}})$, calculate the mean $\bar w$ and variance $S$ as:
+$$\bar w = \frac{1}{n} \cdot \sum_{i=1}^n \log(x_i) \; \text{and} \; S = \frac{1}{n-1} \cdot \sum_{i=1}^n (\log(x_i) - \bar w)^2 .$$
+
+ (Step 1): Simulate the posterior variance ${\sigma^2}^{(t)}$ given the mean and complete data from the inverse gamma distribution:
+$$\sigma^2|\mu^{(t-1)}, \log(X_{obs}), \log(X_{miss}^{(t-1)}) \sim IG ( \frac{n-1}{2},  \frac{n-1}{2}*S).$$
+   
+ (Step 2): Simulate the posterior mean $\mu^{(t)}$ given the variance and complete data from the normal distribution: 
+$$\mu | {\sigma^2}^{(t)}, \log(X_{obs}), \log(X_{miss}^{(t-1)}) \sim N (\bar w, sd = \frac{\sigma^{(t)}}{\sqrt{n}}).$$
+
+ (Step 3): Using current parameter estimates, impute $\log(X_{miss,i}^{(t)})$ from the normal distribution truncated between 0 and $DL_{j}$, or:
+$$\log \left( X_{miss,i} \right )| \mu^{(t)},{\sigma^2}^{(t)}  \sim TruncNorm ( \mu^{(t)},{\sigma^2}^{(t)}, a = 0, b = DL_j).$$
+for $i = 1 \cdots n_{0j}$, where $n_{0j}$ is the total number of BDL values for the *jth* chemical. We assessed convergence using Gelman-Rubin's $R$ statistics \citep{gelmanInferenceIterativeSimulation1992}. To construct approximately independent sets of complete concentrations, we join the observed values with the imputed values taken every tenth state from the end of the missing value chain. This Gibbs Sampler is repeated for all chemicals. 
+
+  The \code{impute.univariate.bayesian.mi()} function applies this Bayesian algorithm to our dataset. The \code{X} argument takes a matrix with incomplete data, like \code{simdata87\$X.bdl}. The \code{DL} argument takes the detection limits of \code{X}, which must be a numeric vector, like \code{simdata87\$DL}. Bayesian imputation currently does not use covariate information. The \code{T} argument specifies the length of the Gibbs sampler (like \code{6000}), and the \code{n.burn} argument specifies the burn-in (like \code{400}). The \code{K} argument gives the number of imputed datasets generated (like \code{2}). The \code{impute.univariate.bayesian.mi()} function returns a list consisting of three categories:  a series of checks, the imputed array, and the MCMC (Markov chain Monte Carlo) chains. 
+  
+```{r eg4-bayes.imp1, cache=TRUE}
+set.seed(472195)
+result.imputed <- impute.univariate.bayesian.mi(
+  X = simdata87$X.bdl, 
+  DL = simdata87$DL,
+  T = 6000,
+  n.burn = 400,
+  K = 2
+)
+```
+
+  The \code{impute.univariate.bayesian.mi()} function returns a check of convergence in \code{convg.table} and a check of correct imputation in \code{indicator.miss}. To check for convergence, a summary of a data frame \code{convg.table} is shown above. The first column consists of the Gelman-Rubin statistics of the MCMC variables. (In the dataset \code{simdata87}, there are $(100+2)*14 = 1428$ MCMC variables, as each chemical has 102 MCMC variables: 100 missing values, mean, and variance.) The \code{is.converge} column of \code{convg.table} is a logical vector that specifies whether each MCMC variable has converged. This occurs if its Gelman-Rubin statistic is less than 1.1. In our example, the chains give evidence of convergence. The \code{"Indicator of \# missing values above the detection limit"} shown above, represented with \code{indicator.miss}, is included to check if the imputation scheme occurred correctly. It should be zero, which it is shown above. The \code{indicator.miss} sums a logical vector of length $c$, in which an entry is TRUE if the imputed values are above the detection limit.
+
+ The element \code{X.imputed} of \code{result.imputed} list saves the imputed chemical values as an array, where the first dimension is the number of subjects ($n$), the second is the number of chemicals ($c$), and the third is the number of imputed datasets generated ($K$). Sample minima, means, and maxima (calculated by function \code{f()}) between two imputed datasets indicate that datasets are different; so when MI is applied, the parameter estimates should be different. Note that low values from Bayesian imputation differ from low bootstrap values as in [Example 3](#Example-3). 
+
+```{r bayes.imp1b}
+apply(result.imputed$X.imputed, 2:3, f)
+```
+
+  The \code{impute.univariate.bayesian.mi()} function also returns the three entire MCMC chains: the means of components, the standard errors, and the imputed missing values. The \pkg{coda} package, which "provides functions for summarizing and plotting the output from ... MCMC simulations", saved these MCMC chains as \code{MCMC} objects \citep{plummerCODAConvergenceDiagnosis2006}.
+
+  Using the imputed datasets saved in array \code{result.imputed\$X.imputed}, the \code{do.many.wqs()} function implements WQS regression on both datasets with a binary outcome, as in [Example 3](#Example-3). The setup is the same as before, but we are using Bayesian imputed datasets, as in \code{result.imputed\$X.imputed}. Similar to [Example 3](#Example-3), the element, \code{wqs.imputed.estimates}, in the resulting \code{bayes.wqs} list contains the WQS parameter estimates for each imputed dataset.
+
+```{r bayes.wqs, results="hold", message=FALSE, cache=TRUE}
+set.seed(50679)
+bayes.wqs <- do.many.wqs(
+  y = simdata87$y.scenario, X.imputed = result.imputed$X.imputed, 
+  Z = simdata87$Z.sim,
+  proportion.train = 0.5, 
+  n.quantiles = 4, 
+  B = 100,
+  b1.pos = TRUE, 
+  signal.fn = "signal.converge.only",
+  family = "binomial"
+)
+wqs.imputed.estimates <- bayes.wqs$wqs.imputed.estimates
+```
+
+  Lastly, we can combine the multiple WQS estimates using the \code{pool.mi()} function, exactly as in [Example 3](#Example-3). The output, given in \code{bayesian.est}, returns the statistics of the combined estimates for each WQS parameter and answers the research questions of interest (Table 2)<!--\@ref(tab:demo-table))-->.
+  
+```{r bayes.pool1}
+bayesian.est <- pool.mi(
+  to.pool = bayes.wqs$wqs.imputed.estimates, 
+  n = nrow(simdata87$X.bdl), 
+  prt = TRUE
+)
+```
+
+<!-- Don't include table --> 
+```{r bayes.pool1b, echo=FALSE, include=FALSE}
+knitr::kable( 
+  bayesian.est[ , -(5)], label = "bayesian_est", format = "latex", booktabs = TRUE, 
+  digits = 3, caption = "Bayesian Multiple Imptuation Weighted Quantile Regression Parameter Estimates. Summary of statistics after performing WQS regression across two datasets." ) 
+```
+
+  Looking at the WQS estimate in \code{bayesian.est}, the odds ratio of the overall chemical mixture on cancer is `r round(exp(bayesian.est["WQS", 1]), 2)` with a 95% confidence interval between `r round(exp(bayesian.est["WQS", 7]), 2)` and `r round(exp(bayesian.est["WQS", 8]), 2)`. The following chemicals, in which their weight estimates are greater than 1/14, are considered an important and may be associated with increased cancer risk. 
+```{r bayes.pool2}
+chemicals <- bayesian.est[1:14, ]
+row.names(chemicals)[chemicals$pooled.mean >= 1 / 14]
+```
+
+```{r bayes_combine_AIC, echo=FALSE}
+AIC.Bayes <- miWQS::combine.AIC(bayes.wqs$AIC)
+```
+
+ To get an overall sense of how the Bayesian-imputed WQS models fit the data, the \code{combine.AIC()} function combines the AIC calculated from Bayesian MI-WQS models (\code{bayes.wqs\$AIC}). 
+
+```{r bayes.pool3}
+bayes.wqs$AIC
+miWQS::combine.AIC(bayes.wqs$AIC)
+```
+ 
+ The Bayesian MI-WQS model (AIC: `r AIC.Bayes`) has the same fit as the bootstrapped MI-WQS (Example 3, AIC: `r boot.AIC`). 
+ 
+<!-- Same as Example 3. Imputed Datasets are different; a simulation study found a negligible difference between two imputation approaches. With a small number of imputations done and a small number of BDL values, the similarity might be due to the data. 
+Is Eg 3 and Eg 4 different? No. 
+```{r echo=FALSE, include=FALSE}
+bayesian.est - boot.est
+```
+ -->
+
+# Recommendations in using miWQS package 
+
+  We have integrated WQS regression into the MI framework in a flexible R package called \pkg{miWQS} to meet a wide variety of needs (Figure \ref{fig::decide}). The data used in this package consist of a mixture of correlated components that share a common outcome while adjusting for other covariates. The correlated components in the set, $\boldsymbol{X}$, may be complete or interval-censored between zero and low thresholds, or detection limits, that may be different across the components. The common outcome, $y$, may be modeled as binary, continuous, count-based, or rate-based and can be adjusted by the \code{family} and \code{offset} arguments of \code{estimate.wqs()}. 
+  
+  Additional covariates, $\boldsymbol{Z}$, may be used in the bootstrap imputation and WQS models. However, the univariate Bayesian model does not include covariate information in imputing the BDL values. This makes any covariate confounders uncorrelated with the imputed concentrations BDL. Thereby, the WQS regression coefficients, such as the weights and overall mixture effect, may be biased towards zero \citep{forerMissingData2014, littleRegressionMissingReview1992}. <!--The power is decreased.-->   
+
+  Another limitation of the univariate Bayesian and bootstrap imputation models is that the X’s are imputed independently while the actual X’s are correlated.  This makes the correlations among the imputed BDL values of different components biased towards zero. One concern is that the mixture with independently imputed BDL values may introduce some bias in the health effect estimate if a large amount of BDL values is present. As an alternative, an imputation model could take advantage of the correlations to impute a potentially more precise estimate \citep{dongPrincipledMissingData2013, littleRegressionMissingReview1992}. One such approach is the multivariate Bayesian regression imputation model, which we are evaluating in ongoing work \citep{hargartenAccountingUncertaintyDue2020a}.
+
+  If $\boldsymbol{X}$ is interval-censored, the choice of the imputation technique depends on the majority vote of BDL values among the components  \citep{hargartenAccountingUncertaintyDue2020} (Figure \ref{fig::decide}). Previous literature suggests ignoring any chemicals that have greater than 80% of its values BDL \citep[pg.~93]{helselStatisticsCensoredEnvironmental2012} \citep[pg. 14]{bolksBaselineAssessmentLeftCensored2014}. When most chemicals have 80% of its values BDL, we suggest using the BDLQ1 approach \citep{hargartenAccountingUncertaintyDue2020}. When most chemicals have less than 80% of its values BDL, the user should perform Bayesian or bootstrapping multiple imputation \citep{hargartenAccountingUncertaintyDue2020}. The \pkg{miWQS} package, though, still allows the user to perform single imputation. Regardless of the technique used, researchers may use the \pkg{miWQS} package in order to detect an association between the mixture and the outcome and to identify the important components in that mixture.
+
+# Conclusion
+
+
+Although environmental exposures data motivated us to develop the \pkg{miWQS} package, the package may be applied to other areas in public health and medicine. Wheeler et al. \citep{wheelerExplainingVariationElevated2019} recently used WQS regression to estimate the effect of a SES index on childhood blood lead risk and to find which socioeconomic variables are important. The correlated SES variables considered were of these types: educational achievement, race, income, health, housing, and employment. The five most important variables found were: percent of homes built before 1940, percent of not using Social-Security income, percent of renter-occupied housing, percent unemployed, and percent of the African American population \citep[pg.974]{wheelerExplainingVariationElevated2019}. Other similar studies may be analyzed using the \pkg{miWQS} package. To our knowledge, WQS has not yet been applied in analyzing a high-throughput gene expression dataset. For instance, a GWAS is conducted to find genetic risks for complex disease and to identify specific genes. Given that SNPs are correlated with each other \citep{ferberModelingDiscreteSurvival2015} and a binary or continuous health outcome, the \pkg{miWQS} package may be used to conduct a WQS regression to address these research aims.<!-- Too specific and does not need to be included. : However, SNPs are missing in some individuals and may not be censored in low counts \[CITATION\].--> In the years to come, researchers may add other imputation models to our established computational structure in order to find components that impact human health. 
+  
+  
+
+```{r fig.decide, fig.pos="h", fig.height=7, echo=FALSE, fig.cap="\\label{fig::decide} A decision tree to help researchers in using the miWQS package. The package is flexible and can meet a wide range of needs."}
+knitr::include_graphics("figure-word/Decision_Tree_In_Using_miWQS_Package.pdf")
+# previously it was .png but picture quality was poor.
+```
+
+# Computational details
+
+<!--- If necessary or useful, information about certain computational details such as version numbers, operating systems, or compilers could be included in an unnumbered section. -->
+
+This vignette is successfully processed using the following. 
+```{r comp-detl-1, echo=FALSE}
+# sessioninfo::session_info() # makes a mess!
+# Instead
+
+cat(" -- Session info ---------------------------------------------------")
+sessioninfo::platform_info()
+cat("--  Packages -------------------------------------------------------")
+tmp.df <-  sessioninfo::package_info(
+  pkgs = c("wqs", "gWQS", "miWQS", "mice", "mi", "norm", "GGally",  "coda", "ggplot2", "glm2", "Hmisc", "invgamma", "purrr", "rlist", "Rsolnp", "survival", "tidyr", "truncnorm"), dependencies = FALSE
+)
+tmp.df$source[18]  <-  substr(tmp.df$source[18], 1, 6)
+print(tmp.df)
+```
+ 
+The functions in \pkg{miWQS} package relied upon code developed in other packages on CRAN. The \code{impute.Lubin()} function used the \pkg{survival} package \citep{therneauPackageSurvivalAnalysis2015}. The \code{impute.univariate.bayesian.mi()} function used: the \code{rinvgamma()} function in the \pkg{invgamma} package \citep{kahleInvgammaInverseGamma2017}, the \code{rtruncnorm()} function in \pkg{truncnorm} package \citep{mersmannTruncnormTruncatedNormal2020}, the \code{possibly()} function in the \pkg{purrr} package \citep{henryPurrrFunctionalProgramming2020} and the \pkg{coda} package \citep{plummerCODAConvergenceDiagnosis2006}. The steps in the \code{estimate.wqs()} function also relied upon other packages: the \code{solnp()} function in \pkg{Rsolnp} package \citep{ghalanosRsolnpGeneralNonLinear2015}, the \code{glm2()} function in \pkg{glm2} package \citep[pg.~2]{marschnerGlm2FittingGeneralized2011}, the \code{list.merge()} function in \pkg{rlist} package \citep{renRlistToolboxNonTabular2016}, the \code{format.pval()} in \pkg{Hmisc} package \citep{harrellHmiscHarrellMiscellaneous2020}, the \code{gather()} function from \pkg{tidyr} package  \citep{wickhamTidyrEasilyTidy2020}, and the \pkg{ggplot2} package  \citep{wickhamGgplot2ElegantGraphics2016}. Additionally, the \code{ggcorr()} function in the \pkg{GGally} produced the heat map in Figure \ref{fig::dataCorr} \citep{schloerkeGGallyExtensionGgplot22020}.
+
+
+# Acknowledgments
+<!-- Contain the usual information about funding and feedback from colleagues/reviewers/etc. Furthermore, information such as relative contributions of the authors may be added here -->
+
+We like to thank Keith W. Zirkle and Anny-Claude Joseph for their editorial comments on this vignette. We also thank the anonymous reviewers of _The R Journal_ who have improved this vignette. 
+
+# Abbreviations
++ AIC: Akaike information criterion
++ BDL: below the detection limit
++ BDLQ1: placing the BDL values into the first quantile
++ BMI: body mass index
++ CRAN: the comprehensive R archive network
++ DL: detection limit
++ GWAS: genomic wide association study
++ MCMC: Markov chain Monte Carlo
++ MI: multiple imputation
++ MI-WQS: multiple Imputation in connection with the weighted quantile sum regression
++ SES: socioeconomic status
++ SNPs: single nucleotide polymorphisms
++ WQS: weighted quantile sum
+
+Notation: 
++ *n* sample size
++ *c*	number of chemicals
++ *K* number of imputations
+
+# Appendix
+## Deciding whether the overall mixture effect is positively or negatively related to the outcome in WQS regression
+
+
+  A researcher must decide whether the overall mixture effect, $\beta_1$, is positively or negatively related to the outcome in WQS regression. One way is to perform a series of individual chemical regressions and look at the sign of the regression coefficients. This is performed via the \code{analyze.individually()} function. In each regression, the outcome $y$ is regressed on the log of each chemical $\boldsymbol{X}$ and any covariates $\boldsymbol{Z}$ using the \pkg{glm2} package \citep{marschnerGlm2FittingGeneralized2011}. Any missing values are ignored. The arguments in \code{analyze.individually()} are the same as the arguments specified in \code{estimate.wqs()}<!--: the argument \code{y} consist of the outcome; the argument \code{X} is the chemical mixture. Any covariates are placed into the \code{Z} argument; if there are none, enter NULL. The \code{family} argument gives the distribution of our outcome \code{y}-->. In \code{simdata87}, our outcome is element \code{y.scenario}, the chemical mixture is `X.true`, the covariates are contained in \code{Z.sim}. As the outcome in \code{simdata87} is binary, we assign \code{"binomial"} to the \code{family} argument. The \code{analyze.individually()} function returns a data frame that consists of: the name of the chemical, the individual chemical effect estimate and its standard error, and an assessment of the WQS model fit using the Akaike Information Criterion (AIC).
+   
+```{r apdx1_indvchemanalysis}
+analyze.individually(
+  y = simdata87$y.scenario, X = simdata87$X.true,
+  Z = simdata87$Z.sim, family = "binomial"
+)
+```
+
+The sign of the estimates indicates whether the overall mixture effect should be positive or negative. As most of the estimates are positive here, we will assume that the overall mixture is positively related to the outcome. Then, we can set the \code{b1.pos} argument in \code{estimate.wqs()} to be \code{TRUE}. In terms of model fit, the complete-data mixture WQS model in [Example 1](#Example-1) with an AIC of `r trunc(AIC(wqs.eg1[["fit"]]))` fits the data better than any individual chemical model (see the AIC's above).
+
+
+\bibliography{hargarten_miWQS_vignette_Revision_betterbibtex.bib}
