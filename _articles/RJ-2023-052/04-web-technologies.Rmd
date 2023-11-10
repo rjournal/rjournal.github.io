@@ -1,0 +1,216 @@
+---
+chapter: 4
+knit: "rmarkdown::render('detourr.rmd')"
+---
+
+One of the goals of this work is to improve upon the animation performance of existing tour displays. \pkg{detourr} uses several different web technologies to maximise performance so that smooth animations can be played with large data sets consisting of upwards of 100k data points. This performance also enables the animations to work with less powerful devices, making \pkg{detourr} accessible to a wider range of users.
+
+The primary technology that allows for high-performance data visualisation is JavaScript itself. JavaScript engines in browsers such as Chrome and Firefox are highly optimised, leveraging methods such as Just-In-Time (JIT) compilation for improved runtime speed. However JavaScript is single-threaded, dynamically typed, and garbage collected, so despite these optimisations we can still run in to performance bottlenecks in some situations.
+
+Figure \@ref(fig:dataflow) shows a simplified overview of the data flow in \pkg{detourr} when creating and viewing a widget. On the left are the operations that are performed by R, which only occur once when the visual is first created and have a minimal performance impact. On the right are the main operations performed by JavaScript when the widget is displayed in a browser or IDE. Linear algebra and rendering operations need to run 30 times per second, so the technology decisions surrounding them have a big impact on performance. These technology decisions and are discussed in this chapter.
+
+```{r dataflow, fig.height=3, out.width=ifelse(knitr::is_html_output(), "100%", "\\textwidth"), fig.cap="An overview of the data flow when creating a detourr visualisation. The full tour path is generated in R and then passed to JavaScript when the widget is created. The operations that occur in the animation loop in JavaScript are the most important to optimise."}
+library(grid)
+
+## fill for text boxes
+purple1 <- "#d6d5e7"
+## arrows
+purple2 <- "#c5c3dc"
+# background
+purple3 <- "#f7f7fa"
+
+tbox <- function(txt, ...) {
+    grid.roundrect(
+        r = unit(2, "mm"), width = 0.7, height = 0.8,
+        gp = gpar(col = NA, fill = purple1), ...
+    )
+    grid.text(txt, gp = gpar(fontsize = 12))
+}
+
+myarrow <- function(...) {
+    grid.segments(...,
+        arrow = arrow(type = "closed", length = unit(0.1, "inches")),
+        gp = gpar(fill = purple2, col = purple2, lwd = 2)
+    )
+}
+
+grid.newpage()
+
+vp <- viewport(
+    layout = grid.layout(3, 2,
+        heights = c(0.33, 0.34, 0.33),
+        widths = 0.5
+    ), height = 0.9, y = 0, just = "bottom"
+)
+
+tl <- viewport(layout.pos.row = 1, layout.pos.col = 1, name = "topleft")
+ml <- viewport(layout.pos.row = 2, layout.pos.col = 1, name = "middleleft")
+bl <- viewport(layout.pos.row = 3, layout.pos.col = 1, name = "bottomleft")
+tr <- viewport(layout.pos.row = 1, layout.pos.col = 2, name = "topright")
+mr <- viewport(layout.pos.row = 2, layout.pos.col = 2, name = "middleright")
+br <- viewport(layout.pos.row = 3, layout.pos.col = 2, name = "bottomright")
+
+splot <- vpTree(vp, vpList(tl, ml, bl, tr, mr, br))
+
+pushViewport(splot)
+upViewport()
+
+# background rects
+grid.roundrect(
+    r = unit(3, "mm"), width = 0.4, x = 0.05, just = "left",
+    gp = gpar(col = NA, fill = purple3)
+)
+grid.roundrect(
+    r = unit(3, "mm"), width = 0.4, x = 0.95, just = "right",
+    gp = gpar(col = NA, fill = purple3)
+)
+
+# top
+seekViewport("topleft")
+tbox("Instantiate tour")
+
+# middle
+seekViewport("middleleft")
+tbox("Generate tour path")
+myarrow(
+    x0 = 0.5, y0 = unit(1.1, "npc"),
+    x1 = 0.5, y1 = unit(0.9, "npc")
+)
+
+# bottom
+seekViewport("bottomleft")
+tbox("Create and display widget", name = "tbox_bottomleft")
+myarrow(
+    x0 = 0.5, y0 = unit(1.1, "npc"),
+    x1 = 0.5, y1 = unit(0.9, "npc")
+)
+
+seekViewport("topright")
+tbox("Render points
+(Three.js / WebGL)")
+
+seekViewport("bottomright")
+tbox("Calculate next frame Y=XA
+(TensorFlow.js / WASM)")
+
+seekViewport("middleright")
+
+grid.text("Animation
+loop")
+
+grid.curve(0.4, 0, 0.4, 1,
+    square = FALSE, curvature = -0.3, ncp = 10,
+    arrow = arrow(
+        type = "closed",
+        length = unit(0.1, "inches")
+    ),
+    gp = gpar(fill = purple2, col = purple2, lwd = 2)
+)
+
+
+grid.curve(0.6, 1, 0.6, 0,
+    square = FALSE, curvature = -0.3, ncp = 10,
+    arrow = arrow(
+        type = "closed",
+        length = unit(0.1, "inches")
+    ),
+    gp = gpar(fill = purple2, col = purple2, lwd = 2)
+)
+
+popViewport()
+
+myarrow(
+    0.45, 1 / 6, 0.55, 1 / 6 #
+)
+grid.text("JSON", 0.5, unit(1 / 6, "npc") + unit(0.5, "lines"), just = "bottom")
+
+popViewport()
+
+grid.text("R", 0.25, unit(0.9, "npc") + unit(0.5, "lines"), just = "bottom")
+grid.text("JavaScript", 0.75, unit(0.9, "npc") + unit(0.5, "lines"), just = "bottom")
+```
+
+
+## Linear algebra operations
+
+The single-threaded nature of JavaScript makes matrix multiplication a performance bottleneck. At each animation frame, we must calculate the product $\mathbf{XA}$ where $\mathbf{X}$ is our data matrix and $\mathbf{A}$ is our projection matrix. The slice tour generated by the `show_slice()` display function requires an additional step of calculating the distance from each point to the projection plane which involves several more matrix operations.
+
+To address this, \pkg{detourr} uses TensorFlow.js (@abadi2016tensorflow) as the main library for storing data and projection matrices and performing matrix operations. TensorFlow.js requires the user chose between one of three available backends:
+
+__CPU__ is a single-threaded JavaScript implementation which carries with it the limitations of JavaScript dynamic typing and garbage collection causing non-deterministic slow-downs at runtime.
+
+__WebAssembly__ (WASM) is a binary format that is used as a compilation target allowing code written in other languages like C, C++, and Rust to be run in the browser. This circumvents the dynamic typing and garbage collection limitations of JavaScript and allows near-native execution speed. The TensorFlow WASM backend uses the XNNPACK library from Google to accelerate matrix operations, which can run operations in parallel using threads and SIMD (Single Instruction Multiple Data).
+
+__WebGL__: uses WebGL shaders to perform matrix operations on the GPU. According to the documentation, the performance benefit is primarily seen with large and complex deep learning models, so is unlikely to provide much benefit over the WebAssembly backend for our use case, and so is not investigated further in this section. 
+
+## Performance comparison
+
+To compare these backend options a simple performance profile was run in Microsoft Edge (Chromium) on a Macbook Pro 2019 (i7, 32Gb RAM). The implementations that were compared were:
+
+- _Hand Coded_: a manual JavaScript implementation coded using `for` loops, operating on nested arrays representing data and projection matrices.
+- _TensorFlow CPU_: the vanilla single-threaded CPU backend for TensorFlow.js.
+-  _TensorFlow WASM_: the TensorFlow.js WASM backend.
+
+These backends were compared across 3 datasets of different sizes and complexity, using a 2D Grand Tour:
+
+- _pdfsense_: The same data set used throughout this chapter; 2808 observations across 56 variables, taking the first 6 principal components for the tour.
+- _mnist\_embeddings\_8d_: 8-dimensional embeddings of the MNIST dataset, with a total of 10k observations.
+- _mnist\_embeddings\_32d_: 32-dimensional embeddings of the MNIST dataset, again with 10k observations.
+
+```{r backend-comparison, echo=FALSE, out.width="75%", fig.align="center", fig.cap="Performance comparison across different data sets and backends. TensorFlow provides better performance than a hand-coded implementation across the board. For smaller datasets like pdfsense, there is little difference between CPU and WASM backends for TensorFlow.js, but for larger dataset WASM performs much better."}
+benchmarks <- read_tsv("data/backend_benchmarks.tsv")
+
+ggplot(benchmarks, aes(x = Backend, y = `Percent Time`, fill = `Data Set`)) +
+    geom_col(position = "dodge") +
+    theme_bw() +
+    scale_y_continuous(labels = scales::label_number(suffix = "%")) +
+    theme(
+        legend.position = c(0.75, 0.75),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank()
+    ) +
+    labs(
+        title = "TensorFlow Backend Performance Comparison",
+        y = "% Scripting Time"
+    )
+```
+
+Figure \@ref(fig:backend-comparison) shows the performance of the three backends across the example datasets. TensorFlow provides better performance across the board when compared to the hand-coded implementation, but the difference between the CPU and WASM backends only becomes apparent with the larger MNIST embeddings datasets. Note that the metric `% Scripting Time` is the time spent across _all_ JavaScript scripting for the visual, and not just the time spend on linear algebra operations. This is why we see such diminishing returns with the smaller _pdfsense_ dataset.
+
+Another important comparison is the performance of the `show_slice()` display function between these datasets. The slice tour uses additional matrix operations to calculate the distance from each point to the projection plane, so the benefit of WASM backend is even more apparent. This is shown in Figure \@ref(fig:backend-comparison-slice)
+
+```{r backend-comparison-slice, echo=FALSE, out.width="75%", fig.align="center", fig.cap="The additional matrix operations required by the slice tour display function make the performance benefit of the WASM backend much more apparent."}
+benchmarks <- read_tsv("data/backend_benchmarks_slice.tsv")
+
+ggplot(benchmarks, aes(x = Backend, y = `Percent Time`, fill = `Data Set`)) +
+    geom_col(position = "dodge") +
+    theme_bw() +
+    scale_y_continuous(labels = scales::label_number(suffix = "%")) +
+    theme(
+        legend.position = c(0.75, 0.75),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank()
+    ) +
+    labs(
+        title = "TensorFlow Backend Performance Comparison (slice tour)",
+        y = "% Scripting Time"
+    )
+```
+
+## Rendering
+
+When displaying data visuals using JavaScript in a browser, there are three main technologies that can be used:
+
+__SVG__ is commonly used for web-based visuals, including in software such as D3.js (@bostock2011d3) with good support for interaction and animation. @kipp2019connecting uses D3.js with SVG for rendering tours, but describes performance issues when the number of points gets close to 2,000. This is because while SVG is suitable for drawing large and complex shapes, performance can degrade when rendering many individual shapes.
+
+__HTML5 Canvas (2D)__ uses a canvas element with a 2D rendering context and provides good performance, allowing many thousand data points to be used with smooth animation. This is the rendering method used by the \pkg{langevitour} package, and provides much better performance over SVG for this use case.
+
+__HTML5 Canvas (WebGL)__ uses the WebGL rendering context with GPU acceleration to achieve high performance, and is used by a range of browser-based 3D animations and games. This typically provides higher performance than using the 2D canvas rendering context.
+
+\pkg{detourr} implements __HTML5 Canvas__ with the __WebGL__ rendering context using the Three.js (@threejs) library. This is the same library that powers the TensorFlow Embedding Projector (@smilkov2016embedding), and allows for flexible and performant 2D and 3D data visuals.
+
+One downside of using HTML5 Canvas elements is that custom logic is needed to determine where the mouse pointer is relative to visual elements when interactions occur. This issue is resolved is by rendering the image twice; the first pass renders to the screen and the second renders to an invisible "picking" scene. The colours of the points in this picking scene correspond to the ID of the point that was rendered. When a mouse is hovered over a pixel or a set of pixels are selected, we simply check their colour in the picking scene to determine which point IDs relate to the event. Rendering the scene twice at each frame makes performance all the more important. 
+
+Despite this extra step, a naive performance benchmark of the rendering performance of \pkg{detourr} using the `mnist_embeddings_8d` data set at 30 FPS shows only 3% of the time is devoted to rendering and painting points, which for our use case is negligible. 
+
+

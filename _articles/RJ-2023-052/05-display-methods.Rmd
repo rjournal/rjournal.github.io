@@ -1,0 +1,205 @@
+---
+chapter: 5
+knit: "bookdown::render_book"
+---
+
+There are three display functions implemented in the \pkg{detourr} package: `show_scatter()`, `show_sage()`, and `show_slice()`. All three support 2D and 3D tour paths, and are based on the core `show_scatter()` function. In this section, we will delve in to some of the implementation details of these functions and how the original and _sage_ display has been extended to three dimensions.
+
+## Scatter display
+
+The scatter display forms the core of the three display methods, and contains all of the features and interactions described in previous sections. It is implemented in TypeScript using the Three.js library (@threejs) for rendering and TensorFlow.js (@abadi2016tensorflow) for linear algebra operations.
+
+## Slice display
+
+The slice display is implemented in the `show_slice()` function, and is based on the _slice tour_ described in @laa2020slice. At each animation frame, the distance from each point to the projection plane is computed. Those points closer than some threshold $h$ to the projection plane are highlighted, and those further away are greyed out. Slices offset from the origin are also supported.
+
+Despite the slice tour itself being equivalent to that in \pkg{tourr}, the implementation has been modified for a simpler implementation. @laa2020slice calculates the distance as:
+
+\begin{equation}
+\tilde \nu_i^2 = ||\mathbf{x}_i^\prime||^2
+(\#eq:nu)
+\end{equation}
+
+where
+
+\begin{equation}
+\mathbf{x}_i^\prime = \mathbf{x}_i - 
+  (\mathbf{x}_i \cdot \mathbf{a}_1)\mathbf{a}_1 - 
+  (\mathbf{x}_i \cdot \mathbf{a}_2)\mathbf{a}_2
+(\#eq:xprime)
+\end{equation}
+
+and similar for the 3-dimensional case but with an additional term. With some rearranging, we can instead express this with the equivalent:
+
+\begin{equation}
+\tilde \nu^2 = (\mathbf{X} - \mathbf{XAA}^T)^2 \mathbf{1}_p
+(\#eq:nu2)
+\end{equation}
+
+This requires fewer terms than the original, and is in a form that is more elegant to implement using TensorFlow.js. The implementation is also the same for both the 2D and 3D variants which keeps the code simple.
+
+### Offsetting the slice
+
+@laa2020slice provides a generalisation of equations \@ref(eq:nu) and \@ref(eq:xprime) for a projection plane passing through an arbitrary anchor point $\mathbf{c}$ as follows:
+
+1. Calculate $\mathbf{x_i}^\prime$ as per equation \@ref(eq:xprime)
+2. Calculate the component $\mathbf{c}^\prime$ of $\mathbf{c}$ orthogonal to the projection plane as:
+$$
+\mathbf{c}^\prime = \mathbf{c} - (\mathbf{c} \cdot \mathbf{a}_1)\mathbf{a}_1 - (\mathbf{c} \cdot \mathbf{a}_2)\mathbf{a}_2
+$$
+3. Calculate $\nu_i^2 = || \mathbf{x}_i^\prime - \mathbf{c}^\prime ||^2 = \mathbf{x}_i^{\prime 2} + \mathbf{c}^{\prime 2} - 2\mathbf{x}_i^\prime \cdot \mathbf{c}^\prime$ where the cross-term is expressed as:
+$$
+\mathbf{x}_i^\prime \cdot \mathbf{c}^\prime = \mathbf{x_i} \cdot \mathbf{c} - 
+  (\mathbf{c} \cdot \mathbf{a}_1)(\mathbf{x}_i \cdot \mathbf{a}_1) -
+  (\mathbf{c} \cdot \mathbf{a}_2)(\mathbf{x}_i \cdot \mathbf{a}_2)
+$$
+
+With this method there are many terms to calculate, and it was found it was difficult to implement and test. To circumvent this issue we instead take a different approach. Rather than offsetting the __projection plane__ to pass through the point $\mathbf{c}$ and then calculating the distances for each point, we instead offset the __data points__ by $\mathbf{c}$ in the opposite direction. This gives a distance calculation between points and projection plane that is equivalent to the original implementation but is much simpler to calculate. First we calculate the offset points $\mathbf{X}^\prime$:
+
+\begin{equation}
+\mathbf{X}^\prime = \begin{bmatrix}
+    \mathbf{x}_1 - \mathbf{c} \\
+    \mathbf{x}_2 - \mathbf{c} \\
+    \vdots \\
+    \mathbf{x}_n - \mathbf{c}
+    \end{bmatrix}
+(\#eq:xprime2)
+\end{equation}
+
+And then calculate the distances to the projection plane similar to equation \@ref(eq:nu2):
+
+\begin{equation}
+\tilde \nu^2 = (\mathbf{X}^\prime - \mathbf{X}^\prime \mathbf{AA}^T)^2 \mathbf{1}_p
+(\#eq:nu3)
+\end{equation}
+
+Figure \@ref(fig:slice-sphere) shows a slice tour implemented using equations \@ref(eq:xprime2) and \@ref(eq:nu3) with an anchor of $(1, 0, 0)$. Initially $v_1$ is almost parallel to the projection plane, and so the slice runs close to the origin and only the points near the outside of the hollow sphere are highlighted. As the tour progresses, $v_1$ becomes nearly orthogonal to the projection plane, and so the slice runs close to the edge of the sphere and only a small number of points near the centre of the visual are highlighted.
+
+```{r, echo=FALSE, eval=FALSE}
+set.seed(1)
+library(detourr)
+library(tibble)
+
+X <- geozoo::sphere.hollow(3, 2000)$points |>
+    as_tibble()
+
+detour(X, tour_aes(projection = everything())) |>
+    tour_path(grand_tour(2)) |>
+    show_slice(anchor = c(1, 0, 0))
+```
+
+
+```{r slice-sphere, out.width="32%", fig.ncol=3, fig.show="hold", fig.align="center", fig.cap="Selected frames of a 2D slice tour of a hollow unit sphere. The anchor for the slice is set to (1, 0, 0). Initially the slice is near the origin, but moves closer to the edge of the sphere as v1 rotates to be near orthogonal to the projection plane."}
+knitr::include_graphics(c(
+    "figures/display_methods/slice_sphere_1.png",
+    "figures/display_methods/slice_sphere_2.png",
+    "figures/display_methods/slice_sphere_3.png"
+))
+```
+
+## Sage display
+
+As the dimension of data increases, the volume of space that contains the data increases exponentially. One effect of this is that points tend to sit close to the edge of the space, with few points near the center. @hastie2009elements gives a good illustration of this, where if we have $N$ uniformly distributed points in a unit ball of dimension $p$ centred at the origin, the median distance from the origin to the closest point is given by the equation
+
+\begin{equation}
+d(p, N) = \left( 1- \frac{1}{2}^\frac{1}{N}\right)^\frac{1}{p}
+\end{equation}
+
+Counter-intuitively, when we project data from a high-dimensional space to low-dimensions, we see the opposite effect where points tend to crowd towards the center of the projected space. @laa2021burning describes a method for correcting this distortion so that points are less crowded towards the center. It does this by ensuring the relative volume at a given radius $r$ in the original space is preserved in the projected space. The relative volume for a 2-dimensional projection is given by the equation
+
+\begin{equation}
+v_2(r; p, R) 
+= \frac{V_{2D}(r; p, R)}{V(R,p)}
+= 1 - \left(1-\left(\frac{r}{R}\right)^2\right)^\frac{p}{2}
+(\#eq:radialcdf2d)
+\end{equation}
+
+where $p$ is the dimension of our original data, $R$ is the radius of the p-ball that contains our data, and $r$ is the projected radius within $[0, R]$.
+
+The formula for the corrected radius $r_y^\prime$ is then given as
+
+\begin{equation}
+r_y^\prime = R \sqrt{1 - \left(1-\left(\frac{r}{R}\right)^2\right)^\frac{p}{2}}
+(\#eq:radial2d)
+\end{equation}
+
+\pkg{detourr} uses a slight variation of equation \@ref(eq:radial2d) to calculate the corrected radius, which omits the multiplier of $R$. This is because we always plot the data on the range $r_y^\prime = [0, 1]$, so the multiplier is not needed:
+
+\begin{equation}
+r_y^\prime = \sqrt{1 - \left(1-\left(\frac{r}{R}\right)^2\right)^\frac{p}{2}}
+(\#eq:radial2d2)
+\end{equation}
+
+The full implementation is as follows:
+
+1. Calculate the projected data $\mathbf{Y} = \mathbf{XA}$, where $\mathbf{X}$ has already been scaled.
+2. Calculate the trimmed radius of the projected points $r_y^\mathrm{trim} = min(r_y, R)$ and apply the radial transformation described in equation \@ref(eq:radial2d2) to get the corrected radius $r_y^\prime$.
+3. Scale the Euclidean point vectors by a factor of $\frac{r_y^\prime}{r_y}$ 
+
+This differs from the original implementation described in @laa2021burning in that we don't convert the Euclidean vectors to polar form, and instead apply the scaling directly to the Euclidean vectors. This removal of the conversion step was primarily to improve performance.
+
+### Extension to 3D
+
+@laa2021burning provides the equation for the relative projected volume at radius $r$ on to a two dimensional disk for the 2-dimensional sage display. In this paper, we extend and implement the scatter, sage, and slice displays in 3D, and to do this we needed to calculate the relative projected volume for the case of a 3-dimensional projection.
+
+In the appendix we show that the relative projected volume for a __sphere__ at radius $r$ is given by:
+
+\begin{equation}
+  v_3(r; p, R) = \mathrm{BetaInc}\left(\left(\frac{r}{R}\right)^2, \frac{3}{2}, \frac{p-1}{2}\right) 
+\end{equation}
+
+Where $\mathrm{BetaInc}(x, \alpha, \beta)$ is the regularised incomplete beta function. This is important because it represents the radial CDF of points projected to 3 dimensions, and suggests that the radial PDF of the projected points is $\mathrm{Beta}\left(\frac{3}{2}, \frac{p-1}{2}\right)$ assuming the original data is a uniformly distributed ball of radius $R$.
+
+So for the three dimensional case, the full radial transformation for the sage tour is given by
+
+\begin{equation}
+r_y^\prime = \sqrt[3]{\mathrm{BetaInc}\left(\left(\frac{r}{R}\right)^2, \frac{3}{2}, \frac{p-1}{2}\right)}
+(\#eq:radial3)
+\end{equation}
+
+We also show that this generalises to any projection from $p$ to $d$ dimensions with $p>d$ with the equation:
+
+\begin{equation}
+v(r; p, R, d) = \mathrm{BetaInc}\left(\left(\frac{r}{R}\right)^2, \frac{d}{2}, \frac{p-d}{2}+1\right)
+(\#eq:radiald)
+\end{equation}
+
+This also suggests that equation \@ref(eq:radialcdf2d) is a special case of equation \@ref(eq:radiald). 
+
+The 3D sage tour is currently implemented in the `show_sage()` function, and like the scatter and slice displays the correct variant is chosen automatically based on the dimension of the provided tour path. However, this is not implemented for $d>3$ as we don't yet have a display method that can handle higher-dimensional projections. This will be implemented as an extension of a Parallel Coordinates Plot (PCP) or Andrew's plot in future.
+
+An example of the 3D sage tour is shown in Figure \@ref(fig:sage-sphere).
+
+```{r, eval=FALSE, echo=FALSE}
+library(MASS)
+# generate a random uniform sample within a unit p-ball
+random_unif_pball <- function(n, p) {
+    # multivariate normal has random direction, but not uniform radius
+    df <- mvrnorm(n, rep(0, p), diag(rep(1, p)))
+
+    # project points on to surface of unit ball
+    df <- t(apply(df, 1, function(x) x / sqrt(sum(x^2))))
+
+    # scale in to form a uniform distribution in the p-ball
+    t(apply(df, 1, function(x) x * (runif(1)^(1 / p)))) |> as_tibble()
+}
+
+X <- random_unif_pball(500, 50)
+p <- detour(X, tour_aes(projection = everything())) |>
+    tour_path(grand_tour(3))
+
+p |> show_scatter(axes = FALSE)
+p |> show_sage(axes = FALSE)
+```
+
+
+```{r sage-sphere, out.width="32%", fig.ncol=3, fig.show="hold", fig.align="center", fig.cap="(Top) Initial frames of a 3D scatter tour of a 3, 10, and 50 dimensional ball respectively from left to right. (Bottom) Selected frames of a 3D sage tour of similar 3, 10, and 50 dimensional balls. As the dimensionality increases, the standard scatter display crowds the points near the center, whereas the sage display shows a consistent radial distribution of points. All screenshots are at the same zoom level."}
+knitr::include_graphics(c(
+    "figures/display_methods/scatter_sphere_3.png",
+    "figures/display_methods/scatter_sphere_10.png",
+    "figures/display_methods/scatter_sphere_50.png",
+    "figures/display_methods/sage_sphere_3.png",
+    "figures/display_methods/sage_sphere_10.png",
+    "figures/display_methods/sage_sphere_50.png"
+))
+```
