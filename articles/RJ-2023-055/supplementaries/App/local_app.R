@@ -1,0 +1,31 @@
+library(shiny)
+library(shinyjs)
+library(shinydashboard)
+library(shinyalert)
+library(htmlwidgets)
+library(leaflet)
+library(dygraphs)
+library(rmarkdown)
+library(knitr)
+#library(INLA)
+library(SpatialEpi)
+library(maptools)
+library(spdep)
+library(dplyr)
+library(xts)
+library(ggplot2)
+library(RColorBrewer)
+library(rgeos)
+library(mapproj)
+library(rgdal)
+library(plotly)
+
+#source("utils.R")
+source("ui.R")
+#source("server.R")
+
+
+# Create Shiny app ----
+#shinyApp(ui, server)
+runApp(".")
+
