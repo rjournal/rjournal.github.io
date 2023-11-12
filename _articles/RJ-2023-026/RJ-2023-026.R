@@ -2,12 +2,12 @@
 # Please edit RJ-2023-026.Rmd to modify this file
 
 ## ----setup, include=FALSE-----------------------------------------------------
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, out.width="100%")
 library(ggplot2)
 #library(kableExtra)
 
 
-## ----Fig0, fig.height = 12, fig.width=8, fig.cap = "The visual predictive check plot. The solid red line represents the $50^{th}$ percentile of the observed data, and dashed red lines represent the $10^{th}$ and $90^{th}$ percentiles of the observed data. The solid blue line represents the $50^{th}$ percentile of the simularted data, and dashed blue lines represent the $10^{th}$ and $90^{th}$ percentiles of the simulated data. Light blue and pink areas represent the 95% confidence areas of the $10^{th}$, $50^{th}$ and $90^{th}$ percentile lines."----
+## ----Fig0, fig.height = 12, fig.width=8, fig.cap = "The visual predictive check plot. The solid red line represents the $50^{th}$ percentile of the observed data, and dashed red lines represent the $10^{th}$ and $90^{th}$ percentiles of the observed data. The solid blue line represents the $50^{th}$ percentile of the simularted data, and dashed blue lines represent the $10^{th}$ and $90^{th}$ percentiles of the simulated data. Light blue and pink areas represent the 95\\% confidence areas of the $10^{th}$, $50^{th}$ and $90^{th}$ percentile lines."----
 library(nlmeVPC)
 library(ggplot2)
 library(gridExtra)
@@ -23,15 +23,15 @@ C=VPCgraph(origdata,simdata,N_xbin=8,type="CI")+
 grid.arrange(A,B,C,nrow=3)
 
 
-## ----Fig1, fig.height = 4, fig.width=8, fig.cap = "The additive equantile VPC plot.  Dots indicate the observed data. The solid and dashed blue lines represent the $10^{th}$, $50^{th}$, and $90^{th}$ percentiles of the simulated data. The solid red line represents the $50^{th}$ percentile line. Light blue and pink areas represent the 95% confidence areas of the $10^{th}$, $50^{th}$ and $90^{th}$ percentile lines."----
+## ----Fig1, fig.height = 4, fig.width=8, fig.cap = "The additive equantile VPC plot.  Dots indicate the observed data. The solid and dashed blue lines represent the $10^{th}$, $50^{th}$, and $90^{th}$ percentiles of the simulated data. The solid red line represents the $50^{th}$ percentile line. Light blue and pink areas represent the 95\\% confidence areas of the $10^{th}$, $50^{th}$ and $90^{th}$ percentile lines."----
 aqrVPC(origdata,simdata) +labs(caption="")
 
 
-## ----Fig2, fig.height = 4, fig.width=8, fig.cap = "The bootstrap VPC plot. Dots indicate the observed data. The solid and dashed blue lines represent the $10^{th}$, $50^{th}$, and $90^{th}$ percentiles of the simulated data. The solid red line represents the $50^{th}$ percentile line, and the pink areas represent the 95% confidence areas of the $50^{th}$ percentile line, calculated from the bootstrap samples of the observed data."----
+## ----Fig2, fig.height = 4, fig.width=8, fig.cap = "The bootstrap VPC plot. Dots indicate the observed data. The solid and dashed blue lines represent the $10^{th}$, $50^{th}$, and $90^{th}$ percentiles of the simulated data. The solid red line represents the $50^{th}$ percentile line, and the pink areas represent the 95\\% confidence areas of the $50^{th}$ percentile line, calculated from the bootstrap samples of the observed data."----
 bootVPC(origdata,simdata,N_xbin=8)
 
 
-## ----Fig3, fig.height = 8, fig.width=8,fig.cap = "The average shifted VPC plot. Dots indicate the observed data. The solid line represents the 50th quantiles of the observed data, and dashed lines represent the $10^{th}$ and $90^{th}$ percentiles of the observed data. Light blue and pink areas represent the 95% confidence areas of the $10^{th}$, $50^{th}$, and $90^{th}$ percentiles."----
+## ----Fig3, fig.height = 8, fig.width=8,fig.cap = "The average shifted VPC plot. Dots indicate the observed data. The solid line represents the 50th quantiles of the observed data, and dashed lines represent the $10^{th}$ and $90^{th}$ percentiles of the observed data. Light blue and pink areas represent the 95\\% confidence areas of the $10^{th}$, $50^{th}$, and $90^{th}$ percentiles."----
 A=asVPC(origdata,simdata,type="CI",N_xbin=8,N_hist=3,weight_method="bin") +labs(caption="")
 B=asVPC(origdata,simdata,type="CI",N_xbin=8,N_hist=3,weight_method="distance")+labs(caption="")
 grid.arrange(A,B,nrow=2)
@@ -41,7 +41,7 @@ grid.arrange(A,B,nrow=2)
 NumericalCheck(origdata,simdata,pred.level=c(0,0.2,0.4,0.6,0.8,0.9),N_xbin=8)$NPC
 
 
-## ----Fig4, fig.height = 10, fig.width=6, fig.cap = "The coverage plot and the coverage detailed plot for the 80% prediction interval. In the coverage plot, the X-axis is the level of the prediction interval. The Y-axis is the ratio between the number of observed data and the number of expected data of the lower and upper parts in each level of the prediction interval. The white line is the reference line, and the gray area represents the confidence area of the ratios. If the solid lines are near the white line, we can conclude that the suggested model is suitable. In the coverage detailed plot, the white dots represent the expected percentages of lower and upper prediction intervals of, 10%, and 90%, respectively. The upper and lower percentages of observation in each time bin are darker gray."----
+## ----Fig4, out.width="90%", fig.height = 10, fig.width=6, fig.cap = "The coverage plot and the coverage detailed plot for the 80\\% prediction interval. In the coverage plot, the X-axis is the level of the prediction interval. The Y-axis is the ratio between the number of observed data and the number of expected data of the lower and upper parts in each level of the prediction interval. The white line is the reference line, and the gray area represents the confidence area of the ratios. If the solid lines are near the white line, we can conclude that the suggested model is suitable. In the coverage detailed plot, the white dots represent the expected percentages of lower and upper prediction intervals of, 10\\%, and 90\\%, respectively. The upper and lower percentages of observation in each time bin are darker gray."----
 
 A=coverageplot(origdata,simdata,N_xbin=8) +ggtitle("(A) Coverage Plot")
 B=coverageDetailplot(origdata,simdata,N_xbin=8,predL=0.8) +
@@ -256,13 +256,13 @@ B=coverageplot(origdata,simdata.F,conf.level=0.9,N_xbin=8)+labs(title="Model 2")
 grid.arrange(A,B,ncol=2)
 
 
-## ----M16,fig.height = 3, fig.width=7.5,fig.cap = "The coverage detailed plots for Model 1 and Model 2 when PI=50%."----
+## ----M16,fig.height = 3, fig.width=7.5,fig.cap = "The coverage detailed plots for Model 1 and Model 2 when PI=50\\%."----
 A=coverageDetailplot(origdata,simdata.T,predL=0.5,N_xbin=8)+labs(title="Model 1")
 B=coverageDetailplot(origdata,simdata.F,predL=0.5,N_xbin=8)+labs(title="Model 2")
 grid.arrange(A,B,ncol=2)
 
 
-## ----M17, fig.height = 3, fig.width=7.5,fig.cap = "The coverage detailed plots for Model 1 and Model 2 when PI=80%."----
+## ----M17, fig.height = 3, fig.width=7.5,fig.cap = "The coverage detailed plots for Model 1 and Model 2 when PI=80\\%."----
 A=coverageDetailplot(origdata,simdata.T,predL=0.8,N_xbin=8)+labs(title="Model 1")
 B=coverageDetailplot(origdata,simdata.F,predL=0.8,N_xbin=8)+labs(title="Model 2")
 grid.arrange(A,B,ncol=2)
