@@ -14,7 +14,7 @@ balanced_long <- data.frame(
   Rater  = c(1, 2, 1, 2, 1, 2),
   Rating = c(3, 4, 2, 2, 2, 2)
 ) |> 
-  kable() |> 
+  kable(booktabs = TRUE, linesep = '', valign = "t") |> 
   add_header_above(c("(a) Long" = 3))
 
 balanced_wide <- data.frame(
@@ -23,7 +23,7 @@ balanced_wide <- data.frame(
   "Rater 2" = c(4, 2, 2),
   check.names = FALSE
 ) |> 
-  kable() |> 
+  kable(booktabs = TRUE, linesep = '', valign = "t") |> 
   add_header_above(c("(b) Wide" = 3))
 
 balanced_grouped <- data.frame(
@@ -32,7 +32,7 @@ balanced_grouped <- data.frame(
   Tally     = c(1, 2),
   check.names = FALSE
 ) |> 
-  kable() |> 
+  kable(booktabs = TRUE, linesep = '', valign = "t") |> 
   add_header_above(c("(c) Wide (grouped)" = 3))
 
 kables(list(balanced_long, balanced_wide, balanced_grouped), 
@@ -46,7 +46,7 @@ unbalanced_long <- data.frame(
   Rater  = c(1, 2, 1, 2, 1, 2, 1, 1, 2),
   Rating = c(3, 4, 2, 2, 2, 2, 3, 3, 4)
 ) |> 
-  kable() |> 
+  kable(booktabs = TRUE, linesep = '', valign = "t") |> 
   add_header_above(c("(a) Long" = 3))
 
 unbalanced_wide <- data.frame(
@@ -55,7 +55,7 @@ unbalanced_wide <- data.frame(
   "Rater 2" = c(4, 2, 2, NA, NA,  4),
   check.names = FALSE
 ) |> 
-  kable() |> 
+  kable(booktabs = TRUE, linesep = '', valign = "t") |> 
   add_header_above(c("(b) Wide" = 3))
 
 unbalanced_grouped <- data.frame(
@@ -64,7 +64,7 @@ unbalanced_grouped <- data.frame(
   Tally     = c(1, 2,  2,  1),
   check.names = FALSE
 ) |> 
-  kable() |> 
+  kable(booktabs = TRUE, linesep = '', valign = "t") |> 
   add_header_above(c("(c) Wide (grouped)" = 3))
 
 kables(list(unbalanced_long, unbalanced_wide, unbalanced_grouped), 
@@ -75,7 +75,7 @@ kables(list(unbalanced_long, unbalanced_wide, unbalanced_grouped),
 ## ----relationships------------------------------------------------------------
 #| echo: FALSE
 #| fig.cap: "Relationships between models. Models coloured blue are
-#| implemented in <a href='https://CRAN.R-project.org/package=rater'>rater</a>.
+#| implemented in (ref:rater).
 #| DS: Dawid–Skene. LCM: latent class model."
 #| out.width: 100%
 knitr::include_graphics("tikz/figrelationships.png")
@@ -83,7 +83,7 @@ knitr::include_graphics("tikz/figrelationships.png")
 
 ## ----package-features, echo = FALSE-------------------------------------------
 data.frame(
-  "Package" = c("rater", "BayesLCA", "randomLCA", "poLCA"),
+  "Package" = c("\\CRANpkg{rater}", "\\CRANpkg{BayesLCA}", "\\CRANpkg{randomLCA}", "\\CRANpkg{poLCA}"),
   "DS model" = c("Yes", "When $K = 2$", "When $K = 2$", "Yes"),
   "Fitting method" = c("Bayesian", "Bayesian", "Frequentist", "Frequentist"),
   "Response type" = c("Polytomous", "Binary", "Binary", "Polytomous"),
@@ -93,7 +93,8 @@ data.frame(
 ) |> 
   kable(caption = "Features of
   \\CRANpkg{rater} and existing R
-  packages for fitting latent class models. DS: Dawid--Skene.") |> 
+  packages for fitting latent class models. DS: Dawid--Skene.",
+        escape = FALSE, booktabs = TRUE) |> 
   kable_styling(position = "center")
 
 
@@ -124,16 +125,16 @@ summary(fit_1)
 
 ## ----inspecting-fitted-models, echo = FALSE-----------------------------------
 data.frame(
-  " " = c("`summary()`", "`point_estimate()`", "`posterior_interval()`", 
-          "`posterior_samples()`", "`mcmc_diagnostics()`", 
-          "`class_probabilities()`"), 
-  "MCMC mode" = c("Basic inforamtion about the fitted model", 
+  "Function" = c("summary()", "point\\_estimate()", "posterior\\_interval()", 
+          "posterior\\_samples()", "mcmc\\_diagnostics()", 
+          "class\\_probabilities()"), 
+  "MCMC mode" = c("Basic information about the fitted model",
                   "Posterior means for $\\pi$ and $\\theta$, posterior modes for $z$",
                   "Credible intervals for $\\pi$ and $\\theta$", 
                   "MCMC draws for $\\pi$ and $\\theta$",
                   "MCMC convergence diagnostics for $\\pi$ and $\\theta$",
                   "Posterior distribution for $z$"), 
-  "Optimisation mode" = c("Basic inforamtion about the fitted model",
+  "Optimisation mode" = c("Basic information about the fitted model",
                           "Posterior modes for all quantities", 
                           "N/A", 
                           "N/A", 
@@ -141,7 +142,8 @@ data.frame(
                           "Posterior distribution for $z$ conditional on the
                           posterior modes for $\\pi$ and $\\theta$"), 
   check.names = FALSE) |> 
-  kable(caption = "Methods to inspect fitted models and what values they return.") |> 
+  kable(caption = "Methods to inspect fitted models and what values they return.",
+        escape = FALSE, booktabs = TRUE, linesep = '') |> 
   kable_styling(position = "center")
 
 
@@ -191,7 +193,7 @@ plot(fit_1, "latent_class", item_index = c(2, 3, 12, 36, 38))
 #| echo: FALSE
 #| fig.cap: "Visual representation of the inferred parameters in the error
 #|     matrices ($\\theta$) for the Dawid--Skene model fitted via optimisation
-#|     to the anaesthesia dataset.  Compare with \\autoref{fig:plot-theta},
+#|     to the anaesthesia dataset.  Compare with (ref:fig2),
 #|     which used MCMC instead of optimisation."
 #| fig.height: 3.8
 #| fig.width: 5.5
@@ -204,7 +206,7 @@ plot(fit_2, "raters")
 #| fig.cap: "Visualisation of the inferred probability of each latent class, for
 #|     a selected subset of items, for the Dawid--Skene model fitted via
 #|     optimisation to the anaesthesia dataset.  Compare with
-#|     \\autoref{fig:plot-z}, which used MCMC instead of optimisation."
+#|     (ref:fig3), which used MCMC instead of optimisation."
 #| fig.height: 4
 #| fig.width: 4
 #| fig.align: "center"
@@ -233,7 +235,7 @@ diff_model_fit <- rater(anesthesia, class_conditional_dawid_skene())
 #| fig.cap: "Visual representation of the inferred parameters in the error
 #|     matrices ($\\theta$) for the class-conditional Dawid--Skene model fitted
 #|     via MCMC to the anaesthesia dataset.  Compare with
-#|     \\autoref{fig:plot-theta}, which used the standard Dawid--Skene model."
+#|     (ref:fig2), which used the standard Dawid--Skene model."
 #| fig.height: 3.8
 #| fig.width: 5.5
 #| fig.align: "center"
