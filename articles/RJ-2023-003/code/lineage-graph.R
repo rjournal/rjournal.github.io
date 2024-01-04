@@ -1,1 +1,0 @@
-get.lineage(adj.graph, node.id, forward = FALSE)
