@@ -1,0 +1,521 @@
+#' @name stitch_script
+#' @aliases stich_script
+#' @title Stitching script (for building apps with shinymgr)
+#' @description The stitching script is called internally by shinymgr to write the 
+#' R script for an app, based on instructions received from the shinymgr app builder.
+#' After the "Lock in stitch" button is clicked in the app builder, instructions for 
+#' building the app are populated into the shinymgr database before the app's name and
+#' shinymgr database file path are passed to the stitching script. The resulting app
+#' synthesized by the stitching script are saved to the "modules_app" sub-directory 
+#' of the current working directory (the directory populated by shinymgr_setup).
+#' 
+#' This function is called internaly by shinymgr and not indended to be called 
+#' directly by a user. But, this script can be modified to change any aspect of
+#' app's built with shinymgr.
+#' @param app_name The app name to stitch
+#' @param shinyMgrPath  File path to the main shiny manager project directory
+#' @usage stitch_script(app_name, shinyMgrPath)
+#' @inheritSection rerun_analysis Tutorials
+#' @inherit rerun_analysis references
+#' @importFrom DBI dbAppendTable
+#' @importFrom DBI dbConnect
+#' @importFrom DBI dbDisconnect
+#' @importFrom RSQLite dbClearResult
+#' @importFrom RSQLite SQLite
+#' @family stitching
+
+
+stitch_script <- function(app_name, shinyMgrPath) {
+  # Add line function
+  add_line <- function(line_code = "", ...) {
+    write(paste0(line_code, ...), fileConn, append = T)
+  }
+  
+  # Returns "nSpaces" extra indentations, where an indentation equals two spaces
+  indent <- function(nSpaces) {
+    paste(rep('  ',nSpaces), collapse = '')
+  }
+  
+  # STITCH THIS THING UP! -----------------
+  
+  # connect to database for running initial queries
+  conx <- DBI::dbConnect(
+    drv = RSQLite::SQLite(),
+    dbname = paste0(shinyMgrPath, "/database/shinymgr.sqlite")
+  )
+  
+  # Run queries to fetch instructions for buildling the app from the database
+  
+  appTabs <- DBI::dbGetQuery(
+    conx,
+    statement = paste0(
+      'SELECT appTabs.fkAppName, appTabs.fkTabName, appTabs.tabOrder, 
+      tabs.tabDisplayName, tabs.tabInstructions, tabs.tabNotes
+      FROM tabs INNER JOIN appTabs ON tabs.pkTabName = appTabs.fkTabName
+      WHERE (((appTabs.fkAppName)="', app_name, '"))
+      ORDER BY appTabs.tabOrder;'
+    )
+  )
+
+  tab_names <- appTabs$fkTabName[sort(appTabs$tabOrder)]
+  n_tabs <- length(tab_names)
+
+  appTabMods <- DBI::dbGetQuery(
+    conx,
+    statement = paste0(
+      "SELECT appTabs.fkAppName, appTabs.fkTabName,
+      appTabs.tabOrder, tabModules.fkModuleName, tabModules.modOrder
+      FROM appTabs
+      INNER JOIN tabModules
+      ON appTabs.fkTabName = tabModules.fkTabName
+      WHERE (appTabs.fkAppName='", app_name, "')
+      ORDER BY appTabs.tabOrder, tabModules.modOrder;"
+    )
+  )
+  
+  mod_names <- unique(appTabMods$fkModuleName) # Grab mod names from here (OK for now, double-check)
+  
+  modReturns <- qry_row('modFunctionReturns', shinyMgrPath =  shinyMgrPath)
+
+  # Stitching data query and pre-processing
+  appStitching <- DBI::dbGetQuery(
+    conx,
+    paste0(
+      'SELECT appStitching.fkAppName, tabModules.fkTabName,
+    tabModules.fkModuleName, tabModules.modOrder,
+    modFunctionArguments.functionArgName,
+    modFunctionReturns.functionReturnName, appStitching.pkStitchID,
+    appStitching.fkStitchID, appTabs.tabOrder
+    FROM (tabModules
+    INNER JOIN ((appStitching
+    LEFT JOIN modFunctionArguments
+    ON appStitching.fkModArgID = modFunctionArguments.pkModArgID)
+    LEFT JOIN modFunctionReturns
+    ON appStitching.fkModReturnID = modFunctionReturns.pkModReturnID)
+    ON tabModules.pkInstanceID = appStitching.fkInstanceID)
+    INNER JOIN appTabs ON tabModules.fkTabName = appTabs.fkTabName
+    WHERE (((appStitching.fkAppName)="', app_name, '"));'
+    )
+  )
+  
+  DBI::dbDisconnect(conx)
+
+  # Establish the ordering of argument vs. return rows of the "stitching" table
+  m <- match(appStitching$fkStitchID, appStitching$pkStitchID)
+  # ARGUMENTS (IN ORDER)
+  stitch_arg <- appStitching[is.finite(m), c('fkTabName', 'tabOrder', 'fkModuleName', 'modOrder', 'functionArgName')]
+  names(stitch_arg) <- c('tabNameARG', 'tabOrderARG', 'modNameARG', 'modOrderARG', 'argName')
+  # RETURNS (IN ORDER)
+  stitch_return <- appStitching[m[is.finite(m)], c('fkTabName', 'tabOrder', 'fkModuleName', 'modOrder', 'functionReturnName')]
+  names(stitch_return) <- c('tabNameRET', 'tabOrderRET', 'modNameRET', 'modOrderRET', 'ReturnName')
+  # Stitch Instructions
+  stitch <- cbind(stitch_arg, stitch_return)
+  
+  # Begin stitching
+  file.create(paste0(shinyMgrPath, '/modules_app/', app_name, '.R'))
+  fileConn <- file(paste0(shinyMgrPath, '/modules_app/', app_name, '.R'), "w") # NOTE: globally accessed via add_line
+  
+  # Disclaimer header
+  add_line(
+    '# This script was automatically generated by the shinymgr R package\'s App Builder on ', 
+    Sys.time(), '.'
+  )
+  add_line('# For more information, visit: https://code.usgs.gov/vtcfwru/shinymgr')
+  
+  # Javascript for enabling/disabling tabs
+  add_line('jscode <- "')
+  add_line('shinyjs.disableTab = function(name) {')
+  add_line("var tab = $('.nav li a[data-value=' + name + ']');")
+  add_line("tab.bind('click.tab', function(e) {")
+  add_line('e.preventDefault();')
+  add_line('return false;')
+  add_line('});')
+  add_line("tab.addClass('disabled');")
+  add_line('}')
+  add_line()
+  add_line('shinyjs.enableTab = function(name) {')
+  add_line("var tab = $('.nav li a[data-value=' + name + ']');")
+  add_line("tab.unbind('click.tab');")
+  add_line("tab.removeClass('disabled');")
+  add_line('}')
+  add_line('"')
+  add_line()
+  add_line('css <- "')
+  add_line('.nav li a.disabled {')
+  add_line('background-color: #bbb !important;')
+  add_line('border-color: #ccc !important;')
+  add_line('cursor: not-allowed !important;')
+  add_line('}"')
+  add_line()
+  add_line()
+  
+  # Open up the UI function
+  add_line(indent(0), app_name, "_ui <- function(id) {")
+  add_line(indent(1), "ns <- NS(id)")
+  add_line(indent(1), "tagList(")
+  add_line(indent(2), "fluidPage(")
+  
+  # Add custom css
+  theme <- qry_row( 
+    'apps',
+    rowConditions = list(pkAppName = app_name),
+    'appCSS',
+    shinyMgrPath = shinyMgrPath
+  )
+  if (!is.na(theme) & theme != '') {
+    if (grepl("css", theme)) {
+      add_line(indent(3), 'theme = "', theme, '",')
+    } else {
+      add_line(indent(3), 'theme = shinythemes::shinytheme("', theme, '"),')
+    }
+    
+  }
+  
+  add_line(indent(3), 'useShinyjs(),')
+  add_line(indent(3), "extendShinyjs(text = jscode, functions = c('disableTab','enableTab')),")
+  add_line(indent(3), 'inlineCSS(css),')
+  add_line(indent(3), 'actionButton(')
+  add_line(indent(4), 'ns("start"),')
+  add_line(indent(4), '"Start New Analysis",')
+  add_line(indent(4), 'onclick = "var $btn=$(this); setTimeout(function(){$btn.remove();},0);"')
+  add_line(indent(3), "),")
+  add_line(indent(3), "uiOutput(ns('test'))")
+  add_line(indent(2), ")")
+  add_line(indent(1), ')')
+  add_line(indent(0), '}')
+  
+  # Now for the server part
+  add_line(indent(0), app_name, "_server <- function(id, userID, shinyMgrPath) {")
+  add_line(indent(1), 'moduleServer(id, function(input, output, session) {')
+  add_line(indent(2), 'ns <- session$ns') 
+  add_line(indent(2), 'observeEvent(input$start, {')
+  add_line()
+  add_line(indent(3), "disable('start')")
+  add_line()
+  add_line(indent(3), 'output$test <- renderUI({')
+  add_line(indent(4), 'tagList(')
+  add_line(indent(5), 'tabsetPanel(')
+  add_line(indent(6), 'id = ns("mainTabSet"),')
+
+  mod_counter <- 1
+  tab_counter <- 1
+  
+  for (i_tab in 1:n_tabs) {
+    tab_id_name <- tab_names[i_tab]
+    tab_disp_name <- appTabs$tabDisplayName[appTabs$fkTabName == tab_id_name]
+    add_line(indent(6), 'tabPanel(')
+    add_line(indent(7), '"', tab_disp_name ,'", ')
+    add_line(indent(7), 'value = "tab', tab_counter, '",')
+    
+    # Add tab instructions
+    tab_instructions <- appTabs$tabInstructions[appTabs$fkTabName == tab_id_name]
+
+    # Add tab instructions (if there are any)
+    if (!is.na(tab_instructions)) {
+      add_line(indent(7), 'tags$br(),')
+      add_line(indent(7), 'wellPanel(')
+      add_line(indent(8), 'style = "background: skyblue",')
+      add_line(indent(8), '"', gsub('"', '\\\\"', tab_instructions), '"')
+      add_line(indent(7), '),')
+    }
+    
+    tab_mods <- appTabMods$fkModuleName[appTabMods$fkTabName == tab_id_name]
+    for (tab_mod in tab_mods) {
+      add_line(indent(7), tab_mod, '_ui(ns("mod', mod_counter ,'")),')
+      mod_counter <- mod_counter + 1
+    }
+    add_line(indent(7), 'fluidRow(')
+    if (tab_counter > 1) {
+      add_line(indent(8), "actionButton(ns('previous_tab_", tab_counter, '\'), label = "Previous"),')
+    }
+    if (tab_counter <= n_tabs) {
+      add_line(indent(8), "actionButton(ns('next_tab_", tab_counter, '\'), label = "Next")')
+    }
+    add_line(indent(7), ')')
+    add_line(indent(6), '),')
+    tab_counter <- tab_counter + 1
+  }
+  
+  
+  add_line(indent(6), 'tabPanel(')
+  add_line(indent(7), '"Save",')
+  add_line(indent(7), 'value = "tab', n_tabs + 1, '",' )
+  add_line(indent(7), 'save_analysis_ui(ns("mod', mod_counter ,'")),')
+  add_line(indent(7), 'tags$br(),')
+  add_line(indent(7), 'tags$br(),')
+  add_line(indent(7), 'fluidRow(')
+  add_line(indent(8), 'actionButton(ns("previous_tab_', n_tabs+1, '"), label = "Previous")')
+  add_line(indent(7), ')')
+  add_line(indent(6), ')')
+  add_line(indent(5), ')')
+  add_line(indent(4), ')')
+  add_line(indent(3), '})')
+  
+  # Disables all but first tab on launch
+  add_line(indent(3), 'delay(50, {')
+  for (i in 2:(n_tabs+1)) {
+    add_line(indent(4), 'js$disableTab("tab', i, '")')
+  }
+  add_line(indent(3), '})')
+  add_line(indent(2), '})')
+  add_line()
+  
+  data_counter <- 1
+  mod_counter <- 1
+  
+  # Keep track of the output name being assigned to each mod
+  mod_to_output <- data.frame(
+    tab_num = numeric(0), 
+    mod_order = numeric(0),
+    return_name = character(0)
+  ) 
+  
+  for (i_tab in 1:n_tabs) {
+    tab_id_name <- tab_names[i_tab]
+    tab_disp_name <- appTabs$tabDisplayName[appTabs$fkTabName == tab_id_name]
+    tab_mods <- appTabMods$fkModuleName[appTabMods$fkTabName == tab_id_name]
+    mod_orders <- appTabMods$modOrder[appTabMods$fkTabName == tab_id_name]
+    
+    for (i_mod in 1:length(tab_mods)) {
+      mod_name <- tab_mods[i_mod]
+      mod_order <- mod_orders[i_mod]
+
+      if (mod_name %in% modReturns$fkModuleName) {
+        prefix <- paste0(indent(2), 'data', data_counter,' <- ')
+        
+        mod_to_output <- rbind(mod_to_output, data.frame(
+          tab_num = i_tab,
+          mod_order = mod_order,
+          return_name = paste0('data', data_counter))
+        )
+        data_counter <- data_counter + 1
+      } else {
+        prefix <- indent(2)
+      }
+      
+      prefix <- paste0(prefix, mod_name, '_server("mod', mod_counter, '"')
+      mod_counter <- mod_counter + 1
+      
+      i_args <- which(stitch$tabOrderARG == i_tab & stitch$modOrderARG == mod_order)
+      
+      # Check if inputs are required, and add arguments accordingly
+      for (i_arg in i_args) {
+        temp <- which(mod_to_output$tab_num == stitch$tabOrderRET[i_arg] & mod_to_output$mod_order == stitch$modOrderRET[i_arg])
+        correct_arg_name <- stitch$argName[i_arg] # argument name
+        correct_data_var <- mod_to_output$return_name[temp]
+        correct_return_name <- stitch$ReturnName[i_arg]
+        prefix <- paste0(
+          prefix, 
+          ', ', 
+          correct_arg_name,
+          ' = ',
+          correct_data_var, 
+          '$',
+          correct_return_name
+        )
+      }
+      prefix <- paste0(prefix, ')')
+      add_line(prefix)
+    }
+  }
+  
+  # Save analysis server function --------------
+  add_line(indent(2), 'save_analysis_server("mod', mod_counter,'",')
+  add_line(indent(3), 'appName = "', app_name, '",')
+  add_line(indent(3), 'moduleInput = input,')
+  add_line(indent(3), 'returns = list(')
+  
+  data_counter <- 1
+  # Add returns argument -----------
+  for (i in 1:nrow(appTabMods)) {
+    if (appTabMods[i, 'fkModuleName'] %in% modReturns$fkModuleName) {
+      
+      add_line(indent(4), 'data', data_counter, ' = list(')
+      
+      fct_returns <- qry_row(
+        tableName = 'modFunctionReturns',
+        rowConditions = data.frame(
+          fkModuleName = appTabMods[i,'fkModuleName']
+        ),
+        colConditions = 'functionReturnName',
+        shinyMgrPath = shinyMgrPath
+      )
+      
+      for (j in 1:nrow(fct_returns)) {
+        fct_return <- fct_returns[j,]
+        if (j < nrow(fct_returns) & nrow(fct_returns) >= 2) {
+          add_line(indent(5), fct_return, ' = data', data_counter, '$', fct_return, '(),')
+        } else {
+          add_line(indent(5), fct_return, ' = data', data_counter, '$', fct_return, '()')
+        }
+      }
+      
+      if (i < nrow(appTabMods) & 
+          nrow(appTabMods) >= 2 & 
+          sum(appTabMods[(i+1):nrow(appTabMods), 'fkModuleName'] %in% modReturns$fkModuleName) >= 1
+      ) {
+        add_line(indent(4), '),')
+        data_counter <- data_counter + 1
+      } else {
+        add_line(indent(4), ')')
+      }
+    }
+  }
+  
+  add_line(indent(3), '),')
+  #metadata argument
+  add_line(indent(3), 'metadata = list(')
+  #add app description
+  appInfo <- qry_row(
+    "apps",
+    rowConditions = list(pkAppName = app_name),
+    shinyMgrPath = shinyMgrPath
+  )
+  add_line(indent(4), 'appDescription = "', appInfo[1, 'appDescription'], '",')
+  
+  #loop through modules, add row for each mod
+  data_counter <- 1
+  for (i_mods in 1:nrow(appTabMods)) {
+    #get info for that mod
+    modInfo <- qry_row(
+      "modules", 
+      rowConditions = list(pkModuleName = appTabMods[i_mods, 'fkModuleName']),
+      shinyMgrPath = shinyMgrPath
+    )
+    
+    modArguments <- qry_row(
+      "modFunctionArguments",
+      rowConditions = list(fkModuleName = appTabMods[i_mods, 'fkModuleName']),
+      shinyMgrPath = shinyMgrPath
+    )
+    
+    modReturns <- qry_row(
+      "modFunctionReturns",
+      rowConditions = list(fkModuleName = appTabMods[i_mods, 'fkModuleName']),
+      shinyMgrPath = shinyMgrPath
+    )
+    
+    modPackages <- qry_row(
+      'modPackages',
+      rowConditions = list(fkModuleName = appTabMods[i_mods, 'fkModuleName']),
+      shinyMgrPath = shinyMgrPath
+    )
+    
+    add_line(indent(4), 'mod', i_mods, ' = list(')
+    #if has returns, include data counter, otherwise don't
+    if (appTabMods[i_mods, 'fkModuleName'] %in% modReturns$fkModuleName) {
+      add_line(indent(5), 'dataset = "data', data_counter, '",')
+      data_counter <- data_counter + 1
+    } else {
+      add_line(indent(5), 'dataset = "no returns",')
+    }
+    #mod name
+    add_line(indent(5), 'modName = "', modInfo[1, 'pkModuleName'], '",')
+    #mod display name
+    add_line(indent(5), 'modDisplayName = "', modInfo[1, 'modDisplayName'], '",')
+    #mod description
+    add_line(indent(5), 'modDescription = "', modInfo[1, 'modDescription'], '",')
+    #mod arguments
+    if (nrow(modArguments) > 0) {
+      add_line(indent(5), 'modArguments = data.frame(')
+      add_line(indent(6), 'name = c("', paste(modArguments$functionArgName, collapse = '","'), '"),')
+      add_line(indent(6), 'class = c("', paste(modArguments$functionArgClass, collapse = '","'), '"),')
+      add_line(indent(6), 'description = c("', paste(modArguments$description, collapse = '","'), '")')
+      add_line(indent(5), '),')
+    } else {
+      add_line(indent(5), 'modArguments = "This module has no additional arguments",')
+    }
+    #mod returns
+    if (nrow(modReturns) > 0) {
+      add_line(indent(5), 'modReturns = data.frame(')
+      add_line(indent(6), 'name = c("', paste(modReturns$functionReturnName, collapse = '","'), '"),')
+      add_line(indent(6), 'class = c("', paste(modReturns$functionReturnClass, collapse = '","'), '"),')
+      add_line(indent(6), 'description = c("', paste(modReturns$description, collapse = '","'), '")')
+      add_line(indent(5), '),')
+    } else {
+      add_line(indent(5), 'modReturns = "This module has no returns",')
+    }
+    #mod packages
+    if (nrow(modPackages) > 0) {
+      add_line(indent(5), 'modPackages = data.frame(')
+      add_line(indent(6), 'name = c("', paste(modPackages$packageName, collapse = '","'), '"),')
+      add_line(indent(6), 'version = c("', paste(modPackages$version, collapse = '","'), '")')
+      add_line(indent(5), ')')
+    } else {
+      add_line(indent(5), 'modPackages = "This module has no package dependencies"')
+    }
+    #closing bracket for mod
+    if (i_mods == nrow(appTabMods)) {
+      add_line(indent(4), ')')
+    } else {
+      add_line(indent(4), '),')
+    }
+  } #end metadata list
+  add_line(indent(3), ')')
+  add_line(indent(2), ')')
+  
+  for (i_tab in 1:(n_tabs+1)) {
+    # Add the "next" button logic
+    if (i_tab <= n_tabs) {
+      add_line(indent(2), 'observeEvent(input$next_tab_', i_tab,', {')
+      add_line(indent(3), "js$enableTab('tab", i_tab+1,"')")
+      add_line(indent(3), "js$disableTab('tab", i_tab,"')")
+      add_line(indent(3), "updateTabsetPanel(")
+      add_line(indent(4), "session, 'mainTabSet',")
+      add_line(indent(4), "selected = 'tab", i_tab+1,"'")
+      add_line(indent(3), ")")
+      add_line(indent(2), "})")
+    }
+    
+    # Add the "previous" button logic
+    if (i_tab > 1) {
+      add_line(indent(2), 'observeEvent(input$previous_tab_', i_tab,', {')
+      add_line(indent(3), 'delay(50, {')
+      add_line(indent(4), "js$enableTab('tab", i_tab-1,"')")
+      add_line(indent(4), "js$disableTab('tab", i_tab,"')")
+      add_line(indent(3), '})')
+      
+      
+      # Only insert a tab if not the last ("save") tab
+      if (i_tab <= n_tabs) {
+        add_line(indent(3), "removeTab('mainTabSet','tab", i_tab,"',session)")
+        add_line(indent(3), "insertTab(")
+        add_line(indent(4), "inputId = 'mainTabSet',")
+        add_line(indent(4), "tab = tabPanel(")
+        add_line(indent(5), 'title = "', appTabs$tabDisplayName[appTabs$fkTabName == tab_names[i_tab]],'",')
+        add_line(indent(5), 'value = "tab', i_tab,'",')
+        tab_mods <- appTabMods$fkModuleName[appTabMods$tabOrder == i_tab]
+        for (i_mod in 1:length(tab_mods)) {
+          # Figure out what the proper namespace id is for the mods being replaced
+          ns_id <- which((appTabMods$tabOrder == i_tab) & (appTabMods$modOrder == i_mod))
+          add_line(indent(5), appTabMods$fkModuleName[ns_id], '_ui(ns("mod', ns_id ,'")),')
+        }
+        add_line(indent(5), 'fluidRow(')
+        if (i_tab > 1) {
+          add_line(indent(6), "actionButton(ns('previous_tab_", i_tab, '\'), label = "Previous"),')
+        }
+        if (i_tab <= n_tabs) {
+          add_line(indent(6), "actionButton(ns('next_tab_", i_tab, '\'), label = "Next")')
+        }
+        add_line(indent(5), ')')
+        add_line(indent(4), "),")
+        add_line(indent(4), "target = 'tab", i_tab-1,"',")
+        add_line(indent(4), "position = 'after'")
+        add_line(indent(3), ")")
+      }
+      
+      add_line(indent(3), "updateTabsetPanel(")
+      add_line(indent(4), "session, 'mainTabSet',")
+      add_line(indent(4), "        selected = 'tab", i_tab-1,"'")
+      add_line(indent(3), ")")
+      add_line(indent(2), "})")
+    }
+  }
+
+  add_line(indent(1), '})')
+  add_line(indent(0), '}')
+  
+  # End Stitching
+  close(fileConn)
+  unlink(fileConn)
+}

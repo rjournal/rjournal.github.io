@@ -1,0 +1,671 @@
+---
+title: "MDS data analysis"
+author:
+- Rui J Costa^[European Bioinformatics Institute (EMBL-EBI), ruibarrigana@hotmail.com]
+- Moritz Gerstung^[Genome Biology Unit, EMBL] ^[German Cancer Research Center (DKFZ)]
+toc-title: Contents
+header-includes: \usepackage{amsmath,amsfonts,amssymb,amsthm,verbatim}
+output:
+  bookdown::html_document2:
+    number_sections: no
+    toc: yes
+    toc_depth: 4
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+  word_document:
+    toc: yes
+    toc_depth: '4'
+subtitle: <font size="2"> This document is part of the supplementary material to Costa,
+  R. J., Gerstung, M. (2024), ebmstate -- an R package For Disease 
+  Progression Analysis Under Empirical Bayes Cox Models, *The R Journal*. </font>
+---
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+td {  /* Table  */
+  font-size: 8px;
+}
+h1.title {
+  font-size: 38px;
+  color: Black;
+}
+h1 { /* Header 1 */
+  font-size: 20px;
+  color: DarkBlue;
+}
+h2 { /* Header 2 */
+    font-size: 15px;
+  color: DarkBlue;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,eval = FALSE
+                      ,tidy.opts=list(width.cutoff=80), tidy=TRUE
+                      )
+
+```
+\
+\
+
+#### Preamble
+```{r}
+set.seed(973009)
+library(ebmstate)
+library(RColorBrewer)
+library(plotrix)
+library(caret)
+
+```
+
+#### Pre-processing the data
+ 
+```{r echo=FALSE, eval=FALSE}
+load("../data/processed_data.Rdata")
+```
+
+The pre-processing steps produce a data frame called 'imputedData', with the covariate data after imputation has been carried out, and a data frame called 'mdsClinicalData', with the disease progression data and unprocessed covariate data. 
+
+```{r}
+mdsClinicalData <- read.table("../data/mds.paper.clin.txt", header=T, sep="\t", fill=T, na.strings = c("NA","na")) ## Import clinical data
+mdsClinicalData <- mdsClinicalData [!duplicated(mdsClinicalData$PDID),] ## remove duplicated observations
+mdsClinicalData[mdsClinicalData==""] = NA #replace empty string with NAs
+mdsClinicalData = mdsClinicalData[mdsClinicalData$X0.no.mut.1.seq.2.removedbyqc.3.failed <2,] 
+mdsClinicalData$IPSS.norm = factor(tolower(as.character(mdsClinicalData$IPSS.norm)), levels=c("low", "int-1", "int-2", "high")) # removes factor level "Low", keeping factor level "low"
+```
+
+
+```{r}
+mdsGeneticData <- read.table("../data/MDS.TPD.20Nov2012.csv", sep=",", header=T, fill=T, quote = "\"") ## Genotypes
+mdsGeneticData$Gene<-factor(mdsGeneticData$Gene)
+levels(mdsGeneticData$Gene)[levels(mdsGeneticData$Gene)=="SFRS2"] = "SRSF2" #SFRS2 is alternative label for gene SRSF2
+levels(mdsGeneticData$Gene)[levels(mdsGeneticData$Gene)=="ENSG00000091592"] = "NLRP1" #change level name
+mdsGeneticData$Decision<-factor(mdsGeneticData$Decision)
+```
+
+Create a matrix whose i,j entry corresponds to the patient i and gene j (there are no duplicated patients or genes). 
+The entry in this matrix is 3 if patient i has at least one oncogenic mutation in gene j. It is 2, if the patient has at least one possibly oncogenic mutation in this gene. Or 1 if there's at least one mutation of unknown oncogenic status in the gene.
+```{r}
+IDs <- mdsClinicalData$PDID
+allGenotypes <- matrix(0,nrow = length(IDs), ncol = length(levels(mdsGeneticData$Gene)))
+rownames(allGenotypes) <- IDs
+colnames(allGenotypes) <- levels(mdsGeneticData$Gene)
+allGenotypes <- allGenotypes[rownames(allGenotypes)!="", colnames(allGenotypes)!=""]
+for(i in seq_along(mdsGeneticData$Gene)){
+	if(mdsGeneticData$SAMPLE.NAME[i] %in% IDs)
+		allGenotypes[as.character(mdsGeneticData$SAMPLE.NAME[i]), as.character(mdsGeneticData$Gene[i])] <- max(c(3,2,1)[as.numeric(mdsGeneticData$Decision[i])], allGenotypes[as.character(mdsGeneticData$SAMPLE.NAME[i]), as.character(mdsGeneticData$Gene[i])])
+}
+```
+
+Restrict to matching PDIDs, mutated genes
+```{r}
+genotypes <- allGenotypes[,colSums(allGenotypes)>0]
+```
+
+Create 5 indicator (binary) variables (one for each center).
+```{r}
+centers <- sapply(unique(1:5), function(i) mdsClinicalData$center==i) + 0
+colnames(centers) <- paste("center",1:5, sep="")
+```
+
+Create object cytoMerged merging some cytogenetic variables from mdsClinicalData.
+CytoMerged includes all observations on variables with prefix "CYTO_" in mdsClinicalData.
+If observation i on variable "CYTO_X" is missing, observation i on variable "SEQ_X" is used (in case "SEQ_X"[i] is not also missing).
+
+```{r}
+cyto = mdsClinicalData[,grepl("CYTO_",colnames(mdsClinicalData))]
+colnames(cyto) = c( "chr3" ,   "del5q" ,"del7_7q" ,"tri8"   , "del11" , "del12", "alt17q"  , "tri19"   ,"del20q" ,"delY", "other" , "complex")
+ascat =  mdsClinicalData[,grepl("SEQ_",colnames(mdsClinicalData))]
+colnames(ascat) = c("tri8"  , "del5"  ,"del7_7q" , "del11q" ,"del12p", "alt17q"  , "tri19" , "del20q","other")
+
+cytoMerged = cyto
+for(c in colnames(cyto))
+	if(c %in% colnames(ascat))
+		cytoMerged[,c][is.na(cytoMerged[,c])] = ascat[,c][is.na(cytoMerged[,c])]
+```
+
+Simplified WHO types
+```{r}
+#indicator variables for simplified who classes
+whoSimple = data.frame(
+		ra = mdsClinicalData$WHO.category %in% c("RA","RT"),
+		rars = mdsClinicalData$WHO.category == "RARS",
+		rars_t = mdsClinicalData$WHO.category == "RARS-T",
+		rcmd = mdsClinicalData$WHO.category == "RCMD",
+		rcmd_rs = mdsClinicalData$WHO.category == "RCMD-RS",
+		raeb = mdsClinicalData$WHO.category %in% c("RAEB", "RAEB 1", "RAEB 2"), 
+		d5q = mdsClinicalData$WHO.category == "5q-",
+		cmml =  mdsClinicalData$WHO.category == "CMML",
+		mds_mpn = mdsClinicalData$WHO.category == "MDSMPN",
+		mds_u = mdsClinicalData$WHO.category =="MDS-U",
+		mds_aml = mdsClinicalData$WHO.category ==  "AML-MDS"
+) + 0
+
+# factor vector for simplified WHO classes
+whoSimpleFactor = factor(rowSums(whoSimple * rep(1:ncol(whoSimple), each=nrow(whoSimple))), labels = c("RA","RARS","RARS-T","RCMD","RCMD-RS","RAEB","5q-","CMML","MDS-MPN","MDS-U","MDS-AML"))
+```
+
+Combine into single data.frame (only covariates)
+```{r}
+d <- genotypes >= 3 #only oncogeneic mut
+d <- d[,colSums(d) >0] # only genes mutated at least once
+rawData <- data.frame(d,
+		cytoMerged,
+		age_log = log(as.numeric(as.character(mdsClinicalData$AGE))),
+		sex = mdsClinicalData$Gender,
+		pb_cytopenia = as.numeric(mdsClinicalData$PB.CYTOPENIA),
+		hb = as.numeric(mdsClinicalData$HB),
+		anc_log = log(as.numeric(as.character(mdsClinicalData$ANC))+1e-3),
+		plt_log = log(as.numeric(mdsClinicalData$PLT)),
+		bm_blasts_logit = car::logit(as.numeric(as.character(mdsClinicalData$X..BM.BLASTS))),
+		ring_sideroblasts_logit = car::logit(as.numeric(as.character(mdsClinicalData$X..RING.SIDEROBLASTS))),
+		ipss = as.numeric(mdsClinicalData$IPSS.norm),
+		who_simple_factor = ebmstate:::MakeInteger(whoSimpleFactor), #essentially the same as 'whoSimple' above
+		center = ebmstate:::MakeInteger(as.factor(mdsClinicalData$center)), #essentially the same as 'centers' above
+		date = (as.numeric(as.Date(mdsClinicalData$DATE.OF.DIAGNOSIS, format="%d/%m/%Y"))-4122)/(365.25*5)#date is the time since the oldest diagnosis in units of 5 years
+)
+```
+
+Correct covariate classes
+```{r }
+logical_covs<-c('ASXL1','ATRX','BCOR','BRAF','CBL','CDKN2A','CEBPA','CREBBP','CTNNA1','CUX1','DNMT3A','EP300','ETV6','EZH2','FLT3','GATA2','GNAS','IDH1','IDH2','IRF1','JAK2','KDM6A','KIT','KRAS','MLL2','MPL','NF1','NPM1','NRAS','PHF6','PTEN','PTPN11','RAD21','RUNX1','SF3B1','SH2B3','SRSF2','STAG2','TET2','TP53','U2AF1','WT1','ZRSR2','chr3','del5q','del7_7q','tri8','del11','del12','alt17q','tri19','del20q','delY','other','complex','sex','pb_cytopenia','who_simple_factor.RA','who_simple_factor.RARS','who_simple_factor.RARS.T','who_simple_factor.RCMD','who_simple_factor.RCMD.RS','who_simple_factor.RAEB','who_simple_factor.5q.','who_simple_factor.CMML','who_simple_factor.MDS.MPN','who_simple_factor.MDS.U','who_simple_factor.MDS.AML','center.1','center.2','center.3','center.4','center.5')
+numeric_covs<-c('age_log','hb','anc_log','plt_log','bm_blasts_logit','ring_sideroblasts_logit','date')
+factor_covs<-c('ipss')
+covariate_classes<-list(logical_covs=logical_covs,numeric_covs=numeric_covs,factor_covs=factor_covs)
+
+for (i in names(rawData)){
+      class_to_assign<-c("logical","numeric","factor")[sapply(covariate_classes,function(x) i%in%x)]
+      if(class_to_assign!="factor"){
+        class(rawData[[i]])<-class_to_assign
+      }else{
+        rawData[[i]]<-as.factor(rawData[[i]])
+      }
+}
+
+
+```
+
+Imputation of missing values by covariate-wise hot deck imputation.
+```{r }
+poorMansImpute <- function(x) {x[is.na(x)] <- sample(x[!is.na(x)],sum(is.na(x)),replace = T); return(x)}
+imputedData <- as.data.frame(sapply(rawData,poorMansImpute))
+
+```
+
+Include only patients which have a date of diagnosis, a last follow-up date, and indicator variables for death and AML progression (153 patients are excluded).
+```{r }
+imputedData<-imputedData[!(is.na(mdsClinicalData$DATE.OF.DIAGNOSIS)|is.na(mdsClinicalData$DATE.LAST.FU)|is.na(mdsClinicalData$OUTCOME)|is.na(mdsClinicalData$AML.PROGRESSION)),]
+mdsClinicalData<-mdsClinicalData[!(is.na(mdsClinicalData$DATE.OF.DIAGNOSIS)|is.na(mdsClinicalData$DATE.LAST.FU)|is.na(mdsClinicalData$OUTCOME)|is.na(mdsClinicalData$AML.PROGRESSION)),]
+```
+
+Remove variables that are no longer of use in mdsClinicalData
+```{r }
+rownames(mdsClinicalData)<-mdsClinicalData$PDID
+mdsClinicalData<-mdsClinicalData[c("DATE.OF.DIAGNOSIS","AML.PROGRESSION","DATE.AML.PROGRESSION","DATE.LAST.FU","OUTCOME")]
+```
+
+Change dates to numeric
+```{r }
+mdsClinicalData[c("DATE.OF.DIAGNOSIS","DATE.LAST.FU","DATE.AML.PROGRESSION")]<-sapply(mdsClinicalData[c("DATE.OF.DIAGNOSIS","DATE.LAST.FU","DATE.AML.PROGRESSION")], function(x) as.numeric(as.Date(x,format="%d/%m/%Y")))
+```
+
+Remove some patients with abnormal data.
+```{r }
+#Remove patient whose last follow-up time is the same as the date of diagnosis (excludes one patient).
+imputedData<- imputedData[mdsClinicalData$DATE.OF.DIAGNOSIS!=mdsClinicalData$DATE.LAST.FU,]
+mdsClinicalData<- mdsClinicalData[mdsClinicalData$DATE.OF.DIAGNOSIS!=mdsClinicalData$DATE.LAST.FU,]
+
+#Remove patients who progressed to AML but have no date of AML progression (excludes 4).
+imputedData<-imputedData[!(mdsClinicalData$AML.PROGRESSION==1&is.na(mdsClinicalData$DATE.AML.PROGRESSION)),]
+mdsClinicalData<-mdsClinicalData[!(mdsClinicalData$AML.PROGRESSION==1&is.na(mdsClinicalData$DATE.AML.PROGRESSION)),]
+
+#Remove patients whose date of AML progression is equal to the date of death (excludes 2).
+imputedData<-imputedData[!(mdsClinicalData$AML.PROGRESSION==1&mdsClinicalData$OUTCOME==1&mdsClinicalData$DATE.AML.PROGRESSION==mdsClinicalData$DATE.LAST.FU),]
+mdsClinicalData<-mdsClinicalData[!(mdsClinicalData$AML.PROGRESSION==1&mdsClinicalData$OUTCOME==1&mdsClinicalData$DATE.AML.PROGRESSION==mdsClinicalData$DATE.LAST.FU),]
+
+#Remove patients who died before they progressed (excludes 12).
+imputedData<-imputedData[!(mdsClinicalData$AML.PROGRESSION==1&mdsClinicalData$DATE.AML.PROGRESSION>mdsClinicalData$DATE.LAST.FU),]
+mdsClinicalData<-mdsClinicalData[!(mdsClinicalData$AML.PROGRESSION==1&mdsClinicalData$DATE.AML.PROGRESSION>mdsClinicalData$DATE.LAST.FU),]
+
+```
+
+Convert all variables to "numeric".
+```{r }
+imputedData<-as.data.frame(lapply(imputedData,function(x) as.numeric(x)))
+imputedDataNonCentered<-imputedData
+```
+
+Center non-categorical variables to facilitate interpretation of the baseline hazard.
+
+```{r }
+imputedData[,c("age_log","hb","anc_log","plt_log","bm_blasts_logit","ring_sideroblasts_logit")]<-scale(imputedData[,c("age_log","hb","anc_log","plt_log","bm_blasts_logit","ring_sideroblasts_logit")],center = T,scale = F)
+
+# imputedData<-scale(imputedData,center = T,scale = F)
+
+```
+
+To avoid confusion later on, when variables are expanded
+```{r}
+
+names(imputedData)<-sub("center.","center",names(imputedData),fixed = T)
+names(imputedDataNonCentered)<-sub("center.","center",names(imputedDataNonCentered),fixed = T)
+```
+
+Group variable names
+```{r }
+gene_vars<-names(imputedData)[1:43]
+cytogenetic_vars<-names(imputedData)[44:55]
+clinical_vars<-names(imputedData)[56:75]
+nuisance_vars<-names(imputedData)[76:81]
+
+mutation_vars<-names(imputedData)[1:55]
+all_clinical_vars<-names(imputedData)[56:81]
+
+```
+
+Remove variables for which there is no variation in the data set.
+
+```{r}
+imputedData<-imputedData[,which(apply(imputedData, 2, function(x) length(unique(x)))>0)]
+
+```
+
+
+Converting the data set to 'long format'
+```{r}
+mstate_data<-data.frame()
+
+for(i in 1:nrow(mdsClinicalData)){
+  id<-rep(i,2)
+  from<-c(1,1)
+  to<-c(2,3)
+  trans<-c(1,2)
+  Tstart<-c(0,0)
+  if(mdsClinicalData$AML.PROGRESSION[i]==1){
+    Tstop<-rep(mdsClinicalData$DATE.AML.PROGRESSION[i]-mdsClinicalData$DATE.OF.DIAGNOSIS[i],2)
+    time<-Tstop-Tstart
+    status<-c(1,0)
+    mstate_data<-rbind(mstate_data,data.frame(id=id,from=from,to=to,                                              trans=trans,Tstart=Tstart,Tstop=Tstop,time=time,status=status))
+    if(mdsClinicalData$DATE.LAST.FU[i]>mdsClinicalData$DATE.AML.PROGRESSION[i]){
+      id<-i
+      from<-2
+      to<-4
+      trans<-3
+      Tstart<-Tstop[1]
+      Tstop<-mdsClinicalData$DATE.LAST.FU[i]-mdsClinicalData$DATE.OF.DIAGNOSIS[i]
+      time<-Tstop-Tstart
+      status<-mdsClinicalData$OUTCOME[i]
+      mstate_data<-rbind(mstate_data,data.frame(id=id,from=from,to=to,trans=trans,
+                                              Tstart=Tstart,Tstop=Tstop,time=time,status=status))
+    }
+    next 
+  }else{
+    Tstop<-rep(mdsClinicalData$DATE.LAST.FU[i]-mdsClinicalData$DATE.OF.DIAGNOSIS[i],2)
+    time<-Tstop-Tstart
+    status<-c(0,mdsClinicalData$OUTCOME[i])
+    mstate_data<-rbind(mstate_data,data.frame(id=id,from=from,to=to,
+                             trans=trans,Tstart=Tstart,Tstop=Tstop,time=time,status=status))
+  }
+}
+
+#check that no rows have NA's
+mstate_data[apply(mstate_data,1,function(x) sum(is.na(x))>0),]
+
+mstate_data<-cbind(mstate_data,imputedData[mstate_data$id,])
+mstate_data$strata<-mstate_data$trans
+
+
+```
+
+For each transition separately, exclude variables with little variance.
+```{r }
+
+percentage_of_ones_fun<-function(x){
+  sum(x)/length(x)
+}
+vars_to_exclude_2<-vector("list",3)
+for(i in 1:3){
+  dummy_dataset<-mstate_data[mstate_data$trans==i,!names(mstate_data)%in%c("id","from","to","trans","Tstart","Tstop","time","status","strata","type")]
+  which_have_variance<-apply(dummy_dataset, 2, function(x) var(x)>0)
+  vars_to_exclude_2[[i]]<-names(dummy_dataset)[!which_have_variance]
+  dummy_dataset<-dummy_dataset[which_have_variance]
+  non_categorical_vars<-c("age_log","hb","anc_log","plt_log","bm_blasts_logit","ring_sideroblasts_logit","ipss","date")
+  percentage_of_ones<-apply(dummy_dataset[!names(dummy_dataset)%in%non_categorical_vars], 2, percentage_of_ones_fun)
+which_less_than_five_percent<-which(percentage_of_ones<0.05)
+vars_to_exclude_2[[i]]<-c(vars_to_exclude_2[[i]],names(percentage_of_ones)[which_less_than_five_percent])
+}
+
+
+#variables to exclude for transition 1 are the same as for transition 2
+vars_to_exclude_2[[1]]==vars_to_exclude_2[[2]]
+
+#variables to exclude for transition 3 are a subset of those for transition 1 and 2
+vars_to_exclude_2[[3]]%in%vars_to_exclude_2[[2]]
+
+#use vars_to_exclude_2[[1]] as the variables to exclude in all transitions
+
+mstate_data<-mstate_data[!names(mstate_data)%in%vars_to_exclude_2[[1]]]
+```
+
+
+#### Model estimation
+
+Argument 'Z' of CoxRFX for a model assuming that the 
+impact of each covariate is the same for all transitions
+(one coefficient per covariate). This block of code is
+not necessary, we keep it here for the sake of following
+the explanation in the main text of the paper.
+```{r}
+# Z<-mstate_data[!names(mstate_data)%in%c("id","from","to",
+# 	"Tstart","Tstop","time","status")]   
+```
+
+Model: all covariates for transitions 1 and 2, none for transition 3
+```{r}
+#Sort out class and attributes of 'mstate_data'
+tmat<-transMat(x=list(c(2,3),c(4),c(),c()),names=c("MDS","AML","death","death_after_AML"))
+class(mstate_data)<-c("data.frame","msdata")
+attr(mstate_data,"trans")<-tmat
+
+# expand covariates by transition:
+outcome_covs <- c("id", "from", "to", "trans",
+                      "Tstart", "Tstop",
+                      "time", "status",
+                      "strata"
+)
+covariates_expanded_123 <- mstate::expand.covs(
+  mstate_data,
+  covs = names(mstate_data)[
+    !names(mstate_data) %in% outcome_covs
+  ],
+  append = FALSE
+)
+
+# remove all covariates for transition 3 from 'covariates_expanded_123'
+# to fit a fully non-parametric model on this transition:
+covariates_expanded_12 <- covariates_expanded_123[
+  ! grepl(".3", names(covariates_expanded_123), fixed = TRUE)
+]
+
+#argument 'Z' of coxrfx
+Z_12<-data.frame(covariates_expanded_12,strata=mstate_data$trans,trans=mstate_data$trans)
+
+#argument 'groups'
+groups_12<-paste0(rep("group",ncol(Z_12)-2),c("_1","_2"))
+
+#argument 'surv'
+surv<-survival::Surv(mstate_data$time,mstate_data$status)
+
+#fit random effects model
+model_12<-CoxRFX(Z=Z_12,surv=surv,groups=groups_12)
+
+# cumulative hazards and transition probabilities for patient 1
+# Build 'patient_data' data frame with the covariate values for which
+# cumulative hazards are to be computed (covariate values of patient 78)
+patient_data <- mstate_data[
+  mstate_data$id == 78,
+  ,
+  drop = FALSE][rep(1, 3), ]
+
+patient_data$strata <- patient_data$trans <- 1:3
+
+patient_data <- mstate::expand.covs(
+  patient_data,
+  covs = names(patient_data)[
+    ! names(patient_data) %in% outcome_covs
+  ],
+  append = TRUE
+)
+
+patient_data <- patient_data[!grepl(".3", names(patient_data), fixed = TRUE)]
+
+
+msfit_object<-msfit_generic(model_12,patient_data,tmat)
+probtrans_object<-probtrans_ebmstate("MDS",msfit_object,"clockreset",max_time = 4000)
+save(model_12,msfit_object,probtrans_object,file = 
+       "../data/fit_objects.Rdata")
+
+#interval estimates
+names(groups_12) <- names(covariates_expanded_12)
+
+# 'mstate_data_expanded' argument
+# (similar to 'covariates_expanded_12' 
+# but including outcome variables)
+mstate_data_expanded <- cbind(
+  mstate_data[names(mstate_data) %in% outcome_covs],
+  covariates_expanded_12
+)
+
+# create the non-parametric bootstrap confidence intervals
+boot_ebmstate_object <- boot_ebmstate(
+  mstate_data = mstate_data_expanded,
+  which_group = groups_12,
+  min_nr_samples = 100,
+  patient_data = patient_data,
+  tmat = tmat,
+  initial_state = "MDS",
+  time_model = "clockreset",
+#   input_file = "../data/boot_ebmstate_backup.Rdata",
+  coxrfx_args = list(max.iter = 200),
+  probtrans_args = list(max_time = 4000)
+)
+
+save(boot_ebmstate_object,file="../data/boot_object.Rdata")
+
+```
+
+```{r  echo=FALSE,eval=FALSE}
+load("../data/fit_objects.Rdata")
+load("../data/boot_object.Rdata")
+
+```
+
+#### Plots of estimates
+
+Functions to generate plots of relative hazards
+```{r }
+labels_fun<-function(n){
+  result_pos<-vector("numeric",0)
+  result_neg<-vector("numeric",0)
+  for(i in 1:n){
+    result_pos<-c(result_pos,c(rep(NA,8),10^i))
+  }
+    for(i in 1:n){
+    result_neg<-c(result_neg,c(rep(NA,8),10^-i))
+  }
+  as.character(c(rev(result_neg),1,result_pos))
+}
+
+
+coefs_plot_fun<-function(k,coxrfx_object,coefficients_CIs,mar=NULL){
+  #keep only covariate names from transition k
+  string_split<-strsplit(names(coxrfx_object$coefficients),"[.]")
+  is_name_from_trans_k<-sapply(string_split,function(x) x[length(x)]==as.character(k))
+  CI_labels<-names(coxrfx_object$coefficients)[is_name_from_trans_k]
+  #get rid of suffix ".k"
+  CI_labels_split<-strsplit(CI_labels,"[.]")
+  CI_labels<-sapply(CI_labels_split,function(x) paste0(x[-length(x)],collapse = "."))
+
+  #simplify covariate names
+  for(i in c("_simple_factor","ring_","_logit","_log")){
+    CI_labels<-gsub(i,"",CI_labels)
+  }
+  
+  for(i in c("age","anc","plt")){
+    CI_labels<-gsub(i,paste0("log_",i),CI_labels)
+  }
+  
+  for(i in c("bm_blasts","sideroblasts")){
+    CI_labels<-gsub(i,paste0("logit_",i),CI_labels)
+  }
+  
+  #log-scale on the x-axis
+  max_dist_x_axis<-max(abs(coefficients_CIs[c(1,2),seq(k,ncol(coefficients_CIs),3)]))
+  x_axis_positive_ticks<-log(c(seq(1,9,1),seq(10,90,10),seq(100,900,100),seq(1000,9000,1000),seq(10000,100000,10000)))
+  x_axis_negative_ticks<-log(c(seq(0.9,0.2,-10^(-1)),seq(0.1,0.02,-10^(-2)),seq(0.01,0.002,-10^(-3)),seq(0.001,0.0002,-10^(-4)),seq(0.0001,0.00001,-10^(-5))))
+  x_axis_ticks<-c(rev(x_axis_negative_ticks),x_axis_positive_ticks)
+  x_axis_labels<-labels_fun(5)
+  
+  par(bty="o", mgp=c(2,1.5,0))
+  old_mar<-par()$mar
+  if(!is.null(mar)) par(mar=mar)
+  plot(1, type="n",ylab="", xlab="",yaxt="n",xaxt="n",
+       xaxs="i",yaxs="i",
+       xlim=c(log(0.04),log(20)),
+       ylim=c(1-0.6, length(CI_labels)+0.6),cex=2)
+  plotCI(add=T,y=(length(CI_labels)):1, x=coxrfx_object$coefficients[is_name_from_trans_k],ui=coefficients_CIs[2,is_name_from_trans_k],li=coefficients_CIs[1,is_name_from_trans_k],ylab="",xaxt="n",cex=1,err = "x",pch=16)
+    axis(side = 1, cex=1,at = x_axis_ticks,cex.axis=1.5,labels = labels_fun(5),lwd.ticks = 3,tck=-0.02)
+    axis(side = 1, cex=2,at =log(c(10^-4,10^-3,10^-2,10^-1,1,10,10^2,10^3,10^4)),cex.axis=3,labels =F,lwd.ticks = 3,tck=-0.03)
+     text(labels = CI_labels,x=log(0.04)-0.3,y=length(CI_labels):1,xpd=NA,font=2,cex = 1,adj=1)
+     abline(v=x_axis_ticks,lty=2,col="#999999")
+      abline(v=0,lty=2,col=2)
+
+  par(mar=old_mar)
+}
+```
+
+Generate plots
+```{r}
+
+rfx_object<-model_12
+coefficients_CIs<-boot_ebmstate_object$coefficients_CIs
+file_name<-"../coef_plots.png"
+trans_with_covs<-c(1,2)
+
+png(file_name,width=1080,height=1.2*1080)
+colGroups <- c(brewer.pal(12, "Paired")[c(10)],brewer.pal(12, "Paired")[c(6,4,3,5,12,9,1,2,7)],"#999999", brewer.pal(12, "Paired")[c(8)])
+colGroups <- colGroups[rep(1:6,3)]
+par(mfrow=c(1,2))
+for(k in trans_with_covs){
+  coefs_plot_fun(k,rfx_object,coefficients_CIs = coefficients_CIs,mar =c(4.1,9,4.1,0.4))
+}
+dev.off()
+
+```
+
+Plots of cumulative hazards with CIs for patient 1
+```{r}
+
+cumhaz_object<-msfit_object
+boot_object<-boot_ebmstate_object
+file_name<-"../patient78_cumhaz.png"
+
+png(file_name,width =680,height = 280)
+par(mfrow=c(1,3),mar=c(2,2,2,2))
+for(transition in sort(unique(mstate_data_expanded$trans))){
+  cumhaz<-cumhaz_object$Haz[cumhaz_object$Haz$trans==transition,]
+  plot(
+    cumhaz$time[
+      sapply(
+        seq(from=0,to=4000,length.out = 400),
+        function(x) which.min(abs(cumhaz$time-x))
+        )
+    ],
+    cumhaz[
+      sapply(
+        seq(from=0,to=4000,length.out = 400),function(x) which.min(abs(cumhaz$time-x))
+      ),
+      "Haz"],
+    pch=".",
+    ylab = "cumulative hazard",
+    xlab = "days since diagnosis",
+    font.main=1,
+    type="l"
+  )
+  lines(x=colnames(boot_object$cumhaz_CIs[[transition]]),y=boot_object$cumhaz_CIs[[transition]][1,],lwd=1.6,lty=2,col=2)
+  lines(x=colnames(boot_object$cumhaz_CIs[[transition]]),y=boot_object$cumhaz_CIs[[transition]][2,],lwd=1.6,lty=2,col=2)
+}
+
+dev.off()
+
+```
+
+Plots of state occupation probabilities with CIs for patient 1
+```{r}
+
+pt_object<-probtrans_object
+boot_object<-boot_ebmstate_object
+file_name<-"../patient78_transProbs.png"
+
+png(file_name)
+par(mfrow=c(2,2),mar=c(2,2,2,2))
+  for(target_state in colnames(tmat)){
+    if(target_state=="AML"){
+      ylim_max<-0.5
+    }else{
+      ylim_max<-1
+    }
+    if(target_state=="death"){
+      target_state_title<-"death_before_AML"
+    }else{
+      target_state_title<-target_state
+    }
+    plot(pt_object[[1]]$time,pt_object[[1]][,target_state],ylim = c(0,ylim_max),pch=".",ylab = "probability",xlab = "days since diagnosis",main = target_state_title,font.main=1)
+    lines(x=seq(from=0,to=4000,length.out =formals(probtrans_ebmstate)$nr_steps),y=boot_object$probtrans_CIs[[target_state]][1,],lwd=1.6,lty=2,col=2)
+    lines(x=seq(from=0,to=4000,length.out = formals(probtrans_ebmstate)$nr_steps),y=boot_object$probtrans_CIs[[target_state]][2,],lwd=1.6,lty=2,col=2)
+  }
+  mtext("95% bootstrap confidence intervals",outer = T,cex = 1.3,font=2,line = 1)
+  dev.off()
+
+```
+
+
+#### MDS data summary table
+
+The following code block build a data frame with summary statistics (to be exported to excel and converted to pdf).
+
+Build non-expanded covariate data set; only covariates used in the final analysis.
+```{r}
+
+covariate_names<-names(mstate_data_expanded)[sapply(names(mstate_data_expanded),function(x) tail(unlist(strsplit(x,split="[.]")),1))=="1"]
+
+covariate_names<-gsub(".1","",covariate_names,fixed = T)
+covariate_names[covariate_names=="center"]<-"center.1"
+
+covariate_data<-imputedDataNonCentered[names(imputedDataNonCentered)%in%covariate_names]
+
+```
+
+Undo log and logit transformations
+```{r}
+undo_log<-function(x){
+  if(grepl("logit",names(covariate_data)[x])==T){
+    return(exp(covariate_data[x])/(exp(covariate_data[x])+1))
+  }else if(grepl("log",names(covariate_data)[x])==T){
+    return(exp(covariate_data[x]))
+  }else{
+    return(covariate_data[x])
+  }
+}
+
+covariate_data<-data.frame(sapply(1:length(covariate_data),undo_log))
+covariate_data$date<-365.25*5*covariate_data$date+4122
+
+```
+
+Compute summary statistics 
+```{r}
+summary_stat_fun<-function(statistic){
+  apply(covariate_data,2,statistic)
+}
+covs_table<-round(data.frame(sapply(c(min,max,mean,sd),summary_stat_fun)),2)
+
+```
+
+Changing names and other formating.
+```{r}
+rownames(covs_table)<-gsub("_simple_factor","",rownames(covs_table))
+rownames(covs_table)<-gsub("_logit","",rownames(covs_table),fixed = T)
+rownames(covs_table)<-gsub("_log","",rownames(covs_table),fixed = T)
+
+colnames(covs_table)<-c("min","max","mean","std dev")
+covs_table<-as.data.frame(t(covs_table))
+covs_table[,"date"]<-as.Date(unlist(covs_table[,"date"]),origin = "1970-01-01")
+write.csv(covs_table,"./tables/numeric_covs_table.csv")
+
+```
+
