@@ -7,11 +7,11 @@ abstract: |
   drawing model parameters from their joint distribution and estimating
   quantities of interest from each set of simulated values, which form a
   simulated "posterior" distribution of the quantity from which
-  confidence intervals can be computed. `clarify` provides a simple,
+  confidence intervals can be computed. clarify provides a simple,
   unified interface for performing simulation-based inference for any
   user-specified derived quantities as well as wrappers for common
-  quantities of interest. `clarify` supports a large and growing number
-  of models through its interface with the `marginaleffects` package and
+  quantities of interest. clarify supports a large and growing number of
+  models through its interface with the marginaleffects package and
   provides native support for multiply imputed data.
 address:
 - |
@@ -45,10 +45,10 @@ address:
   [`king@harvard.edu`](mailto:king@harvard.edu)
 author:
 - by Noah Greifer, Steven Worthington, Stefano Iacus, and Gary King
-title: "`clarify`: Simulation-Based Inference for Regression Models"
+title: "clarify: Simulation-Based Inference for Regression Models"
 ---
 
-:::::::::: article
+::::::::::::::::::: article
 ## Introduction
 
 Although regression models are frequently used in empirical research to
@@ -284,7 +284,9 @@ head(lalonde)
 #> NSW6     1  22    9  black       0        1    0    0  4056.4940      1
 ```
 
+::: {#fitting-the-model}
 ### 1. Fitting the model
+:::
 
 The first step is to fit the model.
 [**clarify**](https://CRAN.R-project.org/package=clarify) can operate on
@@ -313,7 +315,9 @@ fit <- glm(re78_0 ~ treat * married + age + educ + race +
            family = binomial("probit"))
 ```
 
+::: {#drawing-from-the-coefficient-distribution}
 ### 2. Drawing from the coefficient distribution
+:::
 
 After fitting the model, we will use `sim()` to draw coefficients from
 their sampling distribution. The sampling distribution is assumed to be
@@ -390,7 +394,9 @@ s
 #>     nodegree + re74 + re75, family = binomial("probit"), data = lalonde)
 ```
 
+::: {#computing-derived-quantities}
 ### 3. Computing derived quantities
+:::
 
 After sampling the coefficients, one can compute derived quantities on
 each set of sampled coefficients and store the result, which represents
@@ -517,7 +523,9 @@ functions that have methods for `clarify_est` objects, including
 already-computed derived quantities. These are also described in their
 own sections below.
 
+::: {#summarize-and-visualize-the-simulated-distribution}
 ### 4. Summarize and visualize the simulated distribution
+:::
 
 To examine the uncertainty around and perform inference on our estimated
 quantities, we can use `plot()` and `summary()` on the `clarify_est`
@@ -686,7 +694,9 @@ signifies that they are to be used on an object produced by `sim()`
 be applied to the same `clarify_sim` object and combined; see the
 `cbind()` section below.) These functions are described below.
 
+::: {#sim_setx-predictions-at-representative-values}
 ### `sim_setx()`: predictions at representative values
+:::
 
 `sim_setx()` provides an interface to compute predictions at
 representative and user-supplied values of the predictors. For example,
@@ -785,11 +795,16 @@ attr(est3, "setx")
 ```
 
 ``` r
-#>                         treat married      age     educ  race nodegree     re74  re75
-#> treat = 0, re75 = 0         0       0 27.36319 10.26873 black        1 4557.547     0
-#> treat = 1, re75 = 0         1       0 27.36319 10.26873 black        1 4557.547     0
-#> treat = 0, re75 = 20000     0       0 27.36319 10.26873 black        1 4557.547 20000
-#> treat = 1, re75 = 20000     1       0 27.36319 10.26873 black        1 4557.547 20000
+#>                         treat married      age     educ  race nodegree     re74
+#> treat = 0, re75 = 0         0       0 27.36319 10.26873 black        1 4557.547
+#> treat = 1, re75 = 0         1       0 27.36319 10.26873 black        1 4557.547
+#> treat = 0, re75 = 20000     0       0 27.36319 10.26873 black        1 4557.547
+#> treat = 1, re75 = 20000     1       0 27.36319 10.26873 black        1 4557.547
+#>                          re75
+#> treat = 0, re75 = 0         0
+#> treat = 1, re75 = 0         0
+#> treat = 0, re75 = 20000 20000
+#> treat = 1, re75 = 20000 20000
 ```
 
 We can plot the distributions of the simulated values using `plot()`,
@@ -870,7 +885,9 @@ summary(est5)
 It is possible to compute first differences without using `x1` using
 `transform()`, which we describe later.
 
+::: {#sim_ame-average-adjusted-predictions-and-average-marginal-effects}
 ### `sim_ame()`: average adjusted predictions and average marginal effects
+:::
 
 Using predicted values and effects at representative values is one way
 to summarize regression models, but another way is to compute average
@@ -1038,7 +1055,9 @@ The presence of effect modification can be tested by testing the
 contrast between the effects computed within each level of the `by`
 variable; this demonstrated in the section on `transform()` below.
 
+::: {#sim_adrf-average-dose-response-functions}
 ### `sim_adrf()`: average dose-response functions
+:::
 
 A dose-response function for an individual is the relationship between
 the set value of a continuous focal predictor and the expected outcome.
@@ -1202,7 +1221,9 @@ single `clarify_est` object and combine two `clarify_est` objects. These
 are essential for computing quantities that themselves are derived from
 the derived quantities computed by the `sim_*()` functions.
 
+::: {#transform}
 ### `transform()`
+:::
 
 `transform()` is a generic function in R that is typically used to
 create a new variable in a data frame that is a function of other
@@ -1297,7 +1318,9 @@ each of the risk ratios and their ratio differ from 1, which is
 equivalent to testing whether the risk ratios differ across levels of
 `married`.
 
+::: {#cbind}
 ### `cbind()`
+:::
 
 `cbind()` is another generic R function that is typically used to
 combine two or more datasets columnwise (i.e., to widen a dataset). In
@@ -1724,7 +1747,7 @@ Journal* 30 (12): 1335--48. <https://doi.org/10.1002/smj.783>.
 Zhou, Xiang, and Jerome P. Reiter. 2010. "A Note on Bayesian Inference
 After Multiple Imputation." *The American Statistician* 64 (2): 159--63.
 <https://doi.org/10.1198/tast.2010.09109>.
-::::::::::
+:::::::::::::::::::
 
 [^1]: We thank an anonymous reviewer for pointing out a scenario in
     which this could occur: for a quantity of interest with a

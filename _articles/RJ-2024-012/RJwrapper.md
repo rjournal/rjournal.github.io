@@ -2,8 +2,8 @@
 abstract: |
   Many studies are leveraging current technologies to obtain multiple
   omics measurements on the same individuals. These measurements are
-  usually cross-sectional and methods developed and commonly used focus
-  on omic-integration at a single time point. More unique, and a growing
+  usually cross-sectional, and methods developed and commonly used focus
+  on omic integration at a single time point. More unique, and a growing
   area of interest, are studies that leverage biology or the temporal
   sequence of measurements to relate long-term exposures or germline
   genetics to intermediate measures capturing transitional processes
@@ -16,15 +16,14 @@ abstract: |
   multiple omics analysis consists of early integration (concatenation
   of omic layers to estimate common subgroups); intermediate integration
   (omic-layer-specific estimation of subgroups that are all related to
-  the outcome); late integration (omic-layer-specific estimation of
-  subgroups that are then inter-related by $a priori$ structures). In
-  this article, we introduce **LUCIDus** version 3, an R package to
-  implement the LUCID model. We review the statistical background of the
-  model and introduce the workflow of **LUCIDus**, including model
-  fitting, model selection, interpretation, inference, and prediction.
-  Throughout, we use a realistic but simulated dataset based on an
-  ongoing study, the Human Early Life Exposome Study (HELIX) to
-  illustrate the workflow.
+  the outcome); and late integration (omic-layer-specific estimation of
+  subgroups that are then interrelated by a priori structures). In this
+  article, we introduce LUCIDus version 3, an R package to implement the
+  LUCID model. We review the statistical background of the model and
+  introduce the workflow of LUCIDus, including model fitting, model
+  selection, interpretation, inference, and prediction. Throughout, we
+  use a realistic but simulated dataset based on an ongoing study, the
+  Human Early Life Exposome Study (HELIX), to illustrate the workflow.
 address:
 - |
   Yinqi Zhao\
@@ -62,57 +61,57 @@ author:
 - by Yinqi Zhao, Qiran Jia, Jesse A. Goodrich, David V. Conti
 bibliography:
 - zhao.bib
-title: "**LUCIDus**: An R Package For Implementing Latent Unknown
-  Clustering By Integrating Multi-omics Data (LUCID) With Phenotypic
-  Traits"
+title: "LUCIDus: An R Package For Implementing Latent Unknown Clustering
+  By Integrating Multi-omics Data (LUCID) With Phenotypic Traits"
 ---
 
 :::: article
 ## Introduction {#sec1}
 
-The rapid advancement in high throughput technology has made it possible
+The rapid advancement in high-throughput technology has made it possible
 to measure multiple omics (referred to as "multi-omics") data on the
-same person in many cohort studies. These data sets include DNA genome
+same person in many cohort studies. These datasets include DNA genome
 sequences [@goodwin2016coming], RNA expression data [@ozsolak2011rna],
-metabolites in biofluids [@beger2013review], proteins in cell or tissue
-[@aslam2017proteomics], as well as chemical exposures in the environment
-[@wild2005complementing].For example, the Human Early-Life Exposome
-project (HELIX) measured molecular omics signatures including RNA
-expression data, metabolites, plasma proteins etc. from 1300 children at
-the age of 6-11 in six European countries [@vrijheid2014human]. Guided
-by biology or the temporal sequence of measurements, these studies often
-share a common structure that relates germline genetics or environmental
-exposures to intermediate factors capturing transitional processes that
-ultimately result in an outcome. While these suspected causal pathways
-can be measured with current omic technology, the analysis often focuses
-on cross-sectional relationships using cluster analysis or models
-focused on feature selection. This is in part due to the analytic and
-computational challenges resulting from the complex structure of the
-data collected from various sources, the limited sample size, and the
-high-dimensionality of multi-omics information [@tini2019multi].
-Existing methods do not consider risk factors that precede the omic
-measurements and link those factors with disease or trait outcomes while
-using multi-omics data to characterize the underlying mechanism. Thus,
-there is a great need to develop and easily implement approaches
-leveraging these mediating relationships or latent structures for the
-integration of multi-omics data [@subramanian2020multi].
+metabolites in biofluids [@beger2013review], proteins in cells or
+tissues [@aslam2017proteomics], as well as chemical exposures in the
+environment [@wild2005complementing]. For example, the Human Early-Life
+Exposome project (HELIX) measured molecular omics signatures including
+RNA expression data, metabolites, plasma proteins, etc. from 1300
+children at the age of 6-11 in six European countries
+[@vrijheid2014human]. Guided by biology or the temporal sequence of
+measurements, these studies often share a common structure that relates
+germline genetics or environmental exposures to intermediate factors
+capturing transitional processes that ultimately result in an outcome.
+While these suspected causal pathways can be measured with current omic
+technology, the analysis often focuses on cross-sectional relationships
+using cluster analysis or models focused on feature selection. This is
+in part due to the analytic and computational challenges resulting from
+the complex structure of the data collected from various sources,
+limited sample sizes, and the high dimensionality of multi-omics
+information [@tini2019multi]. Existing methods do not consider risk
+factors that precede the omic measurements and link those factors with
+disease or trait outcomes while using multi-omics data to characterize
+the underlying mechanism. Thus, there is a great need to develop and
+easily implement approaches leveraging these mediating relationships or
+latent structures for the integration of multi-omics data
+[@subramanian2020multi].
 
 Conventional analysis tools range from clustering approaches to variable
 selection approaches [@gonzalez2019omic]. Clustering is a fundamental
 method for analyzing both single omic and multi-omics data
 [@rappoport2018multi]. Clustering aims to divide observations into
-several groups (called clusters) such that observations within a group
-are similar while samples in different groups are dissimilar. Clustering
-has many important applications in the field of biological science and
+several groups (called clusters) so that observations within a group are
+similar while samples in different groups are dissimilar. Clustering has
+many important applications in the field of biological science and
 medicine, such as defining gene sets [@hejblum2015time], identifying
-subtypes of cancer and performing diagnostic prediction
+subtypes of cancer, and performing diagnostic predictions
 [@curtis2012genomic; @khan2001classification], defining cell types in
-flow cytometry and scRNAseq experiments
+flow cytometry and scRNA-seq experiments
 [@chan2008statistical; @hejblum2019sequential; @prabhakaran2016dirichlet],
 and estimating protein localization [@crook2018bayesian]. Conventional
 clustering methods applied to multi-omics data either concatenate
 multiple datasets (often called early integration) or analyze each
-dataset independently (i.e. late integration). However, both approaches
+dataset independently (i.e., late integration). However, both approaches
 fall short of adequately capturing the variation across omic levels or
 reflecting the heterogeneity of the integrated datasets. To overcome
 these limitations, several specific integrated clustering methods for
@@ -120,11 +119,11 @@ analyzing multi-omics data are available in the community.
 @pierre2020clustering conducted a thorough review comparing 13
 unsupervised methods for multi-omics data integration via clustering.
 Methods include SGCCA [@tenenhaus2014variable], SNF
-[@wang2014similarity], iCluster plus [@mo2013pattern] etc. Building upon
-the foundation of Principal Component Analysis (PCA), Joint and
+[@wang2014similarity], and iCluster plus [@mo2013pattern], etc. Building
+upon the foundation of Principal Component Analysis (PCA), Joint and
 Individual Variation Explained (JIVE) conducts integrated clustering of
 multi-omics data via a variance decomposition framework to summarize
-information across multiple omic layers. [@lock2013joint]. Within the
+information across multiple omic layers [@lock2013joint]. Within the
 Bayesian framework, @kirk2012bayesian proposed an unsupervised approach,
 Bayesian correlated clustering, that simultaneously models each omic
 layer via a mixture model while considering the correlation between each
@@ -142,7 +141,7 @@ many clustering approaches to reduce data dimensionality, such as SGCCA
 and iCluster plus. Extensions of variable selection approaches exist for
 mediation as well and include both high-dimensional and latent variable
 approaches. HIMA first implements pre-screening of the high-dimensional
-mediators and then utilizes a LASSO-type penalty to obtain a sparse
+mediators and then utilizes an LASSO-type penalty to obtain a sparse
 solution [@zhang2016estimating], while BAMA is a Bayesian shrinkage
 approach that employs continuous shrinkage priors on the key
 coefficients to select active mediators with large effects only
@@ -167,7 +166,7 @@ exposures and informative omic effects while jointly estimating
 subgroups of individuals relevant to the outcome of interest. LUCID is a
 novel 'quasi-mediation' approach that uses latent variable analysis to
 estimate subgroups of individuals characterized by key omic factors and
-with differential association to the outcome and exposures. They
+with differential associations to the outcome and exposures. They
 demonstrated the performance of LUCID through extensive simulation
 studies and real data applications to highlight the integration of
 genomic, exposomic, and metabolomic data.
@@ -179,16 +178,16 @@ first introduced according to
 [@yu2022dlstats]). It has also been applied in several environmental
 epidemiological studies
 [@jin2020perfluoroalkyl; @stratakis2020prenatal; @matta2022associations].
-In this paper, we introduced **LUCIDus** version 3, a major update and
+In this paper, we introduce **LUCIDus** version 3, a major update and
 enhancement from the original release [@LUCIDus]. To account for the
 heterogeneity of the integrated datasets based on the study design,
 **LUCIDus** version 3 incorporates three integration strategies into the
 LUCID framework: (1) Early integration (Figure \@ref(fig:fig1) (a))
 concatenates all multi-omics data matrices into a single matrix prior to
 model estimation; (2) Intermediate integration (Figure \@ref(fig:fig1)
-(b)) estimates latent clusters for each omic layer and the resulting
+(b)) estimates latent clusters for each omic layer, and the resulting
 clusters are then modeled in parallel in a joint model linking exposures
-and the outcome; and (3) late integration (Figure \@ref(fig:fig1) (c))
+and the outcome; and (3) Late integration (Figure \@ref(fig:fig1) (c))
 in which each omic layer is used to estimate omic-specific clusters that
 are then linked via $a priori$ relationships with each other and the
 exposure and outcome. **LUCIDus** version 3 also includes model
@@ -229,32 +228,34 @@ $\boldsymbol{\mathbf{X}}$ is interpreted as a latent cluster in the
 data, jointly defined by $\boldsymbol{\mathbf{G}}$,
 $\boldsymbol{\mathbf{Z}}$, and $\boldsymbol{\mathbf{Y}}$. Let
 $\boldsymbol{\mathbf{G}}$ be a $N \times P$ matrix with columns
-representing genetic/environmental exposures, and rows representing the
+representing genetic/environmental exposures and rows representing the
 observations; $\boldsymbol{\mathbf{Z}}$ be a $N \times M$ matrix of
 omics data (for example, gene expression data, DNA methylation profiles,
 and metabolomic data, etc.) and $\boldsymbol{\mathbf{Y}}$ be a
-$N$-length vector of phenotype trait. We further assume
+$N$-length vector of phenotype traits. We further assume
 $\boldsymbol{\mathbf{G}}$, $\boldsymbol{\mathbf{Z}}$, and
 $\boldsymbol{\mathbf{Y}}$ are measured through a prospective sampling
-procedure so we do not model the distribution of
+procedure, so we do not model the distribution of
 $\boldsymbol{\mathbf{G}}$. All three measured components
 ($\boldsymbol{\mathbf{G}}$, $\boldsymbol{\mathbf{Z}}$, and
 $\boldsymbol{\mathbf{Y}}$) are linked by a latent variable
 $\boldsymbol{\mathbf{X}}$ consisting of $K$ categories. The directed
-acyclic graph (DAG) in Figure \@ref(fig:fig1) (a) implies the
+acyclic graph (DAG) in Figure \@ref(fig:fig1) (a) implies that the
 distributions of $\boldsymbol{\mathbf{X}}$ given
 $\boldsymbol{\mathbf{G}}$, $\boldsymbol{\mathbf{Z}}$ given
-$\boldsymbol{\mathbf{X}}$ and $\boldsymbol{\mathbf{Y}}$ given
-$\boldsymbol{\mathbf{X}}$ are conditionally independent with each other.
-Let $f(\cdot)$ denote the probability mass functions (PMF) for
-categorical random variables or the probability density functions (PDF)
+$\boldsymbol{\mathbf{X}}$, and $\boldsymbol{\mathbf{Y}}$ given
+$\boldsymbol{\mathbf{X}}$ are conditionally independent of each other.
+Let $f(\cdot)$ denote the probability mass functions (PMFs) for
+categorical random variables or the probability density functions (PDFs)
 for continuous random variables. The joint log-likelihood of the LUCID
 model is constructed as:
+
 $$\begin{aligned}
          \log L(\boldsymbol{\mathbf{\Theta}}) & = \sum_{i = 1}^N \log f(\boldsymbol{\mathbf{Z}}_i, Y_i|\boldsymbol{\mathbf{G}}_i;\boldsymbol{\mathbf{\Theta}}) \\
          & = \sum_{i = 1}^N \log \sum_{j = 1}^K f(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\Theta}}) f(\boldsymbol{\mathbf{Z}}_i| X_i = j; \boldsymbol{\mathbf{\Theta}}) f(Y_i|X_i = j; \boldsymbol{\mathbf{\Theta}})
     \end{aligned}
     \label{eq1}   (\#eq:eq1)$$
+
 where $\boldsymbol{\mathbf{\Theta}}$ is a generic notation for all
 parameters in the LUCID model.
 
@@ -266,13 +267,13 @@ $\boldsymbol{\mathbf{Z}}$ follows a multivariate Gaussian distribution
 conditioning on $\boldsymbol{\mathbf{X}}$, denoted by
 $\phi(\boldsymbol{\mathbf{Z}}|\boldsymbol{\mathbf{X}} = j; \boldsymbol{\mathbf{\mu}}_j, \boldsymbol{\mathbf{\Sigma}}_j)$,
 where $\boldsymbol{\mathbf{\mu}}_j$ and $\boldsymbol{\mathbf{\Sigma}}_j$
-are cluster-specific mean and variance-covariance matrix for
+are cluster-specific means and variance-covariance matrices for
 $\boldsymbol{\mathbf{Z}}$. For illustrative purposes, we assume
 $\boldsymbol{\mathbf{Y}}$ is a continuous outcome following a univariate
 Gaussian distribution, denoted by
 $\phi(\boldsymbol{\mathbf{Y}}|\boldsymbol{\mathbf{X}} = j; \gamma_j, \sigma_j^2)$
 ($\gamma_j$ and $\sigma_j^2$ are also interpreted as the
-cluster-specific mean and variance for effect of
+cluster-specific means and variances for the effect of
 $\boldsymbol{\mathbf{X}}$ on $\boldsymbol{\mathbf{Y}}$). Similar
 development for a binary outcome is detailed in [@peng2020latent].
 Because the latent cluster $\boldsymbol{\mathbf{X}}$ is unobserved, the
@@ -283,6 +284,7 @@ the MLE of model parameters. We define $I(X_i= j)$ as an indicator
 function representing that observation $i$ belongs to latent cluster
 $j$. Then, the log-likelihood function of model parameters in Equation
 \@ref(eq:eq1) becomes:
+
 $$\begin{aligned}
          \log L(\boldsymbol{\mathbf{\Theta}}) & = \sum_{i = 1}^N \sum_{j=1}^K I(X_i = j) \left( \log S(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\Theta}}) + \log \phi(\boldsymbol{\mathbf{Z}}_i| X_i = j; \boldsymbol{\mathbf{\Theta}}) + \log \phi (Y_i|X_i = j; \boldsymbol{\mathbf{\Theta}}) \right)
     \end{aligned}
@@ -293,6 +295,7 @@ $\boldsymbol{\mathbf{D}} = \{\boldsymbol{\mathbf{G}}, \boldsymbol{\mathbf{Z}}, \
 and define the responsibility $r$ as the inclusion probability (IP) of
 belonging to the latent cluster $j$ given observed data and current
 estimation of model parameters at iteration $t$, which is:
+
 $$\begin{aligned}
         r_{ij}^{(t)} & = P(X_i = j|\boldsymbol{\mathbf{D}}; \boldsymbol{\mathbf{\Theta}}^{(t)}) \\
             & = \frac{S\left(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\beta}}^{(t)}\right) \phi\left(\boldsymbol{\mathbf{Z}}_i| X_i = j; \boldsymbol{\mathbf{\mu}}_j^{(t)}, \boldsymbol{\mathbf{\Sigma}}_j^{(t)}\right) \phi\left(Y_i|X_i = j; \gamma_j^{(t)}, \sigma^{2(t)}_j \right)}{\sum_{j = 1}^K S\left(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\beta}}^{(t)}\right) \phi \left(\boldsymbol{\mathbf{Z}}_i| X_i = j; \boldsymbol{\mathbf{\mu}}_j^{(t)}, \boldsymbol{\mathbf{\Sigma}}_j^{(t)}\right) \phi \left(Y_i|X_i = j; \gamma_j^{(t)}, \sigma^{2(t)}_j\right)}
@@ -301,6 +304,7 @@ $$\begin{aligned}
 
 At each iteration $t$, in the E-step, we compute the expectation of the
 complete data likelihood, which is:
+
 $$\begin{aligned}
         Q(\boldsymbol{\mathbf{\Theta}}|\boldsymbol{\mathbf{D}}, \boldsymbol{\mathbf{\Theta}}^{(t)}) = & \sum_{i=1}^N\sum_{j=1}^K r_{ij} \log S\left(X_i = j|\boldsymbol{\mathbf{G}}_i;\boldsymbol{\mathbf{\beta}}\right) + \sum_{i=1}^N\sum_{j=1}^K r_{ij} \log \phi(\boldsymbol{\mathbf{Z}}_i|X_i = j;\boldsymbol{\mathbf{\mu}}_j, \boldsymbol{\mathbf{\Sigma}}_j) \\
         & + \sum_{i=1}^N\sum_{j=1}^K r_{ij} \log \phi\left(Y|X_i = j; \gamma_j, \sigma_j^2\right)
@@ -310,6 +314,7 @@ $$\begin{aligned}
 In the M-step, we update parameter estimates by maximizing Equation
 \@ref(eq:eq4) in terms of $\boldsymbol{\mathbf{\Theta}}$, which results
 in the following:
+
 $$\begin{aligned}
     \boldsymbol{\mathbf{\beta}}^{(t+1)} & = \arg \max_{\boldsymbol{\mathbf{\beta}}} \sum_{i=1}^N \sum_{j=1}^K r_{ij}^{(t)} \log S(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\beta}}_j) \label{eq5} \\
     \boldsymbol{\mathbf{\mu}}_j^{(t+1)} & = \frac{\sum_{i=1}^N r_{ij}^{(t)}\boldsymbol{\mathbf{Z}}_i}{\sum_{i=1}^N r_{ij}^{(t)}} \label{eq6} \\
@@ -317,8 +322,9 @@ $$\begin{aligned}
     \gamma_j^{(t+1)} & = \frac{\sum_{i=1}^N r_{ij}^{(t)}Y_i}{\sum_{i=1}^N r_{ij}^{(t)}} \label{eq8} \\
     \sigma_j^{2(t+1)} & = \frac{\sum_{i=1}^N r_{ij}^{(t)} \left(Y_i - \gamma_j^{(t+1)} \right)^2}{\sum_{i=1}^N r_{ij}^{(t)}} \label{eq9}
 \end{aligned}   (\#eq:eq5)$$
+
 Although maximization of $\boldsymbol{\mathbf{\beta}}_j^{(t+1)}$ in
-Equation \@ref(eq:eq5) does not have a closed form solution, it is
+Equation \@ref(eq:eq5) does not have a closed-form solution, it is
 equivalent to fitting a multinomial logistic regression by treating
 $r_{ij}$ as the outcome and $\boldsymbol{\mathbf{G}}_i$ as the exposure.
 
@@ -327,17 +333,19 @@ clusters, such as volume, shape, and orientation determined by
 $\boldsymbol{\mathbf{\Sigma}}_j$. We use the parameterization of
 covariance matrices by means of an eigenvalue decomposition in the form
 below [@banfield1993model]:
-$$\boldsymbol{\mathbf{\Sigma}}_j = \lambda_j \boldsymbol{\mathbf{D}}_j \boldsymbol{\mathbf{A}}_j \boldsymbol{\mathbf{D}}_j^T \label{eq10}   (\#eq:eq10)$$
+
+$$\boldsymbol{\Sigma}_j = \lambda_j \boldsymbol{D}_j  \boldsymbol{A}_j \boldsymbol{D}_j^T \label{eq10}   (\#eq:eq10)$$
+
 where $\lambda_j$ is a scalar, $\boldsymbol{\mathbf{D}}_j$ is the
-orthogonal matrix of eigenvectors and $\boldsymbol{\mathbf{A}}_j$ is a
+orthogonal matrix of eigenvectors, and $\boldsymbol{\mathbf{A}}_j$ is a
 diagonal matrix whose values are proportional to eigenvalues. A detailed
 discussion of maximizing $\boldsymbol{\mathbf{\Sigma}}_j$ parameterized
 by Equation \@ref(eq:eq10) is provided by @celeux1995gaussian. Their
 algorithm is implemented in the R package
 [**mclust**](https://CRAN.R-project.org/package=mclust)
-[@scrucca2016mclust] and we leverage **mclust** to update
-$\boldsymbol{\mathbf{\Sigma}}_j$ in M-step at each iteration of EM
-algorithm for LUCID.
+[@scrucca2016mclust], and we leverage **mclust** to update
+$\boldsymbol{\mathbf{\Sigma}}_j$ in the M-step at each iteration of the
+EM algorithm for LUCID.
 
 ::: {#tbl1}
 ```{r table-1, echo = FALSE, results = 'asis'}
@@ -357,41 +365,43 @@ functions to implement the analysis framework based on LUCID. Brief
 descriptions of each function are listed in Table [1](#tbl1). The
 workflow of the **LUCIDus** package is shown in Figure \@ref(fig:fig2).
 Below we describe the typical workflow of analyzing integrated data
-using the LUCID early integration model. The function `lucid()` is the
-primary function in the package, which fits a LUCID model based on an
-exposure matrix (argument `G`), multi-omics data (argument `Z`), outcome
-data (argument `Y`), the number of latent clusters (`K`; default is 2),
-the type of the LUCID model (argument `lucid``_``model`; here is `early`
-as we focus on LUCID early integration model in this section), and the
-family of the outcome (argument `family`; default is `normal`). If a
-vector of `K` and/or $L_1$ penalties are supplied, `lucid()` will
-automatically conduct model selection on the number of clusters $K$,
-select informative variables in $\boldsymbol{\mathbf{G}}$ or
-$\boldsymbol{\mathbf{Z}}$, or both, and returns a LUCID early
-integration model (an R object of class `lucid_early`) with optimal $K$
-and selected variables in $\boldsymbol{\mathbf{G}}$ and/or
-$\boldsymbol{\mathbf{Z}}$. Several additional functions can then be
-applied to a fitted LUCID object. `summary()` summarizes the fitted
-LUCID model by producing summary tables of parameter estimation and
-interpretation. Visualization is performed via the `plot()` function to
-create a Sankey diagram showing the interplay among the three components
-($\boldsymbol{\mathbf{G}}$, $\boldsymbol{\mathbf{Z}}$, and
-$\boldsymbol{\mathbf{Y}}$). In addition, statistical inference can be
-accomplished for LUCID by constructing confidence intervals (CIs) based
-on bootstrap resampling. This is achieved by the function
-`boot_lucid()`. Finally, predictions on the cluster assignment and the
-outcome can be obtained by calling the function `predict_lucid()`. In
-practice, it might not be necessary to implement the entire workflow
-above. For instance, if we have prior knowledge of the number of latent
-clusters $K$, model selection for the number of clusters can be skipped.
-If a given dataset has limited variables (for example, variables
-selected based on biological annotations), then variable selection may
-not be necessary. Note that for a LUCID in parallel model or a LUCID in
-serial model (the argument `lucid_model` is `parallel` or `serial`,
-respectively), specification of `K` is different and the features of
-variable selection, constructing confidence intervals (CIs) based on
-bootstrap resampling, and plotting are not yet available (see Sections
-[3.7](#sec_parallel) and [3.8](#sec_serial)).
+using the LUCID early integration model.
+
+The function `lucid()` is the primary function in the package, which
+fits a LUCID model based on an exposure matrix (argument `G`),
+multi-omics data (argument `Z`), outcome data (argument `Y`), the number
+of latent clusters (`K`; default is 2), the type of the LUCID model
+(argument `lucid_model`; here it is `early` as we focus on the LUCID
+early integration model in this section), and the family of the outcome
+(argument `family`; default is `normal`). If a vector of `K` and/or
+$L_1$ penalties are supplied, `lucid()` will automatically conduct model
+selection on the number of clusters $K$, select informative variables in
+$\boldsymbol{\mathbf{G}}$ or $\boldsymbol{\mathbf{Z}}$, or both, and
+return a LUCID early integration model (an R object of class
+`lucid_early`) with optimal $K$ and selected variables in
+$\boldsymbol{\mathbf{G}}$ and/or $\boldsymbol{\mathbf{Z}}$. Several
+additional functions can then be applied to a fitted LUCID object.
+`summary()` summarizes the fitted LUCID model by producing summary
+tables of parameter estimation and interpretation. Visualization is
+performed via the `plot()` function to create a Sankey diagram showing
+the interplay among the three components ($\boldsymbol{\mathbf{G}}$,
+$\boldsymbol{\mathbf{Z}}$, and $\boldsymbol{\mathbf{Y}}$). In addition,
+statistical inference can be accomplished for LUCID by constructing
+confidence intervals (CIs) based on bootstrap resampling. This is
+achieved by the function `boot_lucid()`. Finally, predictions on the
+cluster assignment and the outcome can be obtained by calling the
+function `predict_lucid()`. In practice, it might not be necessary to
+implement the entire workflow above. For instance, if we have prior
+knowledge of the number of latent clusters $K$, model selection for the
+number of clusters can be skipped. If a given dataset has limited
+variables (for example, variables selected based on biological
+annotations), then variable selection may not be necessary. Note that
+for a LUCID in parallel model or a LUCID in serial model (the argument
+`lucid_model` is `parallel` or `serial`, respectively), specification of
+`K` is different, and the features of variable selection, constructing
+confidence intervals (CIs) based on bootstrap resampling, and plotting
+are not yet available (see Sections [3.7](#sec_parallel) and
+[3.8](#sec_serial)).
 
 In the following sections, we show example code and demonstrate the
 usage of the LUCID early integration model using the simulated HELIX
@@ -401,21 +411,21 @@ data.
 
 ### Fitting a LUCID model by `lucid()` {#sec3.1}
 
-To illustrate integrative clustering with LUCID early integration model,
-we use simulated data based on real cases from the HELIX study based on
-the correlation structure. A subset of the simulated data is
+To illustrate integrative clustering with the LUCID early integration
+model, we use simulated data based on real cases from the HELIX study
+based on the correlation structure. A subset of the simulated data is
 incorporated in the **LUCIDus** package to replicate the workflow
 presented here. The dataset is a list of `dataframe` containing data
-from 420 children, with 1 variable measuring the maternal exposure to
-utero mercury (referred to as the exposome), 10 methylomes measured in
+from 420 children, with 1 variable measuring maternal exposure to utero
+mercury (referred to as the exposome), 10 methylomes measured in
 children (referred to as the methylomics), 10 transcriptomes measured in
 children (referred to as the transcriptomics), 10 miRNA measured in
 children (referred to as the miRNA), childhood cytokeratin 18 level
 (referred to as ck18, a continuous outcome as an indicator of
-metabolic-dysfunciton-associated fatty liver disease (MAFLD), childhood
-cytokeratin 18 category (a binary outcome referred to as ck18\_cat) and
-2 covariates, including child's sex and child's age. To organize the
-data into separate `dataframe`s for each type of data and to better
+metabolic-dysfunction-associated fatty liver disease (MAFLD), childhood
+cytokeratin 18 category (a binary outcome referred to as ck18_cat) and 2
+covariates, including child's sex and child's age. To organize the data
+into separate `dataframe`s for each type of data and to better
 illustrate functionality within **LUCIDus**, we use the following code:
 
 ``` r
@@ -437,7 +447,7 @@ illustrate functionality within **LUCIDus**, we use the following code:
 Our goal is to conduct an integrated clustering of the exposome and
 methylome and to relate the estimated latent clusters to the childhood
 cytokeratin 18 level. The LUCID model is fitted using the function
-`lucid()`. The input data are specified by arguments `G`, `Z` and `Y`,
+`lucid()`. The input data are specified by arguments `G`, `Z`, and `Y`,
 corresponding to the exposome, the methylome, and the childhood
 cytokeratin 18 level, respectively. In practice, scaling of multi-omics
 data is highly recommended to obtain more stable estimates; the
@@ -447,16 +457,16 @@ $\boldsymbol{\mathbf{Z}}$, the user can concatenate them one by one into
 a single data matrix and then input the concatenated matrix as
 $\boldsymbol{\mathbf{Z}}$ for early integration. For illustrative
 purposes, we assume that, in the example data, the optimal number of
-latent clusters is 2 (Determining the optimal number of clusters is a
-major question prior to performing clustering analysis. More details are
+latent clusters is 2 (determining the optimal number of clusters is a
+major question prior to performing clustering analysis; more details are
 discussed in the later Section [3.3](#sec3.3)).
 
 For illustration, we fit two LUCID models with continuous outcome ck18
-and binary outcome ck18\_cat, respectively. The parameter `family`
+and binary outcome ck18_cat, respectively. The parameter `family`
 specifies the outcome type. The default setting is `normal`,
 corresponding to a continuous outcome. For a binary outcome, `family`
 should be specified as `binary`. `lucid()` returns an object of class
-`lucid``_``early` providing the MLE of the LUCID model as well as IPs.
+`lucid_early` providing the MLE of the LUCID model as well as IPs.
 
 ``` r
 > # Fit a LUCID model with a continuous outcome
@@ -523,21 +533,25 @@ unsupervised version of LUCID. In this unsupervised LUCID, the latent
 clusters are estimated only by $\boldsymbol{\mathbf{G}}$ and
 $\boldsymbol{\mathbf{Z}}$. Specifically, the joint likelihood of
 unsupervised LUCID is written as
+
 $$\begin{aligned}
          \log L(\boldsymbol{\mathbf{\Theta}}) & = \sum_{i = 1}^N \sum_{j=1}^K I(X_i = j) \left( \log S(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\Theta}}) + \log \phi(\boldsymbol{\mathbf{Z}}_i| X_i = j; \boldsymbol{\mathbf{\Theta}})\right)
     \end{aligned}
     \label{eq11}   (\#eq:eq11)$$
+
 and the corresponding responsibility based on Equation \@ref(eq:eq11) is
 derived as
+
 $$\begin{aligned}
         r_{ij}^{(t)} & = \frac{S\left(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\beta}}^{(t)}\right) \phi\left(\boldsymbol{\mathbf{Z}}_i| X_i = j; \boldsymbol{\mathbf{\mu}}_j^{(t)}, \boldsymbol{\mathbf{\Sigma}}_j^{(t)}\right)}{\sum_{j = 1}^K S\left(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\beta}}^{(t)}\right) \phi\left(\boldsymbol{\mathbf{Z}}_i| X_i = j; \boldsymbol{\mathbf{\mu}}_j^{(t)}, \boldsymbol{\mathbf{\Sigma}}_j^{(t)}\right)}
     \end{aligned}
     \label{eq12}   (\#eq:eq12)$$
+
 Estimations for unsupervised LUCID are also obtained by the EM algorithm
 discussed previously. The parameter `useY` in `lucid()` is a flag
 indicating a supervised or unsupervised LUCID model. By default,
-`useY = TRUE` and `lucid()` fit supervised LUCID. To fit an unsupervised
-LUCID model, a user should set `useY = FALSE`.
+`useY = TRUE`, and `lucid()` fits supervised LUCID. To fit an
+unsupervised LUCID model, a user should set `useY = FALSE`.
 
 ``` r
 > # Fit an unsupervised LUCID model
@@ -549,7 +563,7 @@ The choice of a supervised LUCID or unsupervised LUCID model depends
 both on the study design and the research question. A supervised LUCID
 analysis may be appropriate, for example, if: (1) there is the belief
 that the cluster structure is defined jointly by
-$\boldsymbol{\mathbf{G}}$, $\boldsymbol{\mathbf{Z}}$ and
+$\boldsymbol{\mathbf{G}}$, $\boldsymbol{\mathbf{Z}}$, and
 $\boldsymbol{\mathbf{Y}}$ (for example, data collected from a
 cross-sectional design); or (2) the goal is to build a predictive model
 with data from one cohort to then apply directly to another cohort. If
@@ -598,17 +612,18 @@ LUCID and to facilitate interpretation.
 
 A direct call of `summary()` with the input of a model returned by
 `lucid()` prints three tables in the console, corresponding to
-associations among $\boldsymbol{\mathbf{G}}$, $\boldsymbol{\mathbf{Z}}$
+associations among $\boldsymbol{\mathbf{G}}$, $\boldsymbol{\mathbf{Z}}$,
 and $\boldsymbol{\mathbf{Y}}$. We take the LUCID model fitted with the
 continuous BMI as an example.
 
 ``` r
 > # summarize a simple lucid model with a continuous outcome
 > summary(fit1)
+
 ----------Summary of the LUCID Early Integration model---------- 
- 
+
 K =  2 , log likelihood = -6721.801 , BIC =  14808.7 
- 
+
 (1) Y (continuous outcome): effect size of Y for each latent cluster
              Gamma
 cluster1 0.0000000
@@ -635,15 +650,15 @@ hs_hg_m_scaled.cluster2 0.7909168 2.205417
 The first table summarizes the association between the latent cluster
 and the outcome (cytokeratin 18). The estimated effect size of
 cytokeratin 18 for cluster 1 is 0 since it is the reference cluster
-while that for cluster 2 is 0.504. In the case of binary outcome, the
+while that for cluster 2 is 0.504. In the case of a binary outcome, the
 coefficient in the first table is interpreted as the log odds for the
 variable for that specific cluster vs. the reference cluster. The second
 table characterizes each cluster by its omics signature. The omics
 signature is a cluster-specific mean for each variable in the omics
 data. For instance, latent cluster 1 is characterized by low levels of
-cg\_EPM2AIP1 ($\mu_1 (\text{cg{\_}EPM2AIP1})= -0.157$) and cg\_VTRNA1\_3
-($\mu_1 (\text{cg{\_}VTRNA1{\_}3})= -0.225$), and high levels of all
-other omic features, for example, cg\_GRHL3
+cg_EPM2AIP1 ($\mu_1 (\text{cg\_EPM2AIP1})= -0.157$) and cg_VTRNA1_3
+($\mu_1 (\text{cg\_VTRNA1\_3})= -0.225$), and high levels of all other
+omic features; for example, cg_GRHL3
 ($\mu_1 (\text{cg{\_}GRHL3})= 0.2452019$). On the contrary, latent
 cluster 2 features high levels of cg\_EPM2AIP1
 ($\mu_2 (\text{cg{\_}EPM2AIP1})=  0.303$) and cg\_VTRNA1\_3
@@ -652,23 +667,23 @@ features including cg\_GRHL3 ($\mu_2 (\text{cg{\_}GRHL3})= -0.363$). The
 third table relates the exposures to the latent clusters. For instance,
 `hs``_``hg``_``m``_``scaled` represents the scaled level of maternal
 mercury exposure. The coefficient OR for `hs``_``hg``_``m``_``scaled` is
-0.791, meaning for each doubling of the scaled level of maternal mercury
-exposure, the odds ratio of being assigned to latent cluster 2 is 2.205.
-Since latent cluster 2 is associated with a higher child level of
-cytokeratin 18, these results indicate that exposure to mercury is
+0.791, meaning that for each doubling of the scaled level of maternal
+mercury exposure, the odds ratio of being assigned to latent cluster 2
+is 2.205. Since latent cluster 2 is associated with a higher child level
+of cytokeratin 18, these results indicate that exposure to mercury is
 associated with a higher child level of cytokeratin 18 and thus higher
 risks of MAFLD.
 
-```{r fig3, echo=FALSE , fig.cap="An example of using the Sankey diagram to visualize a LUCID model. The dark grey nodes represent the exposure, the light grey node represents the outcome, the blue nodes are omics data and the orange nodes are latent clusters. The width of links and nodes corresponds to effect size. Light-colored links represent negative associations while dark-colored links indicate positive associations.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
+```{r fig3, echo=FALSE , fig.cap="An example of using the Sankey diagram to visualize a LUCID model. The dark grey nodes represent the exposure, the light grey node represents the outcome, the blue nodes are omics data, and the orange nodes are latent clusters. The width of links and nodes corresponds to effect size. Light-colored links represent negative associations while dark-colored links indicate positive associations.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
 knitr::include_graphics(c("figures/fig3.png"))
 ```
 
 #### Visualizing LUCID by `plot()` {#sec3.2.2}
 
 Visualization is another imperative way to interpret statistical models.
-Here we use a Sankey diagram [@schmidt2008sankey] for visualization of
-the relationships among different components in LUCID. `plot()` takes a
-fitted LUCID model as input and creates a Sankey diagram in `html`
+Here we use a Sankey diagram [@schmidt2008sankey] for the visualization
+of the relationships among different components in LUCID. `plot()` takes
+a fitted LUCID model as input and creates a Sankey diagram in `html`
 format. It also accepts a user-defined color palette.
 
 ``` r
@@ -688,12 +703,12 @@ the links reflects the effect size of the association, and the color of
 the links indicates the direction of the association. By default,
 dark-colored links represent positive associations while light-colored
 links indicate negative associations. The output of the Sankey diagram
-is an interactive html file in which the user can drag and re-arrange
-the layout of the elements, to avoid overlapping. In practice, we
-recommend limiting the number of variables in the Sankey diagram to  10
-to facilitate interpretation.
+is an interactive html file in which the user can drag and rearrange the
+layout of the elements to avoid overlapping. In practice, we recommend
+limiting the number of variables in the Sankey diagram to approximately
+10 to facilitate interpretation.
 
-```{r fig4, echo=FALSE , fig.cap="Choosing optimal number of latent clusters K based on BIC.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
+```{r fig4, echo=FALSE , fig.cap="Choosing an optimal number of latent clusters K based on BIC.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
 knitr::include_graphics(c("figures/fig4.png"))
 ```
 
@@ -704,7 +719,9 @@ selection by fitting a series of models, each with a different value for
 $K$, and then the Bayesian Information Criteria (BIC) is used to choose
 the optimal model [@fan2013tuning]. The optimal model is the one with
 the lowest BIC. The BIC for LUCID is defined as
+
 $$\text{BIC} = -2 \log L(\hat{\boldsymbol{\mathbf{\Theta}}}) + D \log N$$
+
 where $\hat{\boldsymbol{\mathbf{\Theta}}}$ is the maximum likelihood
 estimation and $D$ is the number of parameters in LUCID. Specifically,
 $D = P(K - 1) + KM + KM(M + 1)/2 + n_Y$, where $n_Y$ is the number of
@@ -723,20 +740,20 @@ $K$.
 [1] 2
 ```
 
-Separately, users can use the auxiliary function `tune_lucid()` to look
-into model selection in more details. This function returns the optimal
-model as well as a table recording the tuning process. Below is an
-example of tuning $K$ and visualizing the tuning process by using
+Separately, users can use the auxiliary function `tune_lucid()` to
+explore model selection in more detail. This function returns the
+optimal model as well as a table recording the tuning process. Below is
+an example of tuning $K$ and visualizing the tuning process by using
 `tune_lucid()`.
 
 ``` r
-> # Look into the tuning process in more details
-> tune_K <- tune_lucid(G = exposome, Z = methylomics, Y = ck18, lucid_model = "early", 
+> # Look into the tuning process in more detail
+> tune_K <- tune_lucid(G = exposome, Z = methylomics, Y = ck18, lucid_model = "early",
 +                      family = "normal", K = 2:6)
 > fit9 <- tune_K$best_model
-> ggplot(data = tune_K$tune_list, aes(x = K, y = BIC, label = round(BIC, 0))) + 
+> ggplot(data = tune_K$tune_list, aes(x = K, y = BIC, label = round(BIC, 0))) +
 +   geom_point() +
-+   geom_line() + 
++   geom_line() +
 +   geom_text(hjust = -0.2)
 ```
 
@@ -751,35 +768,44 @@ $\boldsymbol{\mathbf{G}}$ and for the other multi-omics data
 $\boldsymbol{\mathbf{Z}}$ via $L_1$-norm penalty terms. For variable
 selection for $\boldsymbol{\mathbf{G}}$, we apply the LASSO regression
 to obtain sparse solutions for Equation \@ref(eq:eq5), which is
+
 $$\boldsymbol{\mathbf{\beta}}_{\text{LASSO}}^{(t+1)} = \arg \max_{\boldsymbol{\mathbf{\beta}}} \left\{ \sum_{i = 1}^N \sum_{j = 1}^K r_{ij}^{(t)}\log S(X_i = j | \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\beta}}_j) - \lambda_{\boldsymbol{\mathbf{\beta}}}\sum_{j = 1}^K\sum_{l = 1}^P |\beta_{jl}| \right\}
      \label{eq14}   (\#eq:eq14)$$
+
 To obtain sparse estimation for $\boldsymbol{\mathbf{\mu}}$ and
 $\boldsymbol{\mathbf{\Sigma}}$, we implement the penalized model-based
 method [@zhou2009penalized]. $\boldsymbol{\mathbf{\mu}}$ is first
 updated by maximizing the following equation,
+
 $$\boldsymbol{\mathbf{\mu}}_j^{(t+1)} = \arg \max_{\boldsymbol{\mathbf{\mu}}} \left \{ \sum_{i = 1}^N \sum_{j = 1}^K r_{ij}^{(t)}\log \phi(\boldsymbol{\mathbf{Z}}_i| \boldsymbol{\mathbf{\mu_j}}, \boldsymbol{\mathbf{\Sigma_j}}) - \lambda_{\boldsymbol{\mathbf{\mu}}}\sum_{j = 1}^K\sum_{l = 1}^M |\mu_{jl}| \right \}
     \label{eq15}   (\#eq:eq15)$$
+
 Denote $\boldsymbol{\mathbf{W}} = \boldsymbol{\mathbf{\Sigma}}^{-1}$.
 Then $\boldsymbol{\mathbf{\Sigma}}$ is updated by maximizing its inverse
 penalized by $L_1$-norm
+
 $$\boldsymbol{\mathbf{W}}_j^{(t+1)} = \arg \max_{\boldsymbol{\mathbf{W}}} \left \{ \sum_{i = 1}^N \sum_{j = 1}^K r_{ij}^{(t)}\left( \det \boldsymbol{\mathbf{W}}_j - \text{trace}(\boldsymbol{\mathbf{S}}_j^{(t)} \boldsymbol{\mathbf{W}}_j) \right) - \lambda_{\boldsymbol{\mathbf{W}}}\sum_{ls}|w_{jls}| \right \}
     \label{eq16}   (\#eq:eq16)$$
+
 where $\boldsymbol{\mathbf{S}}_j$ is the empirical covariance matrix at
 each iteration, defined as
+
 $$\boldsymbol{\mathbf{S}}_j^{(t)} = \frac{\sum_{i=1}^N r_{ij}\left(\boldsymbol{\mathbf{Z}}_i - \boldsymbol{\mathbf{\mu}}_j^{(t)}\right)\left(\boldsymbol{\mathbf{Z}}_i - \boldsymbol{\mathbf{\mu}}_j^{(t)}\right)^T}{\sum_{i=1}^N r_{ij}^{(t)}}
     \label{eq17}   (\#eq:eq17)$$
 
 To choose the optimal combination of the three $L_1$-norm penalties, we
-implement a grid-search by adopting a modified BIC [@pan2007penalized],
+implement a grid search by adopting a modified BIC [@pan2007penalized],
 defined as
+
 $$\text{BIC}_p = -2 \log L(\hat{\boldsymbol{\mathbf{\Theta}}}) + (D - D_{\boldsymbol{\mathbf{G}}} - D_{\boldsymbol{\mathbf{Z}}})\log N
     \label{eq18}   (\#eq:eq18)$$
+
 Where $D_{\boldsymbol{\mathbf{G}}}$ is the number of exposure variables
 whose effect estimates are 0 across all latent clusters and
 $D_{\boldsymbol{\mathbf{Z}}}$ is the number of omic variables whose
 effect estimates are 0 across all latent clusters. We can tune
 $\lambda_{\boldsymbol{\mathbf{\beta}}}$,
-$\lambda_{\boldsymbol{\mathbf{\mu}}}$ and
+$\lambda_{\boldsymbol{\mathbf{\mu}}}$, and
 $\lambda_{\boldsymbol{\mathbf{W}}}$ either separately or jointly. For
 instance, if only exposome data $\boldsymbol{\mathbf{G}}$ is
 high-dimensional, we only need to tune
@@ -787,15 +813,15 @@ $\boldsymbol{\mathbf{\lambda}}_{\boldsymbol{\mathbf{\beta}}}$. If
 variable selection is desired for both $\boldsymbol{\mathbf{G}}$ and
 $\boldsymbol{\mathbf{Z}}$, then the three $L_1$-norm penalties should be
 tuned simultaneously. $\lambda_{\boldsymbol{\mathbf{\beta}}}$,
-$\lambda_{\boldsymbol{\mathbf{\mu}}}$ and
+$\lambda_{\boldsymbol{\mathbf{\mu}}}$, and
 $\lambda_{\boldsymbol{\mathbf{W}}}$ match the parameters `Rho_G`,
-`Rho_Z_Mu` and `Rho_Z_Cov` in the `lucid()` function. Each parameter
+`Rho_Z_Mu`, and `Rho_Z_Cov` in the `lucid()` function. Each parameter
 accepts a numeric vector or a scalar as input. For guidance, empirical
 experiments utilizing normalized multi-omics data suggest integer values
 in the range of $0 - 100$ for `Rho_Z_Mu` and values in the range of
 $0 - 1$ for `Rho_G` and `Rho_Z_Cov`. The higher the values of
 `Rho_Z_Mu`, `Rho_G`, and `Rho_Z_Cov`, the fewer omic features that will
-be selected. Below are examples for conducting variable selection in
+be selected. Below are examples for conducting variable selection for
 $\boldsymbol{\mathbf{G}}$ and $\boldsymbol{\mathbf{Z}}$, separately and
 jointly.
 
@@ -804,39 +830,36 @@ jointly.
 > # Add 10 more noise variables to the exposome
 > noise <- matrix(rnorm(420 * 10), nrow = 420)
 > exposome_noise <- cbind(exposome, noise)
->  fit10 <- lucid(G = exposome_noise, Z = methylomics, Y = ck18, 
+> fit10 <- lucid(G = exposome_noise, Z = methylomics, Y = ck18,
 +                 lucid_model = "early", family = "normal", K = 2,
 +                 Rho_G = seq(0, 0.4, by = 0.01), seed = 1008)
-
 1/11 exposures are selected
 
 > # Summary of optimal lucid model
 > # summary(fit10)
-> 
+
 > # Variable selection for Z
 > # add 10 more noise variables to the methylomics
 > methylomics_noise <- cbind(methylomics, noise)
-> fit11 <- lucid(G = exposome, Z = methylomics_noise, Y = ck18, 
+> fit11 <- lucid(G = exposome, Z = methylomics_noise, Y = ck18,
 +                lucid_model = "early", family = "normal", K = 2,
 +                Rho_Z_Mu = 5:10, Rho_Z_Cov = seq(0.1, 0.4, by = 0.1), seed = 1008)
-
-10/20 omics variables are selected  
+10/20 omics variables are selected
 
 > # Summary of optimal lucid model
 > # summary(fit11)
-> 
+
 > # Variable selection for G and Z jointly
-> fit12 <- lucid(G = exposome_noise, Z = methylomics_noise, Y = ck18, 
+> fit12 <- lucid(G = exposome_noise, Z = methylomics_noise, Y = ck18,
 +                lucid_model = "early", family = "normal", K = 2,
 +                Rho_G = 0.01, Rho_Z_Mu = 10, Rho_Z_Cov = 0.5, seed = 123)
-
-1/11 exposures are selected 
-11/20 omics variables are selected 
+1/11 exposures are selected
+11/20 omics variables are selected
 ```
 
 Oftentimes, the number of features $M$ for omics data
 $\boldsymbol{\mathbf{Z}}$ is in the hundreds or even thousands. With a
-high dimensionality of $\boldsymbol{\mathbf{Z}}$, LUCID can still have a
+high dimensionality of $\boldsymbol{\mathbf{Z}}$, LUCID can still have
 stable performance and select the features with effect if the number of
 observations $N$ is higher than $M$. Below is an example of conducting
 variable selection in $\boldsymbol{\mathbf{Z}}$ with $M$ = 210 features
@@ -849,21 +872,20 @@ features with effect.
 > set.seed(1008)
 > # Add 200 more noise features to the methylomics
 > noise <- matrix(rnorm(420 * 200), nrow = 420)
->  methylomics_noise <- cbind(methylomics, noise)
-> fit13 <- lucid(G = exposome, Z = methylomics_noise, Y = ck18, 
+> methylomics_noise <- cbind(methylomics, noise)
+> fit13 <- lucid(G = exposome, Z = methylomics_noise, Y = ck18,
 +                family = "normal", lucid_model = "early", K = 2,
 +                Rho_Z_Mu = 20, Rho_Z_Cov = 0.6)
-
-17/210 omics variables are selected 
+17/210 omics variables are selected
 
 > # Summary of optimal lucid model
 > # summary(fit13)
 ```
 
-Via simulations running time for LUCIDus increases linearly as the
+Via simulations, the run time for LUCIDus increases linearly as the
 number of features increases. While the integration of regularization
 allows for a high number of features to be analyzed, when $M$ is higher
-than $N$, LUCID might result in unstable estimation, therefore
+than $N$, LUCID might result in unstable estimation; therefore,
 pre-screening approaches for the omic features such as the
 \"meet-in-the-middle\" become imperative to reduce dimensionality before
 fitting the LUCID model [@CADIOU2021106509].
@@ -882,17 +904,21 @@ $\boldsymbol{\mathbf{\Theta}}^b$: (1) normal CIs and (2) percentile CIs.
 
 Given the confidence level $1 - \alpha$, the normal CIs are constructed
 by
+
 $$(1 - \alpha)\% \text{CI}_{\text{normal}} = \boldsymbol{\mathbf{\Theta}} - \text{bias} \pm Z_{1 - \alpha/2}\sigma(\boldsymbol{\mathbf{\Theta}})
     \label{eq19}   (\#eq:eq19)$$
+
 where
 $\text{bias} = \bar{\boldsymbol{\mathbf{\Theta}}} - \boldsymbol{\mathbf{\Theta}}$,
 $\bar{\boldsymbol{\mathbf{\Theta}}}$ is the mean of the bootstrap
 estimators and $\sigma(\boldsymbol{\mathbf{\Theta}})$ is the bootstrap
 standard error, which is
+
 $$\sigma(\boldsymbol{\mathbf{\Theta}}) = \sqrt{\frac{1}{B - 1}\sum_{b=1}^B\left(\boldsymbol{\mathbf{\Theta}}^b - \bar{\boldsymbol{\mathbf{\Theta}}}\right)}
     \label{eq20}   (\#eq:eq20)$$
-All calculations in Equation \@ref(eq:eq19) and \@ref(eq:eq20) are
-elementwise.
+
+All calculations in Equations \@ref(eq:eq19) and \@ref(eq:eq20) are
+element-wise.
 
 In addition, the $1 - \alpha$ percentile CIs are calculated by ordering
 the bootstrap estimators from smallest to largest and selecting the
@@ -911,10 +937,11 @@ calculates $95\%$ CIs.
 ``` r
 > # Bootstrap to obtain 95% CI (by default) for LUCID
 > set.seed(123)
-> boot1 <- boot_lucid(G = exposome, Z = methylomics, Y = ck18, lucid_model = "early", 
+> boot1 <- boot_lucid(G = exposome, Z = methylomics, Y = ck18, lucid_model = "early",
 +                     model = fit1, R = 200)
+
 # 90% CIs
-> boot2 <- boot_lucid(G = exposome, Z = methylomics, Y = ck18, lucid_model = "early", 
+> boot2 <- boot_lucid(G = exposome, Z = methylomics, Y = ck18, lucid_model = "early",
 +                     model = fit1, R = 200, conf = 0.9)
 ```
 
@@ -923,7 +950,7 @@ integrating `summary()` with output from `boot_lucid()`. The resulting
 summary table has 5 columns: `t0` corresponds to parameters estimated
 from the observed data; `norm_lower` and `norm_upper` represent the
 lower and upper limit of normal CIs, respectively; `perc_lower` and
-`perc_upper` represents the percentile CIs.
+`perc_upper` represent the percentile CIs.
 
 ``` r
 > # Summary table with 95% bootstrap CIs
@@ -941,13 +968,14 @@ bootstrap estimations.
 The prediction of LUCID includes two parts: prediction of the latent
 clusters $\boldsymbol{\mathbf{X}}$ and prediction of the outcome
 $\boldsymbol{\mathbf{Y}}$. The `predict_lucid()` can perform both tasks.
-Prediction for latent cluster is determined by IP using the optimal
+Prediction for the latent cluster is determined by IP using the optimal
 rule, which is
+
 $$\hat{X}_i = \arg \max_j P(X_i = j| \boldsymbol{\mathbf{D}}, \boldsymbol{\mathbf{\Theta}})
     \label{eq21}   (\#eq:eq21)$$
 
-Prediction for outcome follows a conventional regression framework. When
-making predictions, `predict_lucid()` for LUCID requires an input of a
+Prediction for the outcome follows a conventional regression framework.
+When making predictions, `predict_lucid()` for LUCID requires input of
 new $\boldsymbol{\mathbf{G}}$ and $\boldsymbol{\mathbf{Z}}$, and
 optional input of $\boldsymbol{\mathbf{Y}}$. If
 $\boldsymbol{\mathbf{Y}}$ is provided, we use Equation \@ref(eq:eq3) to
@@ -955,7 +983,7 @@ calculate IPs; otherwise, Equation \@ref(eq:eq12) is applied. As a
 result, we can either fit a supervised LUCID model to make predictions
 in an unsupervised fashion or vice versa. This design allows for
 flexibility. For instance, we can build a LUCID model in one cohort in a
-supervised fashion, and then make predictions on another new independent
+supervised fashion and then make predictions on another new independent
 cohort, regardless of whether the outcome is measured or not.
 `predict_lucid()` for LUCID returns a `list` containing IPs for each
 observation, predicted cluster assignment, and predicted outcome. Below
@@ -969,9 +997,8 @@ is an example code for prediction based on a supervised LUCID model,
 > pred2 <- predict_lucid(model = fit1, G = exposome, Z = methylomics)
 > # Predicted cluster label
 > table(pred1$pred.x)
-
-  1   2 
-223 197 
+  1   2
+223 197
 > # Predicted outcome
 > pred1$pred.y[1:5]
 [1]  0.2580164 -0.3806054  0.2504817  0.4123169 -0.1898255
@@ -995,9 +1022,9 @@ omic features are randomly missing due to the measurement process. We
 refer to this pattern as sporadic missingness. **LUCIDus** can deal with
 the two missing patterns mentioned above or the combination of the two.
 We assume the multi-omics data are missing completely at random (MCAR)
-for both missing patterns(i.e. for list-wise missing pattern, the
+for both missing patterns (i.e., for the list-wise missing pattern, the
 probability of multi-omics data being not available is the same for all
-subjects; for sporadic missing pattern, the probability of a certain
+subjects; for sporadic missing patterns, the probability of a certain
 omic feature being missing is the same for all omic features).
 
 For list-wise missingness, we use a modified LUCID model based on a
@@ -1007,13 +1034,17 @@ measured multi-omics data. The likelihood of the former observations
 remains the same as Equation \@ref(eq:eq2), denoted by
 $l_o (\boldsymbol{\mathbf{\Theta}}|\boldsymbol{\mathbf{D}})$. The joint
 likelihood of the latter observations becomes
+
 $$l_m(\boldsymbol{\mathbf{\Theta}}|\boldsymbol{\mathbf{D}}) = \sum_{l_o=1}^{N_o}\sum_{j=1}^K I(X_{i_o} = j) \left( \log S(X_{i_o} = j| \boldsymbol{\mathbf{G}}_{i_o};\boldsymbol{\mathbf{\beta}}_j) + \log \phi\left(Y_{i_o}|\gamma_j, \sigma_j^2\right)\right)
     \label{eq22}   (\#eq:eq22)$$
+
 with corresponding responsibility defined as
+
 $$\begin{aligned}
         r_{ij}^{(t)} = \frac{S\left(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\beta}}^{(t)}\right) \phi\left(Y_i|X_i = j; \gamma_j^{(t)}, \sigma^{2(t)}_j \right)}{\sum_{j = 1}^K S\left(X_i = j| \boldsymbol{\mathbf{G}}_i; \boldsymbol{\mathbf{\beta}}^{(t)}\right) \phi \left(Y_i|X_i = j; \gamma_j^{(t)}, \sigma^{2(t)}_j\right)}
     \end{aligned}
     \label{eq23}   (\#eq:eq23)$$
+
 The joint likelihood of LUCID for all data becomes
 $l(\boldsymbol{\mathbf{\Theta}}) = l_o (\boldsymbol{\mathbf{\Theta}}|\boldsymbol{\mathbf{D}}) +l_m (\boldsymbol{\mathbf{\Theta}}|\boldsymbol{\mathbf{D}})$.
 We then use the same EM algorithm described in Section [2.1](#sec2.1) to
@@ -1023,7 +1054,7 @@ For sporadic missingness, we use an integrated imputation method
 [@zhang2021gaussian]. Each missing value in the omics data
 $\boldsymbol{\mathbf{Z}}$ is treated as an unknown "parameter" to be
 optimized. Specifically in the M-step, after maximizing the parameters
-of LUCID model with fixed $\boldsymbol{\mathbf{Z}}$, we implement an
+of the LUCID model with fixed $\boldsymbol{\mathbf{Z}}$, we implement an
 additional *imputation step* which maximizes $\boldsymbol{\mathbf{Z}}$
 with fixed parameters within LUCID. Details of the statistical
 derivation can be found in @zhang2021gaussian.
@@ -1053,16 +1084,16 @@ account for the missing data. For sporadic missing patterns, we use
 **mclust** to initialize missing values in the multi-omics data.
 
 ``` r
-> fit14 <- lucid(G = exposome, Z = methylomics_miss_listwise, Y = ck18, 
+> fit14 <- lucid(G = exposome, Z = methylomics_miss_listwise, Y = ck18,
 +                lucid_model = "early", K = 2, family = "normal")
-> fit15 <- lucid(G = exposome, Z = methylomics_miss_sporadic, Y = ck18, 
+> fit15 <- lucid(G = exposome, Z = methylomics_miss_sporadic, Y = ck18,
 +                lucid_model = "early", K = 2, family = "normal")
 > # summary(fit15)
 ```
 
 ### LUCID in Parallel {#sec_parallel}
 
-In the previous sections, we focus on using the early integration
+In the previous sections, we focused on using the early integration
 strategy by concatenating each omic layer one by one and inputting a
 single data matrix into the LUCID model for estimation. However,
 researchers may be interested in modeling the correlation structure of
@@ -1070,33 +1101,35 @@ each omic layer independently to investigate how multi-omics data may
 act in parallel with an outcome. In this section, we extend the LUCID
 model to incorporate multi-omics data by introducing multiple latent
 variables into the framework. Suppose we have a sample of size $n$,
-indexed by $i$ = 1, 2, . . . , $n$. It has a collection of $m$ omic
-layers, denoted by $Z_1$, . . . ,$Z_a$, . . . , $Z_m$ with corresponding
-dimensions $p_1$, . . . , $p_a$, . . . , $p_m$. Each omic layer $Z_a$ is
+indexed by $i$ = 1, 2, \..., $n$. It has a collection of $m$ omic
+layers, denoted by $Z_1$, \..., $Z_a$, \..., $Z_m$ with corresponding
+dimensions $p_1$, \..., $p_a$, \..., $p_m$. Each omic layer $Z_a$ is
 summarized by a latent categorical variable $X_a$, which contains $k_a$
 categories. Each category is interpreted as a latent cluster (or
 subgroup) for that particular omic layer. All latent variables are
 linked to the same exposure matrix $\boldsymbol{\mathbf{G}}$ and the
-outcome $\boldsymbol{\mathbf{Y}}$ for LUCID in parallel, shown in Figure
-\@ref(fig:fig1) (b).
+outcome $\boldsymbol{\mathbf{Y}}$ for LUCID in parallel, as shown in
+Figure \@ref(fig:fig1) (b).
 
 Suppose the latent variable $X_{a i}$ is observed for $a=1, \ldots, m$.
-According to the DAG in \@ref(fig:fig1) (b), the distributions of
+According to the DAG in Figure \@ref(fig:fig1) (b), the distributions of
 $f\left(\boldsymbol{Z}_{a i} \mid \boldsymbol{G}\right)$ are
-conditionally independent with each other for $a=1, \ldots, m$, the
+conditionally independent of each other for $a=1, \ldots, m$, and the
 distributions of the latent variable
 $f\left(X_{a i} \mid \boldsymbol{G}_{i}\right)$ are also conditionally
-independent with each other. Since $\boldsymbol{X}_{a i}$ is a discrete
-variable with $k_{i}$ categories, we assume $\boldsymbol{X}_{a i}$
-follows a multinomial distribution conditioning on $\boldsymbol{G}$,
-denoted by the softmax function $S(\cdot)$. We assume multi-omics data
-$\boldsymbol{Z}_{a i}$ follows a multivariate Gaussian distribution
-conditioning on $\boldsymbol{X}_{a i}$, denoted by
+independent of each other.
+
+Since $\boldsymbol{X}_{a i}$ is a discrete variable with $k_{i}$
+categories, we assume $\boldsymbol{X}
+_{a i}$ follows a multinomial distribution conditioning on
+$\boldsymbol{G}$, denoted by the softmax function $S(\cdot)$. We assume
+multi-omics data $\boldsymbol{Z}_{a i}$ follows a multivariate Gaussian
+distribution conditioning on $\boldsymbol{X}_{a i}$, denoted by
 $\phi\left(\boldsymbol{Z}_{a i} \mid \boldsymbol{X}_{a i}=j_{a} ; \boldsymbol{\mu}_{j a}, \boldsymbol{\Sigma}_{j a}\right)$,
 where $\boldsymbol{\mu}_{j a}$ and $\boldsymbol{\Sigma}_{j a}$ are
-cluster-specific mean and variance-covariance matrix for omic layer $a$.
-The outcome $Y$ can be either a continuous outcome or a binary outcome.
-For illustration, here, we discuss the situation that $Y$ is a
+cluster-specific means and variance-covariance matrices for omic layer
+$a$. The outcome $Y$ can be either a continuous outcome or a binary
+outcome. For illustration, here, we discuss the situation that $Y$ is a
 continuous variable that follows a Gaussian distribution. The
 relationship between latent variables $X_{a}$ and outcome $Y$ is
 formulated as
@@ -1107,20 +1140,20 @@ E Y_{i}=\gamma_{0}+\sum_{j_{1}=2}^{k_{1}} \gamma_{j_{1}} I\left(X_{1 i}=j_{1}\ri
     \label{eq_24}   (\#eq:eq-24)$$
 
 where the intercept $\gamma_{0}$ is the expected value of $Y_{i}$ given
-$X_{a i}=1$ for $a=1,2, \ldots, m$ (the reference cluster for all
-combinations of latent cluster assignment); $\gamma_{j_{a}}$ is the
+$X_{a i}=1$ for $a=1,2,\ldots, m$ (the reference cluster for all
+combinations of latent cluster assignments); $\gamma_{j_{a}}$ is the
 change of $Y$ if the latent variable $X_{a}$ becomes $j_{a}$ instead of
 1.
 
 Let $\boldsymbol{D}$ be the generic notation for all observed data. The
-log-likelihood of LUCID in Parallel is constructed below,
+log-likelihood of LUCID in Parallel is constructed below:
 
 $$\begin{aligned}
 \log L(\boldsymbol{\mathbf{\Theta}}\mid \boldsymbol{D}) &  =\sum_{i=1}^{n} \log f\left(\boldsymbol{Z}_{1 i}, \ldots, \boldsymbol{Z}_{m i}, \boldsymbol{Y}_{i} \mid \boldsymbol{G}_{i} ; \boldsymbol{\Theta}\right) \\
 & =\sum_{i=1}^{n} \log \left[\prod_{j_{1}=1}^{k_{1}} \cdots \prod_{j_{m}=1}^{k_{m}} f\left(\boldsymbol{Z}_{1 i}, \ldots, \boldsymbol{Z}_{m i}, X_{1 i}, \ldots, X_{m i}, Y_{i} \mid \boldsymbol{G}_{i} ; \boldsymbol{\Theta}\right)^{I\left(X_{1 i}=j_{1}, \ldots, X_{m i}=j_{m}\right)}\right] \\
 & =\sum_{i=1}^{n} \sum_{j_{1}=1}^{k_{1}} \ldots \sum_{j_{m}=1}^{k_{m}} I\left(X_{1 i}=j_{1}, \ldots, X_{m i}=j_{m}\right) \log f\left(\boldsymbol{Z}_{1 i}, \ldots, \boldsymbol{Z}_{m i}, X_{1 i}, \ldots, X_{m i}, Y_{i} \mid \boldsymbol{G}_{i} ; \boldsymbol{\Theta}\right) \\
 & =\sum_{i=1}^{n} \sum_{j_{1}=1}^{k_{1}} \ldots \sum_{j_{m}=1}^{k_{m}} I\left(X_{1 i}=j_{1}, \ldots, X_{m i}=j_{m}\right) \log \phi\left(Y_{i} \mid X_{1 i}, \ldots, X_{m i}, \boldsymbol{\gamma}, \sigma^{2}\right) \\
-& +\sum_{i=1}^{n} \sum_{a=1}^{m} \sum_{j_{1}=1}^{k_{1}} \ldots \sum_{j_{m}=1}^{k_{m}} I\left(X_{1 i}=j_{1}, \ldots, X_{m i}=j_{m}\right) \log \phi\left(\boldsymbol{Z}_{a i} \mid X_{a i}=j_{a}, \boldsymbol{\mu}_{a, j_{a}}, \boldsymbol{\Sigma}_{a, j_{a}}\right) \\
+& +\sum_{i=1}^{n} \sum_{a=1}^{m} \sum_{j_{1}=1}^{k_{1}} \ldots \sum_{j_{m}=1}^{k_{m}} I\left(X_{1 i}=j_{1}, \ldots, X_{m i}=j_{m}\right) \log \phi\left(\boldsymbol{Z}_{a i} \mid X_{a i}=j_{a}, \boldsymbol{\mu}_{a,j_{a}}, \boldsymbol{\Sigma}_{a,j_{a}}\right) \\
 & +\sum_{i=1}^{n} \sum_{a=1}^{m} \sum_{j_{1}=1}^{k_{1}} \ldots \sum_{j_{m}=1}^{k_{m}} I\left(X_{1 i}=j_{1}, \ldots, X_{m i}=j_{m}\right) \log S\left(\boldsymbol{X}_{a i}=j_{a} \mid \boldsymbol{G}_{i}, \boldsymbol{\beta}_{a}\right)
 \end{aligned}
     \label{eq_26}   (\#eq:eq-26)$$
@@ -1128,7 +1161,7 @@ $$\begin{aligned}
 The log-likelihood of LUCID in parallel is similar to that with LUCID
 early integration. It is natural to follow the same principles of the EM
 algorithm for LUCID early integration and estimate the parameters of
-LUCID in parallel with targeted modification.
+LUCID in parallel with targeted modifications.
 
 For illustration, we continue with the previous data example using
 maternal exposure to mercury as the exposome $\boldsymbol{\mathbf{G}}$
@@ -1137,15 +1170,15 @@ $\boldsymbol{\mathbf{Y}}$. For a LUCID in parallel model, multi-omics
 data $\boldsymbol{\mathbf{Z}}$ is a list of three $420 \times p_a$
 matrices of omic layers where $a = 1, 2, 3$ (layer 1: methylome; layer
 2: transcriptome; layer 3: miRNA). We fit LUCID in parallel models with
-continuous ck18 using `lucid()`. We specify the argument
-`lucid``_``model` to be `parallel`, and the argument `K` should be
-specified as a list of three integers (or sequences of integers if
-tuning) indicating to the number of latent clusters for each omic layer.
-The variable selection feature is not yet available for LUCID in
-parallel, and we can only tune for `K`. We can use argument `CoG` and
-`CoY` to adjust for covariates for the $\boldsymbol{\mathbf{G}}$ to
-$\boldsymbol{\mathbf{X}}$ association and the $\boldsymbol{\mathbf{X}}$
-to $\boldsymbol{\mathbf{Y}}$ association, respectively. Similar to LUCID
+continuous ck18 using `lucid()`. We specify the argument `lucid_model`
+to be `parallel`, and the argument `K` should be specified as a list of
+three integers (or sequences of integers if tuning) indicating the
+number of latent clusters for each omic layer. The variable selection
+feature is not yet available for LUCID in parallel, and we can only tune
+for `K`. We can use argument `CoG` and `CoY` to adjust for covariates
+for the $\boldsymbol{\mathbf{G}}$ to $\boldsymbol{\mathbf{X}}$
+association and the $\boldsymbol{\mathbf{X}}$ to
+$\boldsymbol{\mathbf{Y}}$ association, respectively. Similar to LUCID
 early integration, the parameter `family` specifies the outcome type,
 which is `normal` here, corresponding to a continuous outcome. For a
 binary outcome, `family` should be specified as `binary`. `lucid()`
@@ -1164,22 +1197,22 @@ presented in the summary tables. See the two examples of fitting a LUCID
 in parallel model below.
 
 ``` r
-> #Create a list of multi-omics data
+> # Create a list of multi-omics data
 > omics_lst <- simulated_data[-which(names(simulated_data) == "phenotype")]
-> Z = omics_lst[c(1:3)]  
-> #LUCID in parallel, adjusting for the covariates for the E-X and X-Y associations
-> fit16 <- lucid(G = exposome, Z = Z, Y = ck18, K = list(2, 2, 2), family = "normal", 
+> Z = omics_lst[c(1:3)]
+> # LUCID in parallel, adjusting for the covariates for the E-X and X-Y associations
+> fit16 <- lucid(G = exposome, Z = Z, Y = ck18, K = list(2, 2, 2), family = "normal",
 +                CoY = covs, CoG = covs,
 +                lucid_model = "parallel", useY = TRUE)
-> #print the summary of the LUCID in parallel model      
+> # print the summary of the LUCID in parallel model
 > summary(fit16)
-----------Summary of the LUCID in Parallel model---------- 
- 
-K =  2 2 2 , log likelihood = -16413.64 , BIC =  36892.36 
- 
-(1) Y (continuous outcome): effects of each non-reference latent cluster 
-    for each layer of Y 
-(and effect of covariates if included) 
+----------Summary of the LUCID in Parallel model----------
+
+K =  2 2 2 , log likelihood = -16413.64 , BIC =  36892.36
+
+(1) Y (continuous outcome): effects of each non-reference latent cluster
+    for each layer of Y
+(and effect of covariates if included)
                              Gamma
 cluster2Layer1         2.139337462
 cluster2Layer2        -0.976575066
@@ -1187,9 +1220,8 @@ cluster2Layer3         1.617148373
 e3_sex_None            0.023397524
 hs_child_age_yrs_None -0.002297037
 
-(2) Z: mean of omics data for each latent cluster of each layer 
-Layer  1 
- 
+(2) Z: mean of omics data for each latent cluster of each layer
+Layer  1
               mu_cluster1 mu_cluster2
 cg_GRHL3       0.09782065  -0.2827826
 cg_BTF3L4      0.12271079  -0.3059186
@@ -1202,9 +1234,9 @@ cg_EPM2AIP1   -0.11651397   0.3691065
 cg_AC025171.1  0.24747122  -0.3750450
 cg_VTRNA1_3   -0.13739036   0.1515515
 
- 
-Layer  2 
- 
+
+Layer  2
+
                   mu_cluster1  mu_cluster2
 tc_TC01006069_nc  0.098203482 -0.169267971
 tc_SLC9A4        -0.025858454  0.046609093
@@ -1217,9 +1249,7 @@ tc_TC04002369_nc  0.297076410 -0.216123334
 tc_BEND4         -0.128343956  0.074585000
 tc_SLC9A3         0.139869536  0.002458175
 
- 
-Layer  3 
- 
+Layer  3
               mu_cluster1  mu_cluster2
 miR.101.3p     0.10748628  0.023648293
 miR.125a.5p   -0.20581745  0.135670802
@@ -1232,35 +1262,30 @@ miR.19a.3p     0.09193308 -0.002059547
 miR.19b.3p     0.08515311  0.032351416
 miR.21.5p      0.05800681  0.029022417
 
- 
+(3) E: odds ratio of being assigned to each latent cluster for each exposure
+    for each layer
+Layer  1
 
-(3) E: odds ratio of being assigned to each latent cluster for each exposure 
-    for each layer 
-Layer  1 
- 
                                      beta        OR
 hs_hg_m_scaled.cluster2         0.7352341 2.0859703
 e3_sex_None.cluster2           -0.4107395 0.6631596
 hs_child_age_yrs_None.cluster2 -0.2657909 0.7665994
 
- 
-Layer  2 
- 
+Layer  2
+
                                      beta        OR
 hs_hg_m_scaled.cluster2         0.1313174 1.1403296
 e3_sex_None.cluster2            0.1928708 1.2127261
 hs_child_age_yrs_None.cluster2 -0.1066509 0.8988394
 
- 
-Layer  3 
- 
+Layer  3
+
                                      beta        OR
 hs_hg_m_scaled.cluster2        -0.4896515 0.6128399
 e3_sex_None.cluster2            0.4855559 1.6250782
 hs_child_age_yrs_None.cluster2  0.1042404 1.1098672
-
-> #LUCID in parallel, tune for the number of clusters for methylomics
-> fit17 <- lucid(G = exposome, Z = Z, Y = ck18, K = list(2, 2:3, 2),family = "normal",
+> # LUCID in parallel, tune for the number of clusters for methylomics
+> fit17 <- lucid(G = exposome, Z = Z, Y = ck18, K = list(2, 2:3, 2), family = "normal",
 +                lucid_model = "parallel", useY = TRUE)
 > # summary(fit17)
 ```
@@ -1270,17 +1295,18 @@ hs_child_age_yrs_None.cluster2  0.1042404 1.1098672
 In a more late integration framework, LUCID can also be extended to
 incorporate multiple latent variables in a serial fashion if researchers
 believe that given an exposure, multi-omics data act serially through a
-multistep process towards the outcome, illustrated in Figure
+multistep process towards the outcome, as illustrated in Figure
 \@ref(fig:fig1) (c). This framework can accommodate the following
 situations: (1) longitudinal measurements on the same multi-omics data
-type and (2) biological relationship of multi-omics data. The estimation
-of latent clusters for each omic layer can be formulated as an
-unsupervised LUCID early integration or LUCID in parallel sub-model. For
-a LUCID in serial model, $\boldsymbol{\mathbf{Z}}$ includes $m$ ordered
-omic layers in a sequential fashion. For illustration, assuming all the
-sub-models are LUCID early integration models. For a certain omic
-component $a$, cluster variable $\boldsymbol{\mathbf{X}}_{a - 1}$ serves
-as the "$\boldsymbol{\mathbf{G}}$" in the LUCID early integration model
+type and (2) biological relationships of multi-omics data. The
+estimation of latent clusters for each omic layer can be formulated as
+an unsupervised LUCID early integration or LUCID in parallel sub-model.
+For a LUCID in serial model, $\boldsymbol{\mathbf{Z}}$ includes $m$
+ordered omic layers in a sequential fashion. For illustration, assuming
+all the sub-models are LUCID early integration models. For a certain
+omic component $a$, the cluster variable
+$\boldsymbol{\mathbf{X}}_{a - 1}$ serves as the
+"$\boldsymbol{\mathbf{G}}$" in the LUCID early integration model
 framework, and $\boldsymbol{\mathbf{X}}_a$ is jointly estimated by
 $\boldsymbol{\mathbf{X}}_{a - 1}$ and $\boldsymbol{\mathbf{Z}}_a$.
 However, the special cases are for the first and the last omic layer,
@@ -1295,14 +1321,14 @@ likelihood relating $\boldsymbol{\mathbf{X}}_{a - 1}$ to
 $\boldsymbol{\mathbf{X}}_a$ to describe the state change with
 $P(\boldsymbol{\mathbf{X}}_a|\boldsymbol{\mathbf{X}}_{a - 1}, \boldsymbol{\mathbf{C}}) = \boldsymbol{\mathbf{p}}_a$,
 where $\boldsymbol{\mathbf{p}}_a$ is a general notation for the
-inclusion probability of the all the latent clusters for omic component
-$a$ and $\boldsymbol{\mathbf{C}}$ dynamically represents other variables
+inclusion probability of all the latent clusters for omic component $a$
+and $\boldsymbol{\mathbf{C}}$ dynamically represents other variables
 that jointly estimate $\boldsymbol{\mathbf{X}}_{a}$. Note that a list of
 $m$ ordered omic components for $\boldsymbol{\mathbf{Z}}$ indicates $m$
 sub-models in a LUCID in serial model, and each sub-model can be either
 a LUCID Early Integration model or a LUCID in Parallel model. Note that
-the DAG in \@ref(fig:fig1) (c) only shows the scenario where all the
-sub-models are LUCID early integration models. Bold
+the DAG in Figure \@ref(fig:fig1) (c) only shows the scenario where all
+the sub-models are LUCID early integration models. Bold
 $\boldsymbol{\mathbf{X}}_{a}$ and omic component
 $\boldsymbol{\mathbf{Z}}_a$ indicate that they may include more than 1
 latent variable or omic layer for each omic component if the
@@ -1313,7 +1339,7 @@ sub-model $a$, given $\boldsymbol{\mathbf{\Theta_a}}$ and
 $\boldsymbol{\mathbf{D_a}}$, its own $\log L({\Theta_a} \mid {D_a})$
 follows the log-likelihood of a LUCID Early Integration or a LUCID in
 Parallel model defined in the previous sections. Except for the
-sub-model $m$, all sub-models are unsupervised. For sub-model 2 to $m$,
+sub-model $m$, all sub-models are unsupervised. For sub-models 2 to $m$,
 the $\beta$ parameter defined previously becomes $\delta$. The
 log-likelihood of LUCID in Serial is constructed below,
 
@@ -1328,7 +1354,7 @@ $$\begin{aligned}
     \label{eq_27}   (\#eq:eq-27)$$
 
 Here, we assume sub-models are independent of each other. The EM
-algorithm of estimating the parameters of each sub-model is exactly the
+algorithm for estimating the parameters of each sub-model is exactly the
 same as estimating a single LUCID early integration model or a LUCID in
 parallel model.
 
@@ -1338,18 +1364,18 @@ of three $420 \times p_a$ matrices of omic layers where $a = 1, 2, 3$
 (layer 1: methylome; layer 2: transcriptome; layer 3: miRNA),
 representing that all the sub-models are LUCID early integration models
 and `K` is a list of three integers (or sequences of integers if tuning)
-indicating to the number of latent clusters for each successively linked
-omic layer. We specify `lucid``_``model` to be `serial`. The use of
-arguments `CoG`, `CoY`, `useY`, `family` is exactly the same as for a
-LUCID in parallel model. `lucid()` constructs the model and returns an
+indicating the number of latent clusters for each successively linked
+omic layer. We specify `lucid_model` to be `serial`. The use of
+arguments `CoG`, `CoY`, `useY`, and `family` is exactly the same as for
+a LUCID in parallel model. `lucid()` constructs the model and returns an
 object of class `lucid``_``serial`, and calling `summary()` with the
 input of a `lucid``_``serial` object prints the summarizing tables of
-the model estimates. We have introduced the summarizing tables for the
-LUCID early integration model and the LUCID in parallel model. Since
-LUCID in serial model is a combination of LUCID early integration and
-LUCID in parallel sub-models, the summarizing tables for each sub-model
-follow the similar structuring that we have discussed for the two types
-of sub-model, but with targeted modifications to conform to the setup of
+the model estimates. We have introduced summarizing tables for the LUCID
+early integration model and the LUCID in parallel model. Since the LUCID
+in serial model is a combination of LUCID early integration and LUCID in
+parallel sub-models, the summarizing tables for each sub-model follow a
+similar structure to what we have discussed for the two types of
+sub-models, but with targeted modifications to conform to the setup of
 the LUCID in serial model. See the summarizing tables for the first
 LUCID in serial model example below. Alternatively, besides an integer,
 the element of the ordered list of $\boldsymbol{\mathbf{Z}}$ can also be
@@ -1358,21 +1384,22 @@ parallel model. Here, `K` should contain a list of lists of integers.
 See the second LUCID in serial model example below.
 
 ``` r
-> #LUCID in serial, adjusting for the covariates of the E-X and X-Y associations
-> #Tune the number of clusters for methylome and transcriptome
-> #All 3 sub-models are LUCID early integration models and each with two latent clusters for each layer
-> fit18 <- lucid(G = exposome, Z = Z, Y = ck18, 
-+                lucid_model = "serial", CoY = covs, CoG = covs, 
-+                K = list(2:3, 2:3,2), useY = TRUE, family = "normal")
-> #Print the summary of the LUCID in serial model
+> # LUCID in serial, adjusting for the covariates of the E-X and X-Y associations
+> # Tune the number of clusters for methylome and transcriptome
+> # All 3 sub-models are LUCID early integration models and each with two latent clusters for each layer
+> fit18 <- lucid(G = exposome, Z = Z, Y = ck18,
++                lucid_model = "serial", CoY = covs, CoG = covs,
++                K = list(2:3, 2:3, 2), useY = TRUE, family = "normal")
+> # Print the summary of the LUCID in serial model
 > summary(fit18)
-----------Summary of the First Component of the LUCID in Serial Model---------- 
- 
-----------Summary of the LUCID Early Integration Sub Model---------- 
- 
-K =  2 , log likelihood = -5977.843 , BIC =  13320.78 
- 
-(1) Z: mean of omics data for each latent cluster 
+
+----------Summary of the First Component of the LUCID in Serial Model----------
+
+----------Summary of the LUCID Early Integration Sub Model----------
+
+K =  2 , log likelihood = -5977.843 , BIC =  13320.78
+
+(1) Z: mean of omics data for each latent cluster
                mu_cluster1  mu_cluster2
 cg_GRHL3       0.295741860 -0.410975212
 cg_BTF3L4      0.021123889 -0.090792176
@@ -1385,18 +1412,18 @@ cg_EPM2AIP1    0.033545336  0.086638565
 cg_AC025171.1  0.303125436 -0.287725955
 cg_VTRNA1_3   -0.090000154  0.029899266
 
-(2) E: odds ratio of being assigned to each latent cluster for each exposure 
+(2) E: odds ratio of being assigned to each latent cluster for each exposure
                                      beta        OR
 hs_hg_m_scaled.cluster2         1.8300519 6.2342102
 e3_sex_None.cluster2           -0.1045747 0.9007075
 hs_child_age_yrs_None.cluster2 -0.4683347 0.6260439
-----------Summary of the Middle Component of the LUCID in Serial Model---------- 
- 
-----------Summary of the LUCID Early Integration Sub Model---------- 
- 
-K =  2 , log likelihood = -6035.014 , BIC =  13435.13 
- 
-(1) Z: mean of omics data for each latent cluster 
+----------Summary of the Middle Component of the LUCID in Serial Model----------
+
+----------Summary of the LUCID Early Integration Sub Model----------
+
+K =  2 , log likelihood = -6035.014 , BIC =  13435.13
+
+(1) Z: mean of omics data for each latent cluster
                  mu_cluster1  mu_cluster2
 tc_TC01006069_nc -0.32822703  0.321670957
 tc_SLC9A4         0.10853723 -0.106428335
@@ -1409,25 +1436,25 @@ tc_TC04002369_nc -0.38991227  0.586539770
 tc_BEND4         -0.26952193  0.195503719
 tc_SLC9A3         0.26488011 -0.110649505
 
-(2) E: odds ratio of being assigned to each latent cluster for each cluster 
-    from the last sub model 
+(2) E: odds ratio of being assigned to each latent cluster for each cluster
+    from the last sub model
                delta       OR
 G1.cluster2 1.554258 4.731575
-----------Summary of the Last Component of the LUCID in Serial Model---------- 
- 
-----------Summary of the LUCID Early Integration Sub Model---------- 
- 
-K =  2 , log likelihood = -4533.659 , BIC =  10444.5 
- 
-(1) Y (continuous outcome): effect size of Y for each latent cluster 
-(and effect of covariates if included) 
+----------Summary of the Last Component of the LUCID in Serial Model----------
+
+----------Summary of the LUCID Early Integration Sub Model----------
+
+K =  2 , log likelihood = -4533.659 , BIC =  10444.5
+
+(1) Y (continuous outcome): effect size of Y for each latent cluster
+(and effect of covariates if included)
                             Gamma
 cluster1               0.00000000
 cluster2               1.64219533
 e3_sex_None            0.06626907
 hs_child_age_yrs_None -0.16063912
 
-(2) Z: mean of omics data for each latent cluster 
+(2) Z: mean of omics data for each latent cluster
               mu_cluster1  mu_cluster2
 miR.101.3p     0.12404049  0.028070959
 miR.125a.5p   -0.19583201  0.088128200
@@ -1440,23 +1467,23 @@ miR.19a.3p     0.15974513 -0.015887823
 miR.19b.3p     0.20886420 -0.008073847
 miR.21.5p      0.18868583 -0.017110888
 
-(3) E: odds ratio of being assigned to each latent cluster for each cluster 
-    from the last sub model 
+(3) E: odds ratio of being assigned to each latent cluster for each cluster
+    from the last sub model
                 delta       OR
 G1.cluster2 0.9911389 2.694301
 
- 
-----------Overall Summary of the LUCID in Serial model---------- 
- 
-log likelihood = -16546.52 , BIC =  37200.41 
 
-> # LUCID in serial with the first sub-model being LUCID in parallel 
+----------Overall Summary of the LUCID in Serial model----------
+
+log likelihood = -16546.52 , BIC =  37200.41
+
+> # LUCID in serial with the first sub-model being LUCID in parallel
   and the second sub-model being LUCID early integration
 > # Rearrange the omics list to match the new structure of the LUCID in serial model
 > Z_new = list(list(omics_lst$methylome, omics_lst$transcriptome), omics_lst$miRNA)
-> #Fit the LUCID in serial model with the new omics list and the new K list 
-> fit19 <- lucid(G = exposome, Z = Z_new, Y = ck18, 
-+                lucid_model = "serial", CoY = covs, CoG = covs, 
+> # Fit the LUCID in serial model with the new omics list and the new K list
+> fit19 <- lucid(G = exposome, Z = Z_new, Y = ck18,
++                lucid_model = "serial", CoY = covs, CoG = covs,
 +                K = list(list(2, 2), 2), useY = TRUE, family = "normal")
 > # summary(fit19)
 ```

@@ -6,19 +6,18 @@ abstract: |
   approaches to dynamic prediction such as joint models become
   computationally unfeasible with more than a handful of longitudinal
   covariates, warranting the development of methods that can handle a
-  larger number of longitudinal covariates. We introduce the `R` package
-  [**pencal**](https://CRAN.R-project.org/package=pencal), which
-  implements a Penalized Regression Calibration (PRC) approach that
-  makes it possible to handle many longitudinal covariates as predictors
-  of survival. [**pencal**](https://CRAN.R-project.org/package=pencal)
-  uses mixed-effects models to summarize the trajectories of the
-  longitudinal covariates up to a prespecified landmark time, and a
-  penalized Cox model to predict survival based on both baseline
-  covariates and summary measures of the longitudinal covariates. This
-  article illustrates the structure of the `R` package, provides a step
-  by step example showing how to estimate PRC, compute dynamic
-  predictions of survival and validate performance, and shows how
-  parallelization can be used to significantly reduce computing time.
+  larger number of longitudinal covariates. We introduce the R package
+  pencal, which implements a Penalized Regression Calibration (PRC)
+  approach that makes it possible to handle many longitudinal covariates
+  as predictors of survival. pencal uses mixed-effects models to
+  summarize the trajectories of the longitudinal covariates up to a
+  prespecified landmark time, and a penalized Cox model to predict
+  survival based on both baseline covariates and summary measures of the
+  longitudinal covariates. This article illustrates the structure of the
+  R package, provides a step by step example showing how to estimate
+  PRC, compute dynamic predictions of survival and validate performance,
+  and shows how parallelization can be used to significantly reduce
+  computing time.
 address: |
   Mirko Signorelli\
   Mathematical Institute, Leiden University\
@@ -30,8 +29,8 @@ author:
 - by Mirko Signorelli
 bibliography:
 - pencal-RJ.bib
-title: "`pencal`: an `R` Package for the Dynamic Prediction of Survival
-  with Many Longitudinal Predictors"
+title: "pencal: an R Package for the Dynamic Prediction of Survival with
+  Many Longitudinal Predictors"
 ---
 
 :::: article

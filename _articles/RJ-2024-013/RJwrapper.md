@@ -58,16 +58,16 @@ or survey design. This dichotomization, to a great extent, is seen in
 the [Comprehensive R Archive Network (CRAN) task
 views](https://cran.r-project.org/web/views/) (a volunteer maintained
 list of R-packages by topic) where R-packages for experimental design
-are in
+are in the
 [*ExperimentalDesign*](https://CRAN.R-project.org/view=ExperimentalDesign)
-task view and R-packages for survey designs are in
+task view and R-packages for survey designs are in the
 [*OfficialStatistics*](https://CRAN.R-project.org/view=OfficialStatistics)
 task view. A full list of available topics is provided in Table S1 in
 the Supplementary Materials. A subset of experimental designs is
 segregated into the
 [*ClinicalTrials*](https://CRAN.R-project.org/view=ClinicalTrials) task
 view, where the focus is on clinical trials with primary interest in
-sample size calculations. This paper focuses on packages in
+sample size calculations. This paper focuses on packages in the
 [*ExperimentalDesign*](https://CRAN.R-project.org/view=ExperimentalDesign)
 task view, henceforth referred to as "DoE packages".
 
@@ -75,9 +75,9 @@ From the
 [*ExperimentalDesign*](https://CRAN.R-project.org/view=ExperimentalDesign)
 task view, there are 105 R packages for the experimental design and
 analysis of data from experiments. The sheer quantity and variation of
-experimental designs in the R-packages are arguably unmatched with any
-other programming languages, for example, in Python, only a handful of
-packages that generate design of experiment exist (namely `pyDOE`,
+experimental designs in the R-packages are arguably unmatched by any
+other programming languages; for example, in Python, only a handful of
+packages that generate design of experiments exist (namely `pyDOE`,
 `pyDOE2`, `dexpy`, `experimenter`, and `GPdoemd`) with a limited type of
 design. Thus, the study of DoE packages, based on quantitative and
 qualitative data, can provide an objective view of the state of current
@@ -99,7 +99,7 @@ The remainder of this paper is organized as follows. [Data](#data)
 briefly describes the data source used for the analysis; [Exploratory
 data analysis](#eda) presents some insights into the state of the
 current DoE packages by the exploratory data analysis of package
-download data, text descriptions and comparisons with other CRAN task
+download data, text descriptions, and comparisons with other CRAN task
 views; [Interface design](#design) discusses the interface designs of
 widely used DoE packages, and we conclude with a discussion in
 [Discussion](#discussion) of future prospects in the software
@@ -107,7 +107,7 @@ development of experimental designs.
 
 ## Data
 
-To study the DoE packages, we analyse data using three sources of data
+To study the DoE packages, we analyze data using three sources of data
 as described below.
 
 ::: {#rstudio-cran-download-logs}
@@ -115,16 +115,15 @@ as described below.
 :::
 
 The Comprehensive R Archive Network (CRAN) is a network of servers
-located across the world that stores mirrored versions of the R and R
+located across the world that stores mirrored versions of R and R
 packages. The most popular network is the RStudio mirror (the default
 server for those that use the RStudio IDE). The RStudio mirror is also
-the only server that provides a comprehensive daily download logs of R
-and R packages since October 2012. The summary data can be easily
-accessed using the
-[**cranlogs**](https://CRAN.R-project.org/package=cranlogs) package
-(Csárdi 2019). This paper uses the data from the beginning of 2013 to
-the end of 2021 (a total of nine years) for the packages in the CRAN
-task views.
+the only server that provides comprehensive daily download logs of R and
+R packages since October 2012. The summary data can be easily accessed
+using the [**cranlogs**](https://CRAN.R-project.org/package=cranlogs)
+package (Csárdi 2019). This paper uses the data from the beginning of
+2013 to the end of 2021 (a total of nine years) for the packages in the
+CRAN task views.
 
 ::: {#package-descriptions}
 ### Package descriptions
@@ -133,7 +132,7 @@ task views.
 All CRAN packages have a title, description, package connections
 (suggests, depends, and imports of other packages), and other
 meta-information in the DESCRIPTION file. We use text data from the
-title and description (accessed in 2022-12-12).
+title and description (accessed on 2022-12-12).
 
 ::: {#cran-task-views}
 ### CRAN task views
@@ -141,16 +140,17 @@ title and description (accessed in 2022-12-12).
 
 CRAN task views are volunteer-maintained lists of R-packages on CRAN
 relevant to the corresponding topic. There were 39 CRAN task views in
-total. Table S1 in the Supplementary Materials list the available topics
-from the [**ctv**](https://CRAN.R-project.org/package=ctv) package
-(Zeileis 2005). The list of packages in each CRAN task view (as of
-2022-12-12) is used to contrast the characteristics of the DoE packages.
+total. Table S1 in the Supplementary Materials lists the available
+topics from the [**ctv**](https://CRAN.R-project.org/package=ctv)
+package (Zeileis 2005). The list of packages in each CRAN task view (as
+of 2022-12-12) is used to contrast the characteristics of the DoE
+packages.
 
 ## Exploratory data analysis {#eda}
 
 In this section, we derive some conjectures based on an analysis of the
 data described in [Data](#data). All results presented are from
-exploratory data analysis of observational data, consequently, all
+exploratory data analysis of observational data; consequently, all
 interpretations are somewhat speculative and may not be indicative of
 the true state of the field of experimental design. In particular, any
 analysis over time is confounded by the fact that the nature of users
@@ -158,21 +158,21 @@ and package management has changed over the years. It should be noted
 that some DoE packages may have been archived or removed from the task
 view over the years; therefore, any cross-sectional analysis presented
 may not reflect the set of all DoE packages at that particular time
-period (although we assume such incidences are low).
+period (although we assume such incidents are low).
 
 A subset of DoE packages is not primarily about the design of
 experiments but about the analysis of experimental data. A complete
 delineation of these packages is difficult, as there is almost always at
 least one function that can aid decisions or constructions of
 experimental designs (and any categorization is prone to our subjective
-bias); therefore we opted not to remove any DoE packages in the
+bias); therefore, we opted not to remove any DoE packages in the
 analysis.
 
 ::: {#small-but-diverse-set-of-packages-are-sufficient-for-most-experimental-designs-in-practice}
 ### Small, but diverse, set of packages are sufficient for most experimental designs in practice
 :::
 
-There are at least 50 DoE packages since 2013 but most of the downloads
+There are at least 50 DoE packages since 2013, but most of the downloads
 are concentrated in only a handful of packages. For example, Figure
 \@ref(fig:figplot-lorenz) shows a Lorenz curve (Lorenz 1905) for the
 total package downloads in 2021 for 102 DoE packages (first released
@@ -191,10 +191,10 @@ consider using the Gini index (Gini 1921) as a measure of download
 inequality across packages. The ratio of the red region to the total
 colored regions in Figure \@ref(fig:figplot-lorenz) corresponds to the
 Gini index for 2021. A Gini index of 0% indicates equality in downloads
-across packages whereas a value of 100% indicates maximal inequality
+across packages, whereas a value of 100% indicates maximal inequality
 (all downloads are due to one package). In Figure
 \@ref(fig:figdownload-share), we see that the distributions of the
-package downloads each year have a heavy right tail with the Gini index
+package downloads each year have a heavy right tail, with the Gini index
 ranging from 32.7% to 69.1% across the years 2013 to 2021, indicating
 that there is a high level of inequality in package downloads,
 particularly with more pronounced inequality in the last six years.
@@ -231,18 +231,18 @@ previous releases.
 While in absolute terms the Gini index is high for the
 [*ExperimentalDesign*](https://CRAN.R-project.org/view=ExperimentalDesign)
 task view (32.7% to 69.1%), the inequality is not as severe as in other
-CRAN task views as shown in Figure \@ref(fig:figfig-gini-all-ctvs). We
+CRAN task views, as shown in Figure \@ref(fig:figfig-gini-all-ctvs). We
 can see in Figure \@ref(fig:figfig-gini-all-ctvs) that the Gini index
 generally increases over time for DoE packages (as is generally the case
-for other CRAN task views as shown in Figure S1 in the Supplementary
+for other CRAN task views, as shown in Figure S1 in the Supplementary
 Materials), but most other CRAN task views have a Gini index of over
 75%. This suggests that other CRAN task views may have dominant
 standards, and in comparison to other topics, there are more ***diverse
 approaches to designing experiments***, and thus, no single DoE package
-is dominant. However, this observation doe not consider other approaches
-to generate experimental designs, such as the proprietary software,
-CycDesignN (Whittaker, Williams, and John 2022), which may be widely
-used.
+is dominant. However, this observation does not consider other
+approaches to generate experimental designs, such as the proprietary
+software CycDesignN (Whittaker, Williams, and John 2022), which may be
+widely used.
 
 ```{r figfig-gini-all-ctvs, echo=FALSE , fig.cap="The points show the Gini index of the download counts by year for the ExperimentalDesign task view with the color showing the number of packages. The gray lines show the line plots of the Gini index across years for all other CRAN task views. See Figure S1 in the Supplementary Material for the line graph of the Gini index across years for each CRAN task view.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
 knitr::include_graphics(c("figures/fig-gini-all-ctvs-1.png"))
@@ -253,11 +253,11 @@ knitr::include_graphics(c("figures/fig-gini-all-ctvs-1.png"))
 :::
 
 We can see in Figure \@ref(fig:figrank-over-time) that most of the top
-10 ranking packages have been in the top 10 for the last nine years with
-[**lhs**](https://CRAN.R-project.org/package=lhs) steadily climbing up
-the ranks in the last few years. It should be noted that the download of
-one package can prompt the download of another package; the most notable
-package connection is
+10 ranking packages have been in the top 10 for the last nine years,
+with [**lhs**](https://CRAN.R-project.org/package=lhs) steadily climbing
+up the ranks in the last few years. It should be noted that the download
+of one package can prompt the download of another package; the most
+notable package connection is
 [**AlgDesign**](https://CRAN.R-project.org/package=AlgDesign) and
 [**agricolae**](https://CRAN.R-project.org/package=agricolae), where the
 former is an import for the latter. The full network of package
@@ -285,9 +285,9 @@ The consistency in the top 10 ranking packages (Figure
 \@ref(fig:figrank-over-time)) and the fact that most downloaded DoE
 packages were first released more than 10 years ago (Figure
 \@ref(fig:figrelease-date-vs-download)) indicate that either the
-existing packages fulfilled the needs of mass in practice or no new
-packages were compelling for many to switch their practice. However, we
-also see that the top downloaded packages generally have more updates
+existing packages fulfilled the needs of the masses in practice or no
+new packages were compelling for many to switch their practice. However,
+we also see that the top downloaded packages generally have more updates
 (see Figure \@ref(fig:figrelease-date-vs-download)); therefore, it is
 possible that the packages have improved or broadened the scope of their
 usage.
@@ -302,8 +302,7 @@ description. We only show the bigrams as unigrams were not insightful,
 and there were not many trigrams common across packages. To count the
 bigrams, we processed the text data as follows:
 
-1.  We standardized the words to the lower case and removed
-    pluralization.
+1.  We standardized the words to lower case and removed pluralization.
 
 2.  Multiple mentions of the same bigram within a package were counted
     as one (for example,
@@ -313,9 +312,9 @@ bigrams, we processed the text data as follows:
 
 3.  Bigrams consisting of stop words were removed. The stop words are
     sourced from the lexicons in `tidytext::stop_words` in addition to
-    other words we deemed irrelevant, e.g. "provide", "e.g.",
-    "calculate" and so on -- full list is shown in the code provided in
-    the link under [Acknowledgement](#pkgs).
+    other words we deemed irrelevant, e.g., "provide", "e.g.",
+    "calculate" and so on -- the full list is shown in the code provided
+    in the link under [Acknowledgment](#pkgs).
 
 Unsurprisingly, the bigram "experimental design" was the most common.
 More interestingly, "optimal design" and "sequential design" appeared
@@ -324,10 +323,10 @@ across different packages (indicated by the size of the word in Figure
 and "computer experiment" are used across a few packages that are
 downloaded frequently (indicated by the color of the word in Figure
 \@ref(fig:figwordcloud-over-time)). Sequential design, Latin hypercube
-sampling and computer experiments (which generally include space-filling
-designs such as Latin hypercube sampling) generally operate by
-optimizing a user-selected criterion and can be classified as optimal
-designs.
+sampling, and computer experiments (which generally include
+space-filling designs such as Latin hypercube sampling) generally
+operate by optimizing a user-selected criterion and can be classified as
+optimal designs.
 
 ```{r figwordcloud-over-time, echo=FALSE , fig.cap="The above figure shows the word cloud of bigrams from the title and descriptions of the DoE packages. The size shows how often the bigram appears across the DoE packages and the color is relative to the total download count in 2021 for the packages that contain the bigram.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
 knitr::include_graphics(c("figures/wordcloud-over-time-1.png"))
@@ -336,12 +335,12 @@ knitr::include_graphics(c("figures/wordcloud-over-time-1.png"))
 Although there exists a separate
 [*ClinicalTrials*](https://CRAN.R-project.org/view=ClinicalTrials) task
 view, the DoE packages clearly include some packages that are of
-interest to clinical trials as shown by the size of the bigram "clinical
-trial" (and related bigrams like "dose finding" and "phase ii") in
-Figure \@ref(fig:figwordcloud-over-time).
+interest to clinical trials, as shown by the size of the bigram
+"clinical trial" (and related bigrams like "dose finding" and "phase
+ii") in Figure \@ref(fig:figwordcloud-over-time).
 
 ::: {#development-of-experimental-designs-occur-in-silos}
-### Development of experimental designs occur in silos
+### Development of experimental designs occurs in silos {#development-of-experimental-designs-occur-in-silos}
 :::
 
 Figure \@ref(fig:figctv-summ-plot) shows that the
@@ -357,11 +356,11 @@ full connection between DoE packages is shown in Figure
 ***experimental design is one of the least collaborative fields*** and
 package development generally occurs in silos.
 
-```{r figctv-summ-plot, echo=FALSE , fig.cap="The above figure is a scatterplot of intra-connectivity (the percentage of packages that depends, suggests or imports at least one other package within the same task view) and the average number of contributors for each CRAN task view. Low intra-connectivity suggests that development within the topic mostly occurs in silos, while high intra-connectivity suggests that there are more interactions within the topic. The color shows the number of packages, the size of the point corresponds to the total number of contributors, and the text labels show the CRAN task view names. The label of ExperimentalDesign task view is colored in red. The task views in the bottom-left corner are topics that are more indicative of contributors working in silos. The actual numerical values are listed in Table S1 in the Supplementary Material.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
+```{r figctv-summ-plot, echo=FALSE , fig.cap="The above figure is a scatterplot of intra-connectivity (the percentage of packages that depend, suggest, or import at least one other package within the same task view) and the average number of contributors for each CRAN task view. Low intra-connectivity suggests that development within the topic mostly occurs in silos, while high intra-connectivity suggests that there are more interactions within the topic. The color shows the number of packages, the size of the point corresponds to the total number of contributors, and the text labels show the CRAN task view names. The label of the ExperimentalDesign task view is colored in red. The task views in the bottom-left corner are topics that are more indicative of contributors working in silos. The actual numerical values are listed in Table S1 in the Supplementary Material.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
 knitr::include_graphics(c("figures/ctv-summ-plot-1.png"))
 ```
 
-```{r figplot-doe-network, echo=FALSE , fig.cap="Package connections (depends, suggests and imports) within DoE packages. The direction of the arrow shows the connection of packags where the package on the tail of the arrow is a dependency, suggestion or import for the package on the head of the arrow. DoE packages that do not depend, suggest or import another DoE package are not shown.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
+```{r figplot-doe-network, echo=FALSE , fig.cap="Package connections (depends, suggests, and imports) within DoE packages. The direction of the arrow shows the connection of packages, where the package on the tail of the arrow is a dependency, suggestion, or import for the package on the head of the arrow. DoE packages that do not depend, suggest, or import another DoE package are not shown.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
 knitr::include_graphics(c("figures/plot-doe-network-1.png"))
 ```
 
@@ -371,7 +370,7 @@ In software design, there are two interface designs to consider: user
 interface (UI) and application programming interface (API). The UI is
 concerned with the interaction of the software by the user, while the
 API is concerned with how different programs interact and is
-predominately of interest to the developer. The UI design is an
+predominantly of interest to the developer. The UI design is an
 abstraction that specifies the desired experimental design, and its
 choices enable how a user expresses the specification of an experimental
 design. The API design aids other developers in leveraging existing
@@ -379,11 +378,11 @@ systems.
 
 In this section, we discuss the interface designs of functions that
 output an experimental design based on three broad areas: factorial,
-recipe and augmenting designs. The discussion is exclusive to the top
+recipe, and augmenting designs. The discussion is exclusive to the top
 downloaded packages (shown in Figure \@ref(fig:figrank-over-time)), with
 the exception of [**ez**](https://CRAN.R-project.org/package=ez) and
 [**DiceKriging**](https://CRAN.R-project.org/package=DiceKriging), as
-the former is predominately visualization of experimental data and the
+the former is predominantly visualization of experimental data and the
 latter is about the analysis of computer experiments in addition to
 belonging to the same suite of packages as
 [**DiceDesign**](https://CRAN.R-project.org/package=DiceDesign) (Dupuy,
@@ -394,11 +393,11 @@ Helbert, and Franco 2015).
 :::
 
 Factorial experiments offer a challenge in allocating the treatment
-factors to experimental units where the full set of factorial treatments
-cannot be administered (and replicated) and/or the experimental units
-have a grouping structure. The effort to address this challenge is
-reflected in the number of packages that focus on the construction of
-factorial designs as described next.
+factors to experimental units, where the full set of factorial
+treatments cannot be administered (and replicated), and/or the
+experimental units have a grouping structure. The effort to address this
+challenge is reflected in the number of packages that focus on the
+construction of factorial designs, as described next.
 
 The [**DoE.base**](https://CRAN.R-project.org/package=DoE.base) package
 2018) can construct full factorial and (regular and irregular)
@@ -424,18 +423,18 @@ input the number of:
 -   levels for each factor if the design was allowed to vary in the
     number of levels.
 
-The output of the design is either a special class of list (e.g. the
+The output of the design is either a special class of list (e.g., the
 `design` class for
 [**DoE.base**](https://CRAN.R-project.org/package=DoE.base) and
-[**FrF2**](https://CRAN.R-project.org/package=FrF2) or a `data.frame`
-for [**conf.design**](https://CRAN.R-project.org/package=conf.design))
-or a matrix for `BHH2` such that an element or column corresponds to a
+[**FrF2**](https://CRAN.R-project.org/package=FrF2)) or a `data.frame`
+for [**conf.design**](https://CRAN.R-project.org/package=conf.design) or
+a matrix for `BHH2`, such that an element or column corresponds to a
 treatment factor with each value corresponding to one experimental run.
-The treatment factors are generally assigned pseudo names (e.g. letters
+The treatment factors are generally assigned pseudo names (e.g., letters
 of the alphabet) or an argument exists for users to input treatment
 names as a character vector.
 
-Some forms of factorial design are known by other names, for example,
+Some forms of factorial design are known by other names. For example,
 *response surface designs* are factorial designs where the treatment
 factors are discrete levels of continuous variables. Two types of
 response surface designs can be constructed using the
@@ -443,13 +442,13 @@ response surface designs can be constructed using the
 Box-Behnken design (Box and Behnken 1960) and central-composite designs
 (Box and Wilson 1951) via functions `bbd()` and `ccd()`, respectively,
 where the minimum required input is the number of factors. Another form
-of factorial design is the *saturated designs* where higher-order
+of factorial design is the *saturated designs*, where higher-order
 interaction effects of treatment factors are typically confounded with
-the main effects. Plankett-Burnman designs (Plackett and Burman 1946)
-are a type of saturated design that can be generated by the function
-`pb()` in the [**FrF2**](https://CRAN.R-project.org/package=FrF2)
-package, where the user provides the number of experimental runs and the
-number of treatment factors.
+the main effects. Plackett-Burman designs (Plackett and Burman 1946) are
+a type of saturated design that can be generated by the function `pb()`
+in the [**FrF2**](https://CRAN.R-project.org/package=FrF2) package,
+where the user provides the number of experimental runs and the number
+of treatment factors.
 
 ::: {#the-case-of-recipe-designs}
 ### The case of recipe designs
@@ -459,10 +458,10 @@ The [**agricolae**](https://CRAN.R-project.org/package=agricolae)
 package (de Mendiburu 2021) is the prime example of constructing designs
 based on a set of so-called "recipe functions", where each function
 corresponds to a single class of experimental design. For example,
-`design.crd()`, `design.rcbd()` and `design.split()` construct
-completely randomized, randomized complete block and split-plot designs,
-respectively. Users typically supply treatment labels (or the number of
-treatments in the case of `design.split()`) and the number of
+`design.crd()`, `design.rcbd()`, and `design.split()` construct
+completely randomized, randomized complete block, and split-plot
+designs, respectively. Users typically supply treatment labels (or the
+number of treatments in the case of `design.split()`) and the number of
 replications as arguments for these functions. The output is a list with
 one element corresponding to a `data.frame` that contains the design in
 a table such that the row corresponds to the experimental run and the
@@ -473,13 +472,14 @@ The use of recipe functions is not limited to classical experimental
 designs; the
 [**AlgDesign**](https://CRAN.R-project.org/package=AlgDesign) (Wheeler
 2022) package offers three primary functions for generating optimal
-designs: `optBlock()`, `optFederov()` and `optMonteCarlo()`. In general,
-these functions require data and formulas in terms of the supplied data
-variables with the choice of the criterion (e.g. the D-criterion), with
-the output as a list with one element corresponding to the design in a
-table format. The difference between these functions lies in the
-underlying search strategy for optimal designs, and the name of the
-function is a surrogate for the search algorithm.
+designs: `optBlock()`, `optFederov()`, and `optMonteCarlo()`. In
+general, these functions require data and formulas in terms of the
+supplied data variables, along with the choice of the criterion (e.g.,
+the D-criterion), with the output as a list with one element
+corresponding to the design in a table format. The difference between
+these functions lies in the underlying search strategy for optimal
+designs, and the name of the function is a surrogate for the search
+algorithm.
 
 Computer experiments, which generally involve space-filling designs, are
 implemented in packages such as
@@ -487,12 +487,12 @@ implemented in packages such as
 [**DiceDesign**](https://CRAN.R-project.org/package=DiceDesign) (Dupuy,
 Helbert, and Franco 2015). For the
 [**lhs**](https://CRAN.R-project.org/package=lhs) package, functions
-such as `randomLHS()`, `optimumLHS()`, and `maximinLHS()`, require users
-to specify the sample size ($n$) and the number of variables ($p$), then
-it generates a Latin hypercube sample (McKay, Beckman, and Conover
-1979), based on different optimization schemes (in this case, random, S
-optimal and maxmin criteria, respectively; see package documentation for
-more details). Similarly for
+such as `randomLHS()`, `optimumLHS()`, and `maximinLHS()` require users
+to specify the sample size ($n$) and the number of variables ($p$). It
+generates a Latin hypercube sample (McKay, Beckman, and Conover 1979)
+based on different optimization schemes (in this case, random,
+S-optimal, and maxmin criteria, respectively; see package documentation
+for more details). Similarly, for
 [**DiceDesign**](https://CRAN.R-project.org/package=DiceDesign), there
 is a comprehensive list of space-filling designs such as `dmaxDesign()`,
 `lhsDesign()`, and `wspDesign()` with input of $n$ and $p$ as before
@@ -513,11 +513,11 @@ Some functions in the DoE packages require the input of existing
 experimental designs to produce new designs. For example, the
 [**DoE.base**](https://CRAN.R-project.org/package=DoE.base) package
 contains some experimental functions, `cross.design()` and
-`param.design()`, to combine designs with the former taking a Cartesian
-product of the input designs while the latter uses a Taguchi style
+`param.design()`, to combine designs, with the former taking a Cartesian
+product of the input designs, while the latter uses a Taguchi style
 (Taguchi 1986) to aggregate the designs with the inner and outer arrays.
 The [**lhs**](https://CRAN.R-project.org/package=lhs) package contains a
-function that `augmentLHS()` to add additional samples to the existing
+function, `augmentLHS()`, to add additional samples to the existing
 Latin hypercube sample.
 
 Another class of augmenting design is *sequential design* (also called
@@ -527,41 +527,41 @@ Another class of augmenting design is *sequential design* (also called
 experimental design using `tgp.design()` and `dopt.gp()`. The user is
 required to supply candidate samples to subsample from and a model or a
 prior experimental design. Follow-up experiments, which can also be
-classified as sequential designs, is implemented by
+classified as sequential designs, are implemented by
 [**BsMD**](https://CRAN.R-project.org/package=BsMD) (Barrios 2020) using
-a model-discriminant approach using `MD()`.
+a model-discriminant approach with `MD()`.
 
 ## Discussion
 
 Through the exploratory data analysis of the three data sources (package
-download logs, package metadata and CRAN task views) outlined in
+download logs, package metadata, and CRAN task views) outlined in
 [Data](#data), we observed in [Exploratory data analysis](#eda) that the
-the total download of DoE packages is concentrated only on a handful of
-R-packages although these represent a diverse set in comparison with
+total download of DoE packages is concentrated only on a handful of
+R-packages, although these represent a diverse set in comparison with
 other CRAN task views. Furthermore, the data suggest that experimental
 design is the least collaborative field.
 
 There are a number of limitations and shortcomings to our exploratory
-data analysis. First, CRAN task views are volunteer maintained so some
+data analysis. First, CRAN task views are volunteer maintained, so some
 experimental design packages may not be included in the DoE packages.
 Second, we used only the RStudio CRAN mirror download, which may have
 biased our observations. Third, our analysis was limited to R-packages
-alone and many practitioners may use other methods to construct
+alone, and many practitioners may use other methods to construct
 experimental designs. Finally, all our statements should be treated as
-speculative rather than conclusive; the data are all observational so no
-conclusive, generalizable statement is possible. Regardless, the
+speculative rather than conclusive; the data are all observational, so
+no conclusive, generalizable statement is possible. Regardless, the
 data-driven nature of our analysis provides objective insight into the
 field of experimental design.
 
 The interface design (discussed in [Interface design](#design)) reveals
 that the most widely used DoE packages generally have functions that 1)
-focus on certain aspects of experimental design (e.g. factorial
-structure or augmenting design), 2) are a recipe format (i.e. the name
-of the function is a surrogate to a single class of the design or
-optimal search algorithm) and 3) context is often a second thought --
-many inputs a single integer corresponding to the number of factors,
+focus on certain aspects of experimental design (e.g., factorial
+structure or augmenting design), 2) are in a recipe format (i.e., the
+name of the function is a surrogate for a single class of the design or
+optimal search algorithm), and 3) context is often a second thought --
+many inputs are a single integer corresponding to the number of factors,
 levels, or experimental runs (or sample size). The function will often
-assign pseudo-factor names or there is an optional argument to input a
+assign pseudo-factor names, or there is an optional argument to input a
 character vector that corresponds to the factor names. These interface
 designs require users to have processed the experiment in statistical
 terms (often stripping the experimental context away) and
@@ -573,7 +573,7 @@ is to understand the experimental structure, and the experimental
 context can govern or guide the choice of algorithm to allocate
 treatments. In addition, the nature of recipe functions can obscure the
 understanding and relation of designs (e.g., how do you go from an
-unstructured factorial design to split plot design?). Each new method
+unstructured factorial design to a split plot design?). Each new method
 for generating an experimental design appears to correspond to a
 completely new function, and intermediate results are often not easily
 accessible. These factors may contribute to why developers often work in
@@ -585,7 +585,7 @@ be of great help to practitioners. Some efforts to this end are seen in
 [**DoE.wrapper**](https://CRAN.R-project.org/package=DoE.wrapper) 2020),
 which contains wrapper recipe functions for other DoE packages such as
 [**lhs**](https://CRAN.R-project.org/package=lhs),
-[**AlgDesign**](https://CRAN.R-project.org/package=AlgDesign) and
+[**AlgDesign**](https://CRAN.R-project.org/package=AlgDesign), and
 [**FrF2**](https://CRAN.R-project.org/package=FrF2) (see Figure
 \@ref(fig:figplot-doe-network)), and is also the subject of the
 developmental package
@@ -594,10 +594,10 @@ Undoubtedly, no single developer or package can cater to all
 experimental designs; therefore, any unifying interface should consider
 how other developers can contribute or add their methods. Future
 research could benefit from further exploratory data analysis, expanding
-the study to beyond R-packages, and discussing other aspects of
-interface designs.
+the study beyond R-packages, and discussing other aspects of interface
+designs.
 
-## Acknowledgement {#pkgs}
+## Acknowledgment {#pkgs}
 
 This paper uses
 [**targets**](https://CRAN.R-project.org/package=targets) (Landau 2021)
@@ -612,7 +612,7 @@ Allaire, and Grolemund 2018) for creating reproducible documents,
 (Le Pennec and Slowikowski 2019) and `colorspace` (Zeileis et al. 2020)
 for visualization,
 [**kableExtra**](https://CRAN.R-project.org/package=kableExtra) (Zhu
-2021) for customizing the table in the Supplementary Material and
+2021) for customizing the table in the Supplementary Material, and
 [**tidyverse**](https://CRAN.R-project.org/package=tidyverse) (Wickham
 et al. 2019),
 [**tidytext**](https://CRAN.R-project.org/package=tidytext) (Silge and

@@ -626,7 +626,7 @@ $\boldsymbol{\gamma}_{k,r} =  (\gamma_{k,r1}, \gamma_{k,r2})^\top$.
 Also, $\boldsymbol{Z}_{i,r} =\boldsymbol{1}_{n_{i,r}}$ for $r=1,2,3$.
 
 ```{r figtraj-demo, echo=FALSE , fig.cap=" Longitudinal trajectories of three features for the epileptic.qol dataset. A locally weighted scatterplot smoothing curve is overlaid on each panel to provide an estimate of the overall trend. (A) longitudinal trajectories of Anxiety score (anxiety), (B) longitudinal trajectories of depression score (depress), (C) longitudinal trajectories of Liverpool Adverse Events Profile (aep).", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
-knitr::include_graphics(c("./Figures/traj.JPEG"))
+knitr::include_graphics(c("./Figures/traj.jpeg"))
 ```
 
 For model-based clustering based on a finite mixture model, it is
@@ -697,7 +697,7 @@ R> plot(num.cluster, alpha.adjust, type = "o",
 ```
 
 ```{r fignum-cluster, echo=FALSE , fig.cap=" Mean adjusted adherence for K = 2 to 5 for the epileptic.qol dataset.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
-knitr::include_graphics(c("./Figures/num_cluster.JPEG"))
+knitr::include_graphics(c("./Figures/num_cluster.jpeg"))
 ```
 
 From Figure \@ref(fig:fignum-cluster), it was clear that the model with
@@ -811,11 +811,11 @@ R> traceplot(fit = fit.BCC2, parameter = "ALPHA", ylab = "alpha", xlab = "MCMC s
 ```
 
 ```{r figtrace-ppi, echo=FALSE , fig.cap=" Trace plots for cluster probabilities \pi_1 and \pi_2.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
-knitr::include_graphics(c("./Figures/trace_ppi.JPEG"))
+knitr::include_graphics(c("./Figures/trace_ppi.jpeg"))
 ```
 
 ```{r figtrace-alpha, echo=FALSE , fig.cap=" Trace plots for adherence parameters \alpha_1, \alpha_2, \alpha_3.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
-knitr::include_graphics(c("./Figures/trace_alpha.JPEG"))
+knitr::include_graphics(c("./Figures/trace_alpha.jpeg"))
 ```
 
 The outputs are displayed in Figure  \@ref(fig:figtrace-ppi) and Figure
@@ -958,7 +958,7 @@ global clustering and the anxiety score contributed the most information
 to determine the global clustering.
 
 ```{r figtraj-epileptic-qol, echo=FALSE , fig.cap=" Longitudinal trajectories for features by local and global clusterings epileptic.qol data. Locally weighted scatterplot smoothing curves are overlaid on each panel to provide an estimate of the overall trend. (A) Longitudinal trajectories of anxiety plotted by local clustering \boldsymbol{L}_1. (B) Longitudinal trajectories of depress plotted by local clustering \boldsymbol{L}_2. (C) Longitudinal trajectories of aep plotted by local clustering \boldsymbol{L}_3. (D) Longitudinal trajectories of anxiety plotted by global clustering \boldsymbol{C}. (E) Longitudinal trajectories of depress plotted by global clustering \boldsymbol{C}. (F) Longitudinal trajectories of aep plotted by global clustering \boldsymbol{C}.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
-knitr::include_graphics(c("./Figures/trajplot.JPEG"))
+knitr::include_graphics(c("./Figures/trajplot.jpeg"))
 ```
 
 #### Goodness of Fit
@@ -976,7 +976,7 @@ R> abline(0, 1, lwd = 2,col = 2)
 ```
 
 ```{r figposterior-check, echo=FALSE , fig.cap=" Posterior predictive check: observed T (in log scale) and predicted T (in log scale) statistics.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
-knitr::include_graphics(c("./Figures/posterior_check.JPEG"))
+knitr::include_graphics(c("./Figures/posterior_check.jpeg"))
 ```
 
 The result is displayed in Figure \@ref(fig:figposterior-check). This
@@ -1017,7 +1017,7 @@ Clusters 1 and 2 were close to 1, except for a few individuals. This
 suggested that cluster membership for individuals is robust.
 
 ```{r figposterior-prob, echo=FALSE , fig.cap=" Boxplot for the posterior cluster probabilities by clusters.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
-knitr::include_graphics(c("./Figures/posterior_prob.JPEG"))
+knitr::include_graphics(c("./Figures/posterior_prob.jpeg"))
 ```
 
 #### Using a Different Set of Initial Values for Local and Global Cluster Memberhips
@@ -1224,7 +1224,7 @@ R> plot_grid(gp1, gp2, gp3, gp4, gp5, gp6,
 ```
 
 ```{r figtraj, echo=FALSE , fig.cap=" Longitudinal trajectories for features by local and global clusterings for PBC910 data. Locally weighted scatterplot smoothing curves are overlaid on each panel to provide an estimate of the overall trend. (A) Longitudinal trajectories of lbili plotted by local clustering \boldsymbol{L}_1. (B) Longitudinal trajectories of platelet plotted by local clustering \boldsymbol{L}_2. (C) Longitudinal trajectories of spiders plotted by local clustering \boldsymbol{L}_3. (D) Longitudinal trajectories of lbili plotted by global clustering \boldsymbol{C}. (E) Longitudinal trajectories of platelet plotted by global clustering \boldsymbol{C}. (F) Longitudinal trajectories of spiders plotted by global clustering \boldsymbol{C}.", fig.alt="graphic without alt text", fig.show='hold', fig.align="center", out.width="100%"}
-knitr::include_graphics(c("./Figures/trajplot_PBC910.JPEG"))
+knitr::include_graphics(c("./Figures/trajplot_PBC910.jpeg"))
 ```
 
 To compare the results with an existing model, we fit a Bayesian mixture
