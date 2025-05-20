@@ -26,7 +26,7 @@ library(dplyr)
 knitr::include_graphics('images/figure1.png')
 
 
-## ----fig2,  echo = F, out.width = "100%", fig.cap = "Top:  The \"iris\\_explorer\" app guides a user through an analysis of the iris dataset in a tab-based sequence.  Bottom:  A blueprint of the \"iris\\_explorer\" app shows the 5 tabs, each containing a single module identified by name within blue ovals. Some of the shiny modules require inputs and generate outputs as identified in gray polygons.", fig.pos = "h"----
+## ----fig2,  echo = F, out.width = "100%", fig.cap = "Top:  The 'iris\\_explorer' app guides a user through an analysis of the iris dataset in a tab-based sequence.  Bottom:  A blueprint of the 'iris\\_explorer' app shows the 5 tabs, each containing a single module identified by name within blue ovals. Some of the shiny modules require inputs and generate outputs as identified in gray polygons.", fig.pos = "h"----
 knitr::include_graphics('images/figure2.png')
 
 
@@ -63,7 +63,7 @@ fs::dir_tree(
 # launch_shinymgr(shinyMgrPath = paste0(parentPath, "/shinymgr"))
 
 
-## ----fig3,  echo = F, out.width = "100%", fig.cap = "The shinymgr Developer Portal consists of a sidebar panel where developers can create new shiny modules and new apps, and test-drive analyses and reports from the user's perspective. The main panel shows the \"Build App\" tab within the \"Developer Tools\" section."----
+## ----fig3,  echo = F, out.width = "100%", fig.cap = "The shinymgr Developer Portal consists of a sidebar panel where developers can create new shiny modules and new apps, and test-drive analyses and reports from the user's perspective. The main panel shows the 'Build App' tab within the 'Developer Tools' section."----
 knitr::include_graphics('images/figure3.png')
 
 
@@ -113,7 +113,7 @@ str(old_analysis, max.level = 2, nchar.max = 20, vec.len = 15)
 # rerun_analysis(analysis_path = rds_filepath)
 
 
-## ----fig7, echo = F, out.width = "100%", fig.cap = "A screenshot of the rerun\\_analysis() function, as called on the saved analysis from the iris\\_explorer app (RDS file). The active tab, called \"The App\", allows a user to rerun a previously executed analysis. The \"Analysis Summary\" tab displays the values of all module arguments and returns, captured when the analysis was saved, along with a detailed description of the app, it's modules, the App's source code, and all package dependencies."----
+## ----fig7, echo = F, out.width = "100%", fig.cap = "A screenshot of the rerun\\_analysis() function, as called on the saved analysis from the iris\\_explorer app (RDS file). The active tab, called 'The App', allows a user to rerun a previously executed analysis. The 'Analysis Summary' tab displays the values of all module arguments and returns, captured when the analysis was saved, along with a detailed description of the app, it's modules, the App's source code, and all package dependencies."----
 knitr::include_graphics('images/figure7.png')
 
 
@@ -139,7 +139,7 @@ learnr::available_tutorials(
 # browseURL(paste0(find.package("shinymgr"), "/extdata/shinymgr_cheatsheet.pdf"))
 
 
-## ----fig8, echo = F, out.width = "85%", fig.cap = "Entity relationship diagram for the shinymgr database, which tracks all components of an apps and modules.  The database consists of 11 tables. Primary keys are referenced with a \"pk\" prefix, while foreign keys are referenced with an \"fk\" prefix. A full description of the database is contained in the \"database\" learnr tutorial that comes with the shinymgr package.", fig.pos = 'h'----
+## ----fig8, echo = F, out.width = "85%", fig.cap = "Entity relationship diagram for the shinymgr database, which tracks all components of an apps and modules.  The database consists of 11 tables. Primary keys are referenced with a 'pk' prefix, while foreign keys are referenced with an 'fk' prefix. A full description of the database is contained in the 'database' learnr tutorial that comes with the shinymgr package.", fig.pos = 'h'----
 knitr::include_graphics('images/figure8.png')
 
 

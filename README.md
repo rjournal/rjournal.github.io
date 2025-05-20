@@ -17,7 +17,7 @@ install.packages("rjtools",,
     c("https://rforge.net","https://cloud.R-project.org"))
 ```
 
-The to create the site use
+Then to create the site use
 
 ```
 rmarkdown::render_site()
