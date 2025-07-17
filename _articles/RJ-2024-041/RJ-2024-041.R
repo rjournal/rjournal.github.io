@@ -6,7 +6,7 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(plotly)
 library(ggplot2)
 library(palmerpenguins)
-library(kableExtra)
+#library(kableExtra)
 library(Matrix)
 
 
@@ -55,11 +55,11 @@ df <- data.frame(
 
 
 ## ----cast-packages-latex, eval = knitr::is_latex_output()---------------------
- knitr::kable(df, format = "latex",caption = "Cast options from other packages. If back cast is TRUE, then it is possible to convert a gpu.matrix to this object and vice versa. If is FALSE, it is possible to convert these objects to gpu.matrix but not vice versa.")
+ knitr::kable(df, format = "latex", booktabs=TRUE, caption = "Cast options from other packages. If back cast is TRUE, then it is possible to convert a gpu.matrix to this object and vice versa. If is FALSE, it is possible to convert these objects to gpu.matrix but not vice versa.")
 
 
-## ----cast-packages-html, eval = knitr::is_html_output(), layout = "l-body-outset"----
-#  knitr::kable(df, format = "html",caption = "Cast options from other packages. If back cast is TRUE, then it is possible to convert a gpu.matrix to this object and vice versa. If is FALSE, it is possible to convert these objects to gpu.matrix but not vice versa.")
+## ----cast-packages-html, eval = knitr::is_html_output()-----------------------
+#  knitr::kable(df, format = "html",booktabs=TRUE, caption = "Cast options from other packages. If back cast is TRUE, then it is possible to convert a gpu.matrix to this object and vice versa. If is FALSE, it is possible to convert these objects to gpu.matrix but not vice versa.")
 
 
 ## ----echo=TRUE----------------------------------------------------------------
@@ -128,11 +128,11 @@ df_operators <- data.frame(
 
 
 ## ----math-operators, eval = knitr::is_latex_output()--------------------------
- knitr::kable(df_operators, format = "latex",caption = "Mathematical operators that accept a gpu.matrix as input.")
+ knitr::kable(df_operators, format = "latex",booktabs=TRUE, caption = "Mathematical operators that accept a gpu.matrix as input.")
 
 
-## ----math-operators-html, eval = knitr::is_html_output(), layout = "l-body-outset"----
-#  knitr::kable(df_operators, format = "html",caption = "Mathematical operators that accept a gpu.matrix as input.")
+## ----math-operators-html, eval = knitr::is_html_output()----------------------
+#  knitr::kable(df_operators, format = "html",booktabs=TRUE, caption = "Mathematical operators that accept a gpu.matrix as input.")
 
 
 ## ----echo=FALSE---------------------------------------------------------------
@@ -144,11 +144,11 @@ df_complex <- data.frame(
 
 
 ## ----complex-operators, eval = knitr::is_latex_output()-----------------------
- knitr::kable(df_complex, format = "latex",caption = "Complex operators that accept a gpu.matrix with complex type as input.")
+ knitr::kable(df_complex, format = "latex",booktabs=TRUE, caption = "Complex operators that accept a gpu.matrix with complex type as input.")
 
 
-## ----complex-operators-html, eval = knitr::is_html_output(), layout = "l-body-outset"----
-#  knitr::kable(df_complex, format = "html",caption = "Complex operators that accept a gpu.matrix with complex type as input.")
+## ----complex-operators-html, eval = knitr::is_html_output()-------------------
+#  knitr::kable(df_complex, format = "html",booktabs=TRUE, caption = "Complex operators that accept a gpu.matrix with complex type as input.")
 
 
 ## ----echo=TRUE----------------------------------------------------------------
