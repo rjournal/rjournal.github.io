@@ -1,0 +1,924 @@
+% !TeX root = RJwrapper.tex
+\title{Random Forests for Time-Fixed and Time-Dependent Predictors: The DynForest R Package}
+
+
+\author{by Anthony Devaux, Cécile Proust-Lima, and Robin Genuer}
+
+\maketitle
+
+\abstract{%
+The R package DynForest implements random forests for predicting a continuous, a categorical, or a (multiple causes) time-to-event outcome based on time-fixed and time-dependent predictors. The main originality of DynForest is that it handles time-dependent predictors that can be endogenous (i.e., impacted by the outcome process), measured with error, and measured at subject-specific times. At each recursive step of the tree building process, the time-dependent predictors are internally summarized into individual features on which the split can be done. This is achieved using flexible linear mixed models (thanks to the R package lcmm), whose specification is pre-specified by the user. DynForest returns the mean for a continuous outcome, the category with a majority vote for a categorical outcome, or the cumulative incidence function over time for a survival outcome. DynForest also computes variable importance and minimal depth to inform on the most predictive variables or groups of variables. This paper aims to guide the user with step-by-step examples for fitting random forests using DynForest.
+}
+
+\section{Introduction}\label{introduction}
+
+Random forests are a non-parametric, powerful method for prediction purposes. Introduced by Breiman \citep{breiman_random_2001} for classification (categorical outcome) and regression (continuous outcome) frameworks, random forests are particularly designed to tackle modeling issues in high-dimensional contexts (\(n << p\)). They can also easily take into account complex associations between the outcome and the predictors without any pre-specification, where regression models are rapidly limited.
+
+Recently, this methodology was extended to survival data \citep{ishwaran_random_2008} and competing events \citep{ishwaran_random_2014}. Random forests were implemented in several R \citep{R_2019} packages such as \CRANpkg{randomForestSRC} \citep{ishawaran_fast_2022}, \CRANpkg{ranger} \citep{wright_ranger_2017} or \CRANpkg{xgboost} \citep{chen_xgboost_2016}, among others. However, these packages are all limited to time-fixed predictors. Yet, in many applications, it may be relevant to include predictors that are repeatedly measured at multiple occasions (regular or irregular times) with measurement errors to more accurately predict the outcome. This is the case, in particular, in health research where a health outcome is to be predicted according to the history of individual information.
+
+We developed an original random forests methodology to tackle this issue and incorporate longitudinal predictors that may be prone to error and possibly intermittently measured \citep{devaux_random_2023}. The present paper aims to describe the \CRANpkg{DynForest} R package associated with this methodology, allowing the prediction of a continuous, categorical, or survival outcome using multivariate time-dependent predictors.
+
+In section 2, we briefly present \CRANpkg{DynForest} methodology through its algorithm. In section 3, we present the different functions of \CRANpkg{DynForest}, and we illustrate them in section 4 for a survival outcome and in section 5 for a categorical outcome. An illustration for a continuous outcome can be found in the \CRANpkg{DynForest} vignette. To conclude, we discuss in section 6 the limitations and future improvements.
+
+\section{DynForest principle}\label{dynforest-principle}
+
+\CRANpkg{DynForest} is a random forest methodology which can include both time-fixed predictors of any nature and time-dependent predictors possibly measured at irregular times. The purpose of \CRANpkg{DynForest} is to predict an outcome which can be categorical, continuous or survival (with possibly competing events).
+
+The random forest should first be built on a learning dataset of \(N\) subjects including: \(Y\) the outcome; \(\mathcal{M}_x\) an ensemble of \(P\) time-fixed predictors; \(\mathcal{M}_z\) an ensemble of \(Q\) time-dependent predictors. The random forest consists of an ensemble of \(B\) trees which are grown as detailed below.
+
+\begin{figure}
+
+{\centering \includegraphics[width=1\linewidth,height=0.3\textheight]{figures/dynforestR_graph} 
+
+}
+
+\caption{Overall scheme of the tree building in DynForest with (A) the tree structure, (B) the node-specific treatment of time-dependent predictors to obtain time-fixed features, (C) the dichotomization of the time-fixed features, (D) the splitting rule.}\label{fig:dynforestRgraph}
+\end{figure}
+
+\subsection{The tree building}\label{the-tree-building}
+
+The tree building process, summarized in figure \ref{fig:dynforestRgraph}, aims to recursively partition the subjects into groups/nodes that are the most homogeneous regarding the outcome \(Y\).
+
+For each tree \(b\) \((b = 1, ..., B)\), we first draw a bootstrap sample from the original dataset of \(N\) subjects (\(N\) draws among the \(N\) subjects with replacement). The subjects excluded by the bootstrap constitute the out-of-bag (OOB) sample, noted \(OOB^b\) for tree \(b\). At each node \(d \in \mathcal{D}^b\) of the tree, we recursively repeat the following steps using the \(N^{(d)}\) subjects located at node \(d\):
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\item
+  An ensemble of \(\mathcal{M}^{(d)}=\{\mathcal{M}_x^{(d)},\mathcal{M}_z^{(d)}\}\) candidate predictors is randomly selected among \(\{\mathcal{M}_x,\mathcal{M}_z\}\) (see figure \ref{fig:dynforestRgraph}B). The size of \(\mathcal{M}^{(d)}\) is defined by the hyperparameter \(mtry\).
+\item
+  For each time-dependent predictor in \(\mathcal{M}_z^{(d)}\):
+
+  \begin{enumerate}
+  \def\labelenumii{\alph{enumii}.}
+  \tightlist
+  \item
+    We independently model the trajectory of the predictor using a flexible linear mixed model \citep{laird_random_effects_1982} according to time (the specification of the model is defined by the user). It is defined as: \(Z_{ij} = X1_{ij}(t_{ij})\beta + X2_{ij}(t_{ij})b_i + \epsilon_{ij}\) where \(Z_{ij}\) is the value of predictor \(Z\) for subject \(i\) at occasion \(j\), \(X1_{ij}\) and \(X2_{ij}\) are vectors of time functions and covariates to be specified by the user and \(t_{ij}\) is the time at occasion \(j\) for subject \(i\). \(\beta\) are population effects, and \(b_i\) individual random effects which follow a multivariate normal distribution. \(\epsilon_{ij}\) are the zero-mean independent Gaussian errors of measurement.
+  \item
+    We predict the vector of random-effects \(\hat{b}_i\) using the available information of individual \(i = 1, ..., N^{(d)}\). Predictions \(\hat{b}_i\) constitute time-independent features summarizing each time-dependent predictor. We thus derive the ensemble \(\mathcal{M}_{z \star}^{(d)}\) for all the variables in \(\mathcal{M}_z^{(d)}\).
+  \end{enumerate}
+\item
+  We define \(\mathcal{M}_\star^{(d)}=\{\mathcal{M}_x^{(d)},\mathcal{M}_{z \star}^{(d)}\}\) as our new ensemble of time-independent candidate features.
+\item
+  For each candidate feature \(W \in \mathcal{M}_\star^{(d)}\):
+
+  \begin{enumerate}
+  \def\labelenumii{\alph{enumii}.}
+  \tightlist
+  \item
+    We build a series of splits \(c_W^{(d)}\) according to the feature values if continuous, or subsets of categories otherwise (see figure \ref{fig:dynforestRgraph}C), leading each time to two groups.
+  \item
+    We quantify the distance between the two groups according to the nature of \(Y\):
+
+    \begin{itemize}
+    \tightlist
+    \item
+      If \(Y\) continuous: we compute the weighted within-group variance with the proportion of subjects in each group as weights
+    \item
+      If \(Y\) categorical: we compute the weighted within-group Shannon entropy \citep{shannon_mathematical_1948} (i.e., the amount of uncertainty) with the proportion of subjects in each group as weights
+    \item
+      If \(Y\) survival \underline{without} competing events: we compute the log-rank statistic test \citep{peto_asymptotically_1972}
+    \item
+      If \(Y\) survival \underline{with} competing events: we compute the Fine \& Gray statistic test \citep{gray_class_1988}
+    \end{itemize}
+  \end{enumerate}
+\item
+  We split the subjects into the two groups that minimize (for continuous and categorical outcome) or maximize (for survival outcome) the quantity defined previously. We denote \(\{W_0^d,c_0^d\}\) as the optimal couple used to split the subjects and assign them to the left and right daughter nodes \(2d\) and \(2d + 1\), respectively (see figure \ref{fig:dynforestRgraph}D and A).
+\item
+  Step 1 to 5 are iterated on the daughter nodes until stopping criteria are met.
+\end{enumerate}
+
+We define two stopping criteria: \texttt{nodesize}, the minimal number of subjects in a node required to reiterate the split, and \texttt{minsplit}, the minimal number of events required to split the node. \texttt{minsplit} is only defined with a survival outcome. In the following, we call leaves the terminal nodes.
+
+In each leaf \(h \in \mathcal{H}^b\) of tree \(b\), a summary \(\pi^{h^b}\) is computed using the individuals belonging to the leaf. The leaf summary is defined according to the outcome:
+
+\begin{itemize}
+\tightlist
+\item
+  the mean, for \(Y\) continuous
+\item
+  the category with the highest probability, for \(Y\) categorical
+\item
+  the cumulative incidence function over time computed using the Nelson-Aalen cumulative hazard function estimator \citep{nelson_hazard_1969, aalen_nonparametric_1976}, for \(Y\) single cause time-to-event
+\item
+  the cumulative incidence function over time computed using the non-parametric Aalen-Johansen estimator \citep{aalen_empirical_1978}, for \(Y\) time-to-event with multiple causes
+\end{itemize}
+
+NOTE: Step 2 involves the estimation of a parametric mixed model for each time-dependent predictor. The specification of this model should be carefully determined in preliminary analyses by the user, keeping in mind that there should be a trade-off between goodness-of-fit and parameter parsimony. The critical point is to adequately specify the trajectory shape over time at the population and individual levels. Different bases of time functions can be considered (e.g., fractional polynomials, splines, adhoc) and compared in terms of fit.
+
+\subsection{Individual prediction of the outcome}\label{individual-prediction-of-the-outcome}
+
+\subsubsection{Out-Of-Bag individual prediction}\label{out-of-bag-individual-prediction}
+
+The overall OOB prediction \(\hat{\pi}_{ \star}\) for a subject \(\star\) can be computed by averaging the tree-based predictions of \(\star\) over the random forest as follows:
+\begin{equation}
+  \hat{\pi}_{ \star} = \frac{1}{|\mathcal{O}_\star|} \sum_{b \in \mathcal{O}_\star} \hat{\pi}^{h_\star^b}
+\end{equation}
+where \(\mathcal{O}_\star\) is the ensemble of trees where \(\star\) is \(OOB\) and \(|\mathcal{O}_\star|\) denotes its cardinality. The prediction \(\hat{\pi}^{h_\star^b}\) is obtained by dropping down subject \(\star\) along tree \(b\). At each node \(d \in \mathcal{D}^b\), the subject \(\star\) is assigned to the left or right node according to his/her data and the optimal couple \(\{W_0^d,c_0^d\}\). \(W_0^d\) is a random-effect feature, its value for \(\star\) is predicted from the individual repeated measures using the estimated parameters from the linear mixed model.
+
+\subsubsection{Individual dynamic prediction from a landmark time}\label{individual-dynamic-prediction-from-a-landmark-time}
+
+With a survival outcome, the OOB prediction described in the previous paragraph can be extended to compute the individual probability of event from a landmark time \(s\) by exploiting the repeated measures of subject \(\star\) only until \(s\). For a new subject \(\star\), we thus define the individual probability of event, noted \(\hat{\pi}_{\star}(s,s+t)\), as the probability of experiencing the event by time \(s+t\) given the information prior to landmark time \(s\):
+\begin{equation}
+  \hat{\pi}_{\star}(s,s+t) = \frac{1}{B} \sum_{b=1}^B \hat{\pi}^{h_\star^b}(s,s+t)
+\end{equation}
+where \(\hat{\pi}^{h_\star^b}(s,s+t)\) is the tree-based probability of event at time \(s+t\) computed by dropping down \(\star\) along the tree by considering longitudinal predictors collected until \(s\) and time-fixed predictors. Note that any horizon \(t\) can be considered provided \(s+t\) remains in the time window on which the random forest was trained. In the \CRANpkg{DynForest} package, by default, the probability is computed at all the observed event times after the landmark time.
+
+\subsection{Out-Of-Bag prediction error}\label{out-of-bag-prediction-error}
+
+Using the OOB individual predictions, an OOB prediction error can be internally assessed. The OOB prediction error quantifies the difference between the observed and the predicted values. It is defined according to the nature of \(Y\) as:
+
+\begin{itemize}
+\tightlist
+\item
+  for \(Y\) continuous, the mean square error (MSE) defined by:
+\end{itemize}
+
+\begin{equation}
+  errOOB = \frac{1}{N} \sum_{i=1}^N ( \hat{\pi}_i - \pi_i^0 )^2
+\end{equation}
+
+\begin{itemize}
+\tightlist
+\item
+  for \(Y\) categorical, the misclassification error defined by:
+\end{itemize}
+
+\begin{equation}
+  errOOB = \frac{1}{N} \sum_{i=1}^N {1}_{( \hat{\pi}_i \neq \pi_i^0 )}
+\end{equation}
+
+\begin{itemize}
+\tightlist
+\item
+  for \(Y\) survival, the Integrated Brier Score (IBS) \citep{sene_individualized_2016} between \(\tau_1\) and \(\tau_2\) defined by:
+\end{itemize}
+
+\begin{equation}
+  errOOB = \int_{\tau_1}^{\tau_2} \frac{1}{N} \sum_{i=1}^{N}  \hat{\omega}_i(t) \Big\{ I(T_i \leq t, \delta_i = k) -
+  \hat{\pi}_{ik}(t) \Big) \Big\}^2 dt
+\end{equation}
+
+with \(T\) the time-to-event, \(k\) the cause of interest and \(\hat{\omega}(t)\) the estimated weights using Inverse Probability of Censoring Weights (IPCW) technique that accounts for censoring \citep{gerds_consistent_2006}.
+
+The OOB error of prediction is used, in particular, to tune the random forest by determining the hyperparameters (i.e., \texttt{mtry}, \texttt{nodesize} and \texttt{minsplit}) which give the smallest OOB prediction error.
+
+\subsection{Explore the most predictive variables}\label{explore-the-most-predictive-variables}
+
+\subsubsection{Variable importance}\label{variable-importance}
+
+The variable importance (VIMP) measures the loss of predictive performance \citep{ishwaran_random_2008} when removing the link between a predictor and the outcome. The link is removed by permuting the predictor values at the subject level for time-fixed predictors or at the observation level for time-dependent predictors. A large VIMP value indicates a good predictive ability for the predictor.
+
+However, in the case of correlated predictors, the VIMP may not properly quantify the variable importance \citep{gregorutti_correlation_2017} as the information of the predictor may still be present. To better handle situations with highly correlated predictors, the grouped variable importance (gVIMP) can be computed indirectly. It consists of simultaneously evaluating the importance of a group of predictors defined by the user. The computation is the same as for the VIMP except the permutation is performed simultaneously on all the predictors of the group. A large gVIMP value indicates a good predictive ability for the group of predictors.
+
+\subsubsection{Minimal depth}\label{minimal-depth}
+
+The minimal depth is another statistic to quantify the importance of a variable. It assesses the distance between the root node and the first node for which the predictor is used to split the subjects (1 for first level, 2 for second level, 3 for third level, \ldots). This statistic can be computed at the predictor level or at the feature level, allowing us to fully understand the tree building process.
+
+We strongly advise computing the minimal depth with the \texttt{mtry} hyperparameter chosen at its maximum to ensure that all predictors are systematically among candidate predictors for splitting the subjects.
+
+\section{\texorpdfstring{The \CRANpkg{DynForest} R package}{The  R package}}\label{the-r-package}
+
+\CRANpkg{DynForest} methodology was implemented in the R package \CRANpkg{DynForest} \citep{devaux_dynforest_2024} freely available on The Comprehensive R Archive Network (CRAN) to users.
+
+The package includes two main functions: \texttt{dynforest()} and \texttt{predict()} for the learning and the prediction steps. These functions are fully described in section 3.1 and 3.2. Other functions available are briefly described in the table below. These functions are illustrated in examples, one for a survival outcome and one for a categorical outcome.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Function
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Description
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\emph{Learning and prediction steps} & \\
+\texttt{dynforest()} & Function that builds the random forest \\
+\texttt{predict()} & Function for S3 class \texttt{dynforest} predicting the outcome on new subjects using the individual-specific information \\
+\emph{Assessment function} & \\
+\texttt{compute\_ooberror()} & Function that computes the Out-Of-Bag error to be minimized to tune the random forest \\
+\emph{Exploring functions} & \\
+\texttt{compute\_vimp()} & Function that computes the importance of variables \\
+\texttt{compute\_gvimp()} & Function that computes the importance of a group of variables \\
+\texttt{compute\_vardepth()} & Function that extracts information about the tree building process \\
+\emph{plot() functions for S3 class:} & \\
+\texttt{dynforest} & Plot the estimated CIF for given tree nodes or subjects \\
+\texttt{dynforestpred} & Plot the predicted CIF for the cause of interest for given subjects \\
+\texttt{dynforestvimp} & Plot the importance of variables by value or percentage \\
+\texttt{dynforestgvimp} & Plot the importance of a group of variables by value or percentage \\
+\texttt{dynforestvardepth} & Plot the minimal depth by predictors or features \\
+\emph{Other functions} & \\
+\texttt{summary()} & Function for class S3 \texttt{dynforest} or \texttt{dynforestoob} displaying information about the type of random forest, predictors included, parameters used, Out-Of-Bag error (only for \texttt{dynforestoob} class) and brief summaries about the leaves \\
+\texttt{print()} & Function to print object of class \texttt{dynforest}, \texttt{dynforestoob}, \texttt{dynforestvimp}, \texttt{dynforestgvimp}, \texttt{dynforestvardepth} and \texttt{dynforestpred} \\
+\texttt{get\_tree()} & Function that extracts the tree structure for a given tree \\
+\texttt{get\_treenode()} & Function that extracts the terminal node identifiers for a given tree \\
+\end{longtable}
+
+\subsection{\texorpdfstring{\texttt{dynforest()} function}{dynforest() function}}\label{dynforest-function}
+
+\texttt{dynforest()} is the function to build the random forest. The call of this function is:
+
+\begin{verbatim}
+dynforest(
+  timeData = NULL, fixedData = NULL, idVar = NULL,
+  timeVar = NULL, timeVarModel = NULL, Y = NULL,
+  ntree = 200, mtry = NULL, nodesize = 1, minsplit = 2, cause = 1,
+  nsplit_option = "quantile", ncores = NULL,
+  seed = 1234, verbose = TRUE
+)
+\end{verbatim}
+
+\subsubsection{Arguments}\label{arguments}
+
+\texttt{timeData} is an optional argument that contains the dataframe in longitudinal format (i.e., one observation per row) for the time-dependent predictors. In addition to time-dependent predictors, this dataframe should include a unique identifier and the measurement times. This argument is set to \texttt{NULL} if no time-dependent predictor is included. Argument \texttt{fixedData} contains the dataframe in wide format (i.e., one subject per row) for the time-fixed predictors. In addition to time-fixed predictors, this dataframe should also include the same identifier as used in \texttt{timeData.} This argument is set to \texttt{NULL} if no time-fixed predictor is included. Argument \texttt{idVar} provides the name of the identifier variable included in \texttt{timeData} and \texttt{fixedData} dataframes. Argument \texttt{timeVar} provides the name of the time variable included in \texttt{timeData} dataframe. Argument \texttt{timeVarModel} contains as many lists as time-dependent predictors defined in \texttt{timeData} to specify the structure of the mixed models assumed for each predictor. For each time-dependent predictor, the list should contain a \texttt{fixed} and a \texttt{random} argument to define the formula of a mixed model to be estimated with \CRANpkg{lcmm} R package \citep{proust_lima_estimation_2017}. \texttt{fixed} defines the formula for the fixed-effects and \texttt{random} for the random-effects (e.g., \texttt{list(Y1\ =\ list(fixed\ =\ Y1\ \textasciitilde{}\ time,\ random\ =\ \textasciitilde{}\ time))}. Argument \texttt{Y} contains a list of two elements \texttt{type} and \texttt{Y}. Element \texttt{type} defines the nature of the outcome (\texttt{surv} for survival outcome with possibly competing causes, \texttt{numeric} for continuous outcome and \texttt{factor} for categorical outcome) and element \texttt{Y} defines the dataframe which includes the identifier (same as in \texttt{timeData} and \texttt{fixedData} dataframes) and outcome variables.
+
+Arguments \texttt{ntree}, \texttt{mtry}, \texttt{nodesize} and \texttt{minsplit} are the hyperparameters of the random forest. Argument \texttt{ntree} controls the number of trees in the random forest (200 by default). Argument \texttt{mtry} indicates the number of variables randomly drawn at each node (square root of the total number of predictors by default). Argument \texttt{nodesize} indicates the minimal number of subjects allowed in the leaves (1 by default). Argument \texttt{minsplit} controls the minimal number of events required to split the node (2 by default).
+
+For a survival outcome, argument \texttt{cause} indicates the event of interest. Argument \texttt{nsplit\_option} indicates the method to build the two groups of individuals at each node. By default, we build the groups according to deciles (\texttt{quantile} option) but they could be built according to random values (\texttt{sample} option).
+
+Argument \texttt{ncores} indicates the number of cores used to grow the trees in parallel mode. By default, we set the number of cores of the computer minus 1. Argument \texttt{seed} specifies the random seed. It can be fixed to replicate the results. Argument \texttt{verbose} allows to display a progression bar during the execution of the function.
+
+\subsubsection{Values}\label{values}
+
+\texttt{dynforest()} function returns an object of class \texttt{dynforest} containing several elements:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{data} a list with longitudinal predictors (\texttt{Longitudinal} element), continuous predictors (\texttt{Numeric} element) and categorical predictors (\texttt{Factor} element)
+\item
+  \texttt{rf} is a dataframe with one column per tree containing a list with several elements, which includes:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{leaves} the leaf identifier for each subject used to grow the tree
+  \item
+    \texttt{idY} the identifiers for each subject used to grow the tree
+  \item
+    \texttt{V\_split} the split summary (more detailed below)
+  \item
+    \texttt{Y\_pred} the estimated outcome in each leaf
+  \item
+    \texttt{model\_param} the estimated parameters of the mixed model for the longitudinal predictors used to split the subjects at each node
+  \item
+    \texttt{Ytype}, \texttt{hist\_nodes}, \texttt{Y}, \texttt{boot} and \texttt{Ylevels} internal information used in other functions
+  \end{itemize}
+\item
+  \texttt{type} the nature of the outcome
+\item
+  \texttt{times} the event times (only for survival outcome)
+\item
+  \texttt{cause} the cause of interest (only for survival outcome)
+\item
+  \texttt{causes} the unique causes (only for survival outcome)
+\item
+  \texttt{Inputs} the list of predictors names for \texttt{Longitudinal} (longitudinal predictor), \texttt{Continuous} (continuous predictor) and \texttt{Factor} (categorical predictor)
+\item
+  \texttt{Longitudinal.model} the mixed model specification for each longitudinal predictor
+\item
+  \texttt{param} a list of hyperparameters used to grow the random forest
+\item
+  \texttt{comput.time} the computation time
+\end{itemize}
+
+\noindent The main information returned by \texttt{rf} is the \texttt{V\_split} element which can also be extracted using the \texttt{get\_tree()} function. This element contains a table sorted by the node/leaf identifier (\texttt{id\_node} column) with each row representing a node/leaf. Each column provides information about the splits:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{type}: the nature of the predictor (\texttt{Longitudinal} for longitudinal predictor, \texttt{Numeric} for continuous predictor or \texttt{Factor} for categorical predictor) if the node was split, \texttt{Leaf} otherwise;
+\item
+  \texttt{var\_split}: the predictor used for the split defined by its order in \texttt{timeData} and \texttt{fixedData};
+\item
+  \texttt{feature}: the feature used for the split defined by its position in random statistic;
+\item
+  \texttt{threshold}: the threshold used for the split (only with \texttt{Longitudinal} and \texttt{Numeric}). No information is returned for \texttt{Factor};
+\item
+  \texttt{N}: the number of subjects in the node/leaf;
+\item
+  \texttt{Nevent}: the number of events of interest in the node/leaf (only with survival outcome);
+\item
+  \texttt{depth}: the depth level of the node/leaf.
+\end{itemize}
+
+\subsubsection{Additional information about the dependencies}\label{additional-information-about-the-dependencies}
+
+\texttt{dynforest()} function internally calls other functions from related packages to build the random forest:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{hlme()} function (from \CRANpkg{lcmm} package \citep{proust_lima_estimation_2017}) to fit the mixed models for the time-dependent predictors defined in \texttt{timeData} and \texttt{timeVarModel} arguments
+\item
+  \texttt{Entropy()} function (from base package) to compute the Shannon entropy
+\item
+  \texttt{survdiff()} function (from \CRANpkg{survival} package \citep{therneau_2022_survival}) to compute the log-rank statistic test
+\item
+  \texttt{crr()} function (from \CRANpkg{cmprsk} package \citep{gray_cmprsk_2020}) to compute the Fine \& Gray statistic test
+\end{itemize}
+
+\subsection{\texorpdfstring{\texttt{predict()} function}{predict() function}}\label{predict-function}
+
+\texttt{predict()} is the S3 function for class \texttt{dynforest} to predict the outcome on new subjects. Landmark time can be specified to consider only longitudinal data collected up to this time to compute the prediction. The call of this function is:
+
+\begin{verbatim}
+predict(object, timeData = NULL, fixedData = NULL, idVar, timeVar, t0 = NULL)
+\end{verbatim}
+
+\subsubsection{Arguments}\label{arguments-1}
+
+Argument \texttt{object} contains a \texttt{dynforest} object resulting from the \texttt{dynforest()} function. Argument \texttt{timeData} contains the dataframe in longitudinal format (i.e., one observation per row) for the time-dependent predictors of new subjects. In addition to time-dependent predictors, this dataframe should also include a unique identifier and the time measurements. This argument can be set to \texttt{NULL} if no time-dependent predictor is included. Argument \texttt{fixedData} contains the dataframe in wide format (i.e., one subject per row) for the time-fixed predictors of new subjects. In addition to time-fixed predictors, this dataframe should also include a unique identifier. This argument can be set to \texttt{NULL} if no time-fixed predictor is included. Argument \texttt{idVar} provides the name of the identifier variable included in \texttt{timeData} and \texttt{fixedData} dataframes. Argument \texttt{timeVar} provides the name of the time-measurement variable included in \texttt{timeData} dataframe. Argument \texttt{t0} defines the landmark time; only the longitudinal data collected up to this time are to be considered. This argument should be set to \texttt{NULL} to include all longitudinal data.
+
+\subsubsection{Values}\label{values-1}
+
+\texttt{predict()} function returns several elements:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{t0} the landmark time defined in the argument (\texttt{NULL} by default)
+\item
+  \texttt{times} times used to compute the individual predictions (only with survival outcome). The times are defined according to the time-to-event subjects used to build the random forest.
+\item
+  \texttt{pred\_indiv} the predicted outcome for the new subject. With survival outcome, predictions are provided for each time defined in the \texttt{times} element.
+\item
+  \texttt{pred\_leaf} a table giving for each tree (in column) the leaf in which each subject is assigned (in row)
+\item
+  \texttt{pred\_indiv\_proba} the proportion of the trees leading to the category prediction for each subject (only with categorical outcome)
+\end{itemize}
+
+\section{\texorpdfstring{How to use \CRANpkg{DynForest} R package with a survival outcome?}{How to use  R package with a survival outcome?}}\label{sec:dynforestR_surv}
+
+\subsection{\texorpdfstring{Illustrative dataset: \texttt{pbc2} dataset}{Illustrative dataset: pbc2 dataset}}\label{illustrative-dataset-pbc2-dataset}
+
+The \texttt{pbc2} dataset \citep{murtaugh_primary_1994} is loaded with the package \CRANpkg{DynForest} to illustrate its functionalities. \texttt{pbc2} data come from a clinical trial conducted by the Mayo Clinic between 1974 and 1984 to treat primary biliary cholangitis (PBC), a chronic liver disease. A total of 312 patients were enrolled in a clinical trial to evaluate the effectiveness of D-penicillamine compared to a placebo to treat PBC and were followed until the clinical trial ended, leading to a total of 1945 observations. During the follow-up, several clinical continuous markers were collected over time such as: the level of serum bilirubin (\texttt{serBilir}), the level of serum cholesterol (\texttt{serChol}), the level of albumin (\texttt{albumin}), the level of alkaline (\texttt{alkaline}), the level of aspartate aminotransferase (\texttt{SGOT}), platelets count (\texttt{platelets}), and the prothrombin time (\texttt{prothrombin}). Four non-continuous time-dependent predictors were also collected: the presence of ascites (\texttt{ascites}), the presence of hepatomegaly (\texttt{hepatomegaly}), the presence of blood vessel malformations in the skin (\texttt{spiders}), and the edema levels (\texttt{edema}). These time-dependent predictors were recorded according to the \texttt{time} variable. In addition to these time-dependent predictors, a few predictors were collected at enrollment: sex (\texttt{sex}), age (\texttt{age}), and the drug treatment (\texttt{drug}). During the follow-up, 140 patients died before transplantation, 29 patients were transplanted, and 143 patients were censored alive (\texttt{event}). The time of the first event (censored alive or any event) was considered as the event time (\texttt{years})
+
+\begin{verbatim}
+library("DynForest")
+data(pbc2)
+pbc2[1:5, c(
+  "id", "time", "serBilir", "SGOT", "albumin", "alkaline",
+  "age", "drug", "sex", "years", "event"
+)]
+\end{verbatim}
+
+\begin{verbatim}
+#>    id      time serBilir  SGOT albumin alkaline      age      drug    sex
+#> 1   1 0.0000000     14.5 138.0    2.60     1718 58.76684 D-penicil female
+#> 2   1 0.5256817     21.3   6.2    2.94     1612 58.76684 D-penicil female
+#> 3  10 0.0000000     12.6 147.3    2.74      918 70.56182   placebo female
+#> 4 100 0.0000000      2.3 178.3    3.00      746 51.47027   placebo   male
+#> 5 100 0.4681853      2.5 189.1    2.94      836 51.47027   placebo   male
+#>       years event
+#> 1 1.0951703     2
+#> 2 1.0951703     2
+#> 3 0.1396342     2
+#> 4 1.5113350     2
+#> 5 1.5113350     2
+\end{verbatim}
+
+For the illustration, 4 time-dependent predictors (\texttt{serBilir}, \texttt{SGOT}, \texttt{albumin} and \texttt{alkaline}) and 3 predictors measured at enrollment (\texttt{sex}, \texttt{age} and \texttt{drug}) were considered. We aim to predict death without transplantation in patients suffering from primary biliary cholangitis (PBC) using clinical and socio-demographic predictors, considering transplantation as a competing event.
+
+\subsection{Data management}\label{data-management}
+
+To begin, we split the subjects into two datasets: (i) one dataset to train the random forest using \(2/3\) of patients; (ii) one dataset to predict on the other \(1/3\) of patients. The random seed is set to 1234 for replication purposes.
+
+\begin{verbatim}
+set.seed(1234)
+id <- unique(pbc2$id)
+id_sample <- sample(id, length(id) * 2 / 3)
+id_row <- which(pbc2$id %in% id_sample)
+pbc2_train <- pbc2[id_row, ]
+pbc2_pred <- pbc2[-id_row, ]
+\end{verbatim}
+
+Then, we build the dataframe \texttt{timeData\_train} in the longitudinal format (i.e., one observation per row) for the longitudinal predictors including: \texttt{id} the unique patient identifier; \texttt{time} the observed time measurements; \texttt{serBilir}, \texttt{SGOT}, \texttt{albumin} and \texttt{alkaline} the longitudinal predictors. We also build the dataframe \texttt{fixedData\_train} with the time-fixed predictors including: \texttt{id} the unique patient identifier; \texttt{age}, \texttt{drug} and \texttt{sex} predictors measured at enrollment. The nature of each predictor needs to be properly defined with the \texttt{as.factor()} function for categorical predictors (e.g., \texttt{drug} and \texttt{sex}).
+
+\begin{verbatim}
+timeData_train <- pbc2_train[, c("id", "time", "serBilir", "SGOT", "albumin", "alkaline")]
+fixedData_train <- unique(pbc2_train[, c("id", "age", "drug", "sex")])
+\end{verbatim}
+
+\subsection{Specification of the models for the time-dependent predictors}\label{specification-of-the-models-for-the-time-dependent-predictors}
+
+The first step of the random forest building consists of specifying the mixed model of each longitudinal predictor through a list containing the fixed and random formula for the fixed effect and random effects of the mixed models, respectively. Here, we assume a linear trajectory for \texttt{serBilir}, \texttt{albumin} and \texttt{alkaline}, and a quadratic trajectory for \texttt{SGOT.} Although we restricted this example to linear and quadratic functions of time, we note that any function can be considered, including splines.
+
+\begin{verbatim}
+timeVarModel <- list(
+  serBilir = list(fixed = serBilir ~ time, random = ~time),
+  SGOT = list(fixed = SGOT ~ time + I(time^2), random = ~ time + I(time^2)),
+  albumin = list(fixed = albumin ~ time, random = ~time),
+  alkaline = list(fixed = alkaline ~ time, random = ~time)
+)
+\end{verbatim}
+
+For this illustration, the outcome object contains a list with \texttt{type} set to \texttt{surv} (for survival data) and \texttt{Y} contains a dataframe in wide format (one subject per row) with: \texttt{id} the unique patient identifier; \texttt{years} the time-to-event data; \texttt{event} the event indicator.
+
+\begin{verbatim}
+Y <- list(type = "surv", Y = unique(pbc2_train[, c("id", "years", "event")]))
+\end{verbatim}
+
+\subsection{Random forest building}\label{random-forest-building}
+
+We build the random forest using \texttt{dynforest()} function with the following code:
+
+\begin{verbatim}
+res_dyn <- dynforest(
+  timeData = timeData_train,
+  fixedData = fixedData_train,
+  timeVar = "time", idVar = "id",
+  timeVarModel = timeVarModel, Y = Y,
+  ntree = 200, mtry = 3, nodesize = 2, minsplit = 3,
+  cause = 2, ncores = 7, seed = 1234
+)
+\end{verbatim}
+
+In a survival context with multiple events, it is necessary to specify the event of interest with the argument \texttt{cause.} We thus fix \texttt{cause} = 2 to specify the event of interest (i.e., the death event). For the hyperparameters, we arbitrarily chose \texttt{mtry} = 3, \texttt{nodesize} = 2, and \texttt{minsplit} = 3, and we will discuss this point in section 4.8.
+
+Overall information about the random forest can be output with the \texttt{summary()} function as displayed below for our example:
+
+\begin{verbatim}
+summary(res_dyn)
+\end{verbatim}
+
+\begin{verbatim}
+#> dynforest executed for survival (competing risk) outcome 
+#>  Splitting rule: Fine & Gray statistic test 
+#>  Out-of-bag error type: Integrated Brier Score 
+#>  Leaf statistic: Cumulative incidence function 
+#> ---------------- 
+#> Input 
+#>  Number of subjects: 208 
+#>  Longitudinal: 4 predictor(s) 
+#>  Numeric: 1 predictor(s) 
+#>  Factor: 2 predictor(s) 
+#> ---------------- 
+#> Tuning parameters 
+#>  mtry: 3 
+#>  nodesize: 2 
+#>  minsplit: 3 
+#>  ntree: 200 
+#> ---------------- 
+#> ---------------- 
+#> dynforest summary 
+#>  Average depth per tree: 6.62 
+#>  Average number of leaves per tree: 27.68 
+#>  Average number of subjects per leaf: 4.78 
+#>  Average number of events of interest per leaf: 1.95 
+#> ---------------- 
+#> Computation time 
+#>  Number of cores used: 7 
+#>  Time difference of 3.18191 mins
+#> ----------------
+\end{verbatim}
+
+We executed the \texttt{dynforest()} function for a survival outcome with competing events. In this mode, we use the Fine \& Gray statistic test as the splitting rule and the cumulative incidence function (CIF) as the leaf statistic. To build the random forest, we included 208 subjects with 4 longitudinal (\texttt{Longitudinal}), 1 continuous (\texttt{Numeric}) and 2 categorical (\texttt{Factor}) predictors. The \texttt{summary()} function returns some statistics about the trees. For instance, we have on average 4.8 subjects and 1.9 death events per leaf. The number of subjects per leaf should always be higher than the \texttt{nodesize} hyperparameter. OOB error should first be computed using the \texttt{compute\_ooberror()} function (see section 4.5) to be displayed on summary output.
+
+To further investigate the tree structure, the split details can be output using the \texttt{get\_tree()} function with the following code (for tree 1):
+
+\begin{verbatim}
+head(get_tree(dynforest_obj = res_dyn, tree = 1))
+\end{verbatim}
+
+\begin{verbatim}
+#>           type id_node var_split feature     threshold   N Nevent depth
+#> 1 Longitudinal       1         3       1 -1.272629e-01 129     51     1
+#> 2      Numeric       2         1      NA  4.138210e+01  39     27     2
+#> 3 Longitudinal       3         4       1  1.459346e+02  90     24     2
+#> 4 Longitudinal       4         3       1  3.608271e-11   8      3     3
+#> 5 Longitudinal       5         2       1  5.924123e+01  31     24     3
+#> 6 Longitudinal       6         1       1  2.786575e-01  63     12     3
+\end{verbatim}
+
+\begin{verbatim}
+tail(get_tree(dynforest_obj = res_dyn, tree = 1))
+\end{verbatim}
+
+\begin{verbatim}
+#>            type id_node var_split feature     threshold N Nevent depth
+#> 50         Leaf     174        NA      NA            NA 2      2     8
+#> 51 Longitudinal     175         2       1 -1.850322e-10 4      4     8
+#> 52         Leaf     250        NA      NA            NA 5      1     8
+#> 53         Leaf     251        NA      NA            NA 4      2     8
+#> 54         Leaf     350        NA      NA            NA 2      2     9
+#> 55         Leaf     351        NA      NA            NA 2      2     9
+\end{verbatim}
+
+\noindent Looking at the head of the \texttt{get\_tree()} function output, we see that subjects were split at node 1 (\texttt{id\_node}) using the first random-effect (\texttt{feature} = 1) of the third \texttt{Longitudinal} predictor (\texttt{var\_split} = 3) with \texttt{threshold} = -0.1273. \texttt{var\_split} = 3 corresponds to \texttt{albumin}, so subjects at node 1 with \texttt{albumin} values below -0.1273 are assigned to node 2, otherwise to node 3. The last rows of the random forest given by the tail of \texttt{get\_tree()} function output provide the leaves descriptions. For instance, in row 53, 4 subjects are included in leaf 251, and 2 subjects have the event of interest.
+
+Estimated cumulative incidence function (CIF) within each leaf of a tree can be displayed using the \texttt{plot()} function. For instance, the CIF of the cause of interest for leaf 251 in tree 1 can be displayed using the following code:
+
+CIF of a single tree is not meant to be interpreted alone. The CIF should be averaged over all trees of the random forest. For a subject, the estimated CIF over the random forest is obtained by averaging all the tree-specific CIFs of the tree-leaf where the subject belongs. This can be done with the \texttt{plot()} function such as:
+
+\begin{verbatim}
+plot(res_dyn, id = 104, max_tree = 9)
+\end{verbatim}
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.8\linewidth,height=0.3\textheight]{main_files/figure-latex/DynForestRCIF-1} 
+
+}
+
+\caption{Estimated cumulative incidence functions for subject 104 over 9 trees.}\label{fig:DynForestRCIF}
+\end{figure}
+
+In this example, we display in figure \ref{fig:DynForestRCIF} for subject 104 the tree-specific CIFs for the first 9 trees where this subject is used to grow the trees. This figure shows how the estimated CIF can differ across the trees and requires to be averaged as each is calculated from information of the few subjects belonging to a leaf.
+
+\subsection{Out-Of-Bag error}\label{out-of-bag-error}
+
+The Out-Of-Bag error (OOB) aims at assessing the predictive abilities of the random forest. With a survival outcome, the OOB error is evaluated using the Integrated Brier Score (IBS) \citep{gerds_consistent_2006}. It is computed using the \texttt{compute\_ooberror()} function with an object of class \texttt{dynforest} as the main argument, such as:
+
+\begin{verbatim}
+res_dyn_OOB <- compute_ooberror(dynforest_obj = res_dyn)
+\end{verbatim}
+
+\texttt{compute\_ooberror()} returns the OOB errors by individual. The overall OOB error for the random forest is obtained by averaging the individual specific OOB errors, and can be displayed using \texttt{print()} or directly by calling the object.
+
+\begin{verbatim}
+res_dyn_OOB
+\end{verbatim}
+
+\begin{verbatim}
+#> [1] 0.1265053
+\end{verbatim}
+
+We obtain an IBS of 0.127 computed from time 0 to the maximum event time. The time range can be modified using \texttt{IBS.min} and \texttt{IBS.max} arguments to define the minimum and maximum, respectively. To maximize the predictive ability of the random forest, the hyperparameters can be tuned, that is, chosen as those that minimize the OOB error (see section 4.8).
+
+\subsection{Individual prediction of the outcome}\label{individual-prediction-of-the-outcome-1}
+
+The \texttt{predict()} function allows prediction of the outcome for a new subject using the trained random forest. The function requires the individual data: time-dependent predictors in \texttt{timeData} and time-fixed predictors in \texttt{fixedData.} For a survival outcome, dynamic predictions can be computed by fixing a prediction time (called landmark time, argument \texttt{t0}) from which the prediction is made. In this case, only the history of the individual up to this landmark time (including the longitudinal and time-fixed predictors) will be used. In particular, if the landmark time is fixed to 0, only the information at time 0 will be considered for predicting the outcome.
+
+For the illustration, we only select the subjects still at risk at the landmark time of 4 years. We build the dataframe for those subjects and we predict the individual-specific CIF using the \texttt{predict()} function as follows:
+
+\begin{verbatim}
+id_pred <- unique(pbc2_pred$id[which(pbc2_pred$years > 4)])
+pbc2_pred_tLM <- pbc2_pred[which(pbc2_pred$id %in% id_pred), ]
+timeData_pred <- pbc2_pred_tLM[, c("id", "time", "serBilir", "SGOT", "albumin", "alkaline")]
+fixedData_pred <- unique(pbc2_pred_tLM[, c("id", "age", "drug", "sex")])
+pred_dyn <- predict(
+  object = res_dyn,
+  timeData = timeData_pred,
+  fixedData = fixedData_pred,
+  idVar = "id",
+  timeVar = "time",
+  t0 = 4
+)
+\end{verbatim}
+
+The \texttt{predict()} function provides several elements as described in section 3.2. In addition, the \texttt{plot()} function can be used to display the CIF of the outcome (here death before transplantation) for subjects indicated with argument \texttt{id}. For instance, we compute the CIF for subjects 102 and 260 with the following code and display them in figure \ref{fig:DynForestRpredCIF}.
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.8\linewidth,height=0.3\textheight]{main_files/figure-latex/DynForestRpredCIF-1} 
+
+}
+
+\caption{Predicted cumulative incidence function for subjects 102 and 260 from landmark time of 4 years (represented by the dashed vertical line)}\label{fig:DynForestRpredCIF}
+\end{figure}
+
+In the first year after the landmark time (at 4 years), we observe a rapid increase in the risk of death for subject 260 compared to subject 102. We also notice that after 10 years from the landmark time, subject 260 has a probability of death almost three times higher than that of subject 102.
+
+\subsection{Predictiveness of the variables}\label{predictiveness-of-the-variables}
+
+\subsubsection{Variable importance}\label{variable-importance-1}
+
+The main objective of the random forest is to predict an outcome. But usually, we are interested in identifying which predictors are the most predictive. The VIMP statistic \citep{ishwaran_random_2008} can be computed using the \texttt{compute\_vimp()} function. This function returns the VIMP statistic for each predictor with the \texttt{\$Importance} element. These results can also be displayed using the \texttt{plot()} function, either in absolute value by default or in percentage with the \texttt{PCT} argument set to \texttt{TRUE}.
+
+\begin{verbatim}
+res_dyn_VIMP <- compute_vimp(dynforest_obj = res_dyn, seed = 123)
+\end{verbatim}
+
+\begin{verbatim}
+p1 <- plot(res_dyn_VIMP, PCT = TRUE)
+\end{verbatim}
+
+The VIMP results are displayed in figure \ref{fig:DynForestRVIMPgVIMP}A. The most predictive variables are \texttt{serBilir}, \texttt{albumin} and \texttt{age} with the largest VIMP percentage. By removing the association between \texttt{serBilir} and the event, the OOB error was increased by 30\%.
+
+In the case of correlated predictors, the predictors can be regrouped into dimensions and the VIMP can be computed at the dimension group level with the gVIMP statistic. Permutation is done for each variable of the group simultaneously. The gVIMP is computed with the \texttt{compute\_gvimp()} function in which the \texttt{group} argument defines the group of predictors as a list. For instance, with two groups of predictors (named group1 and group2), the gVIMP statistic is computed using the following code:
+
+\begin{verbatim}
+group <- list(
+  group1 = c("serBilir", "SGOT"),
+  group2 = c("albumin", "alkaline")
+)
+res_dyn_gVIMP <- compute_gvimp(dynforest_obj = res_dyn, group = group, seed = 123)
+\end{verbatim}
+
+\begin{verbatim}
+p2 <- plot(res_dyn_gVIMP, PCT = TRUE)
+\end{verbatim}
+
+Similar to the VIMP statistic, the gVIMP results can be displayed using the \texttt{plot()} function. The figure \ref{fig:DynForestRVIMPgVIMP}B shows that group1 has the highest gVIMP percentage with 34\%.
+
+\begin{verbatim}
+plot_grid(p1, p2, labels = c("A", "B"))
+\end{verbatim}
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.8\linewidth,height=0.3\textheight]{main_files/figure-latex/DynForestRVIMPgVIMP-1} 
+
+}
+
+\caption{(A) VIMP statistic and (B) grouped-VIMP statistic displayed as a percentage of loss in OOB error of prediction. group1 includes serBilir and SGOT; group2 includes albumin and alkaline.}\label{fig:DynForestRVIMPgVIMP}
+\end{figure}
+
+To compute the gVIMP statistic, the groups can be defined regardless of the number of predictors. However, the comparison between the groups may be harder when group sizes are very different.
+
+\subsubsection{Minimal depth}\label{minimal-depth-1}
+
+To go further into the understanding of the tree building process, the \texttt{compute\_vardepth()} function extracts information about the average minimal depth by feature (\texttt{\$min\_depth}), the minimal depth for each feature and each tree (\texttt{\$var\_node\_depth}), and the number of times that the feature is used for splitting for each feature and each tree (\texttt{\$var\_count}).
+
+Using an object from the \texttt{compute\_vardepth()} function, the \texttt{plot()} function allows us to plot the distribution of the average minimal depth across the trees. The \texttt{plot\_level} argument defines how the average minimal depth is plotted, by predictor or feature.
+
+The distribution of the minimal depth level is displayed in figure \ref{fig:DynForestRmindepth} by predictor and feature. Note that the minimal depth level should always be interpreted with the number of trees where the predictor/feature is found. Indeed, to accurately appreciate the importance of a variable's minimal depth, the variable has to be systematically part of the candidates at each node. This is why we strongly advise computing the minimal depth on a random forest with the \texttt{mtry} hyperparameter chosen at its maximum (as done below).
+
+\begin{verbatim}
+res_dyn_max <- dynforest(
+  timeData = timeData_train,
+  fixedData = fixedData_train,
+  timeVar = "time", idVar = "id",
+  timeVarModel = timeVarModel, Y = Y,
+  ntree = 200, mtry = 7, nodesize = 2, minsplit = 3,
+  cause = 2, ncores = 7, seed = 1234
+)
+\end{verbatim}
+
+\begin{verbatim}
+depth_dyn <- compute_vardepth(dynforest_obj = res_dyn_max)
+p1 <- plot(depth_dyn, plot_level = "predictor")
+\end{verbatim}
+
+\begin{verbatim}
+p2 <- plot(depth_dyn, plot_level = "feature")
+\end{verbatim}
+
+\begin{verbatim}
+plot_grid(p1, p2, labels = c("A", "B"))
+\end{verbatim}
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.8\linewidth,height=0.3\textheight]{main_files/figure-latex/DynForestRmindepth-1} 
+
+}
+
+\caption{Average minimal depth level by predictor (A) and feature (B).}\label{fig:DynForestRmindepth}
+\end{figure}
+
+In our example, we ran a random forest with the mtry hyperparameter set to its maximum (i.e., \texttt{mtry} = 7) and we computed the minimal depth on this random forest. We observe that \texttt{serBilir}, \texttt{albumin} and \texttt{age} have the lowest minimal depth, indicating these predictors are used to split the subjects at early stages in 200 out of 200 trees, i.e., 100\% for \texttt{serBilir}, \texttt{age} and in 199 out of 200 for \texttt{albumin} (figure \ref{fig:DynForestRmindepth}A). The minimal depth level by feature (figure \ref{fig:DynForestRmindepth}B) provides more advanced details about the tree building process. For instance, we can see that the random effects of \texttt{serBilir} (indicated by bi0 and bi1 in the graph) are the earliest features used on 199 and 197 out of 200 trees, respectively.
+
+\subsection{Guidelines to tune the hyperparameters}\label{guidelines-to-tune-the-hyperparameters}
+
+The predictive performance of the random forest strongly depends on the hyperparameters \texttt{mtry}, \texttt{nodesize} and \texttt{minsplit.} They should therefore be chosen carefully. The \texttt{nodesize} and \texttt{minsplit} hyperparameters control the tree depth. The trees need to be deep enough to ensure that the predictions are accurate. By default, we fixed \texttt{nodesize} and \texttt{minsplit} at the minimum, that is \texttt{nodesize} = 1 and \texttt{minsplit} = 2. However, with a large number of individuals, the tree depth could be slightly decreased by increasing these hyperparameters in order to reduce the computation time.
+
+The \texttt{mtry} hyperparameter defines the number of predictors randomly drawn at each node. By default, we chose \texttt{mtry} equal to the square root of the number of predictors as usually recommended \citep{bernard_influence_2009}. However, this hyperparameter should be carefully tuned with possible values between 1 and the number of predictors. Indeed, the predictive performance of the random forest is highly related to this hyperparameter.
+
+In the illustration, we tuned \texttt{mtry} for every possible value (1 to 7). Figure \ref{fig:DynForestRmtrytuned} displays the OOB error according to the \texttt{mtry} hyperparameter.
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.8\linewidth,height=0.3\textheight]{main_files/figure-latex/DynForestRmtrytuned-1} 
+
+}
+
+\caption{OOB error according to mtry hyperparameter. The optimal value was found for the maximum value mtry = 7.}\label{fig:DynForestRmtrytuned}
+\end{figure}
+
+We can see in this figure large OOB error differences according to the \texttt{mtry} hyperparameter. In particular, we observe the worst predictive performance for \texttt{mtry} = 1. The minimum OOB error value is obtained for \texttt{mtry} = 7 although differences from \texttt{mtry} = 3 to \texttt{mtry} = 7 seem relatively minimal. Moreover, a larger \texttt{mtry} value has a significant impact on the computation time. Using 7 cores in this example, the \texttt{dynforest()} function has been executed in 1.7, 2.8, 3.8, 4.7, 5.4, 6.2 and 7.2 minutes, for \texttt{mtry} values ranging from 1 to 7, respectively. The number of subjects, time measurements, trees, and their depths may also contribute to longer computation time.
+
+\section{\texorpdfstring{How to use \CRANpkg{DynForest} R package with a categorical outcome?}{How to use  R package with a categorical outcome?}}\label{how-to-use-r-package-with-a-categorical-outcome}
+
+In this section, we use \CRANpkg{DynForest} in a classification perspective using \texttt{pbc2} data. For illustration purposes, we want to predict death between 4 and 10 years on subjects still at risk at 4 years from the repeated data up to 4 years. Note that this is only for illustrative purposes as this technique does not handle the censoring of death times correctly.
+
+\subsection{Data management}\label{data-management-1}
+
+For the illustration, we select patients still at risk at 4 years and we recode the \texttt{event} variable with \texttt{event} = 1 for subjects who died between 4 years and 10 years, whereas subjects with transplantation were recoded \texttt{event} = 0, as were the subjects still alive. We split the subjects into two datasets: (i) one dataset to train the random forest using \(2/3\) of patients; (ii) one dataset to predict on the other \(1/3\) of patients.
+
+\begin{verbatim}
+pbc2 <- pbc2[which(pbc2$years > 4 & pbc2$time <= 4), ]
+pbc2$event <- ifelse(pbc2$event == 2, 1, 0)
+pbc2$event[which(pbc2$years > 10)] <- 0
+set.seed(1234)
+id <- unique(pbc2$id)
+id_sample <- sample(id, length(id) * 2 / 3)
+id_row <- which(pbc2$id %in% id_sample)
+pbc2_train <- pbc2[id_row, ]
+pbc2_pred <- pbc2[-id_row, ]
+\end{verbatim}
+
+We use the same strategy as in the survival context (section 4) to build the random forest, with the same predictors and the same association for time-dependent predictors.
+
+\begin{verbatim}
+timeData_train <- pbc2_train[, c("id", "time", "serBilir", "SGOT", "albumin", "alkaline")]
+timeVarModel <- list(
+  serBilir = list(fixed = serBilir ~ time, random = ~time),
+  SGOT = list(fixed = SGOT ~ time + I(time^2), random = ~ time + I(time^2)),
+  albumin = list(fixed = albumin ~ time, random = ~time),
+  alkaline = list(fixed = alkaline ~ time, random = ~time)
+)
+fixedData_train <- unique(pbc2_train[, c("id", "age", "drug", "sex")])
+\end{verbatim}
+
+With a categorical outcome, the definition of the output object is slightly different. We should specify \texttt{type}=``factor'' to define the outcome as categorical, and the dataframe in \texttt{Y} should contain only 2 columns, the variable identifier \texttt{id} and the outcome \texttt{event}.
+
+\begin{verbatim}
+Y <- list(
+  type = "factor",
+  Y = unique(pbc2_train[, c("id", "event")])
+)
+\end{verbatim}
+
+\subsection{The random forest building}\label{the-random-forest-building}
+
+We executed the \texttt{dynforest()} function to build the random forest with hyperparameters \texttt{mtry} = 7 and \texttt{nodesize} = 2 as follows:
+
+\begin{verbatim}
+res_dyn <- dynforest(
+  timeData = timeData_train,
+  fixedData = fixedData_train,
+  timeVar = "time", idVar = "id",
+  timeVarModel = timeVarModel,
+  mtry = 7, nodesize = 2,
+  Y = Y, ncores = 7, seed = 1234
+)
+\end{verbatim}
+
+\subsection{Out-Of-Bag error}\label{out-of-bag-error-1}
+
+With a categorical outcome, the OOB prediction error is evaluated using a misclassification criterion. This criterion can be computed with the \texttt{compute\_ooberror()} function and the results of the random forest can be displayed using \texttt{summary()}:
+
+\begin{verbatim}
+res_dyn_OOB <- compute_ooberror(dynforest_obj = res_dyn)
+\end{verbatim}
+
+\begin{verbatim}
+summary(res_dyn_OOB)
+\end{verbatim}
+
+\begin{verbatim}
+#> dynforest executed for categorical outcome 
+#>  Splitting rule: Minimize weighted within-group Shannon entropy 
+#>  Out-of-bag error type: Missclassification 
+#>  Leaf statistic: Majority vote 
+#> ---------------- 
+#> Input 
+#>  Number of subjects: 150 
+#>  Longitudinal: 4 predictor(s) 
+#>  Numeric: 1 predictor(s) 
+#>  Factor: 2 predictor(s) 
+#> ---------------- 
+#> Tuning parameters 
+#>  mtry: 7 
+#>  nodesize: 2 
+#>  ntree: 200 
+#> ---------------- 
+#> ---------------- 
+#> dynforest summary 
+#>  Average depth per tree: 5.89 
+#>  Average number of leaves per tree: 16.81 
+#>  Average number of subjects per leaf: 5.72 
+#> ---------------- 
+#> Out-of-bag error based on Missclassification 
+#>  Out-of-bag error: 0.2333 
+#> ---------------- 
+#> Computation time 
+#>  Number of cores used: 7 
+#>  Time difference of 2.87888 mins
+#> ----------------
+\end{verbatim}
+
+In this illustration, we built the random forest using 150 subjects because we only kept the subjects still at risk at the landmark time at 4 years and split the dataset in \(2/3\) for training and \(1/3\) for testing. We have on average 5.7 subjects per leaf, and the average depth level per tree is 5.9. This random forest predicted the wrong outcome for 23\% of the subjects. The random forest performance can be optimized by choosing the \texttt{mtry} and \texttt{nodesize} hyperparameters that minimize the OOB misclassification.
+
+\subsection{Prediction of the outcome}\label{prediction-of-the-outcome}
+
+We can predict the probability of death between 4 and 10 years for subjects still at risk at the landmark time at 4 years. In classification mode, the predictions are performed using the majority vote. The prediction over the trees is thus a category of the outcome along with the proportion of the trees that lead to this category. Predictions are computed using the \texttt{predict()} function, then a dataframe can be easily built from the returning object to get the prediction and probability of the outcome for each subject:
+
+\begin{verbatim}
+timeData_pred <- pbc2_pred[, c("id", "time", "serBilir", "SGOT", "albumin", "alkaline")]
+fixedData_pred <- unique(pbc2_pred[, c("id", "age", "drug", "sex")])
+pred_dyn <- predict(
+  object = res_dyn,
+  timeData = timeData_pred,
+  fixedData = fixedData_pred,
+  idVar = "id", timeVar = "time",
+  t0 = 4
+)
+\end{verbatim}
+
+\begin{verbatim}
+head(data.frame(
+  pred = pred_dyn$pred_indiv,
+  proba = pred_dyn$pred_indiv_proba
+))
+\end{verbatim}
+
+\begin{verbatim}
+#>     pred proba
+#> 101    0 0.945
+#> 104    0 0.790
+#> 106    1 0.600
+#> 108    0 0.945
+#> 112    1 0.575
+#> 114    0 0.650
+\end{verbatim}
+
+As shown in this example, some predictions are made with varying confidence from 57.5\% for subject 112 to 94.5\% for subject 101. We predict, for instance, no event for subject 101 with a probability of 94.5\% and an event for subject 106 with a probability of 60.0\%.
+
+\subsection{Predictiveness variables}\label{predictiveness-variables}
+
+\subsubsection{Variable importance}\label{variable-importance-2}
+
+The most predictive variables can be identified using the \texttt{compute\_vimp()} function and displayed using the \texttt{plot()} function as follows:
+
+\begin{verbatim}
+res_dyn_VIMP <- compute_vimp(dynforest_obj = res_dyn_OOB, seed = 123)
+plot(res_dyn_VIMP, PCT = TRUE)
+\end{verbatim}
+
+Again, we found that the most predictive variable is \texttt{serBilir}. When perturbing \texttt{serBilir}, the OOB prediction error was increased by 15\%.
+
+\subsubsection{Minimal depth}\label{minimal-depth-2}
+
+The minimal depth is computed using the \texttt{compute\_vardepth()} function and is displayed at predictor and feature levels using the \texttt{plot()} function. The results are displayed in figure \ref{fig:DynForestRfactormindepth} using the random forest with maximal \texttt{mtry} hyperparameter value (i.e., \texttt{mtry} = 7) for a better understanding.
+
+\begin{verbatim}
+depth_dyn <- compute_vardepth(dynforest_obj = res_dyn_OOB)
+p1 <- plot(depth_dyn, plot_level = "predictor")
+\end{verbatim}
+
+\begin{verbatim}
+p2 <- plot(depth_dyn, plot_level = "feature")
+\end{verbatim}
+
+\begin{verbatim}
+plot_grid(p1, p2, labels = c("A", "B"))
+\end{verbatim}
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.8\linewidth,height=0.3\textheight]{main_files/figure-latex/DynForestRfactormindepth-1} 
+
+}
+
+\caption{Average minimal depth by predictor (A) and feature (B).}\label{fig:DynForestRfactormindepth}
+\end{figure}
+
+We observe that \texttt{serBilir} and \texttt{albumin} have the lowest minimal depth and are used to split the subjects in almost all the trees (199 and 196 out of 200 trees, respectively) (figure \ref{fig:DynForestRfactormindepth}A). Figure \ref{fig:DynForestRfactormindepth}B provides further results. In particular, this graph shows that the random intercept (indicated by bi0) of \texttt{serBilir} and \texttt{albumin} are the earliest predictors used to split the subjects and are present in 192 and 191 out of 200 trees, respectively.
+
+\section{Discussion}\label{discussion}
+
+The \CRANpkg{DynForest} R package provides an easy-to-use random forests methodology for predictors that may contain longitudinal variables possibly measured irregularly with error. Note that the method can also be used without any longitudinal predictors, as in other random forests packages.
+
+We implemented several statistics to identify the predictive ability of each variable with the VIMP, gVIMP and average minimal depth. For the survival outcome, compared to the \CRANpkg{randomForestSRC} R package, we considered two different stopping criteria \texttt{nodesize} and \texttt{minsplit} to favor the deepest forests possible and avoid suboptimal splits. We designed \CRANpkg{DynForest} to be as user-friendly as possible. To achieve that, we implemented various functions to summarize and display the results, and provided a step-by-step analysis in survival and categorical modes. As \CRANpkg{DynForest} involves mixed models to be updated within each tree building, the program can be numerically demanding despite efforts to speed up computations (parallel computing, history of previous estimations). A substantial computational burden is especially expected when the sample is very large and/or a very large set of time-dependent predictors is considered.
+
+Several improvements could be considered in the future. We used linear mixed models for longitudinal continuous outcomes, but alternative strategies could be considered such as the PACE algorithm \citep{yao_functional_2005} based on functional data analysis. We could also consider different natures of longitudinal predictors (e.g., binary) for which generalized linear mixed models could be used. \CRANpkg{DynForest} currently handles continuous, categorical and survival (with possibly competing events) outcomes. But other outcomes could be envisaged such as curves, recurrent events or interval-censored time-to-events. We leave these perspectives for future releases.
+
+\section*{Computational details}\label{computational-details}
+\addcontentsline{toc}{section}{Computational details}
+
+The results in this paper were obtained using R 4.4.1 with the \CRANpkg{DynForest} 1.2.0 package on a virtualized Windows Server 2016 Remote Desktop Server with 48GB RAM. R itself and all packages used are available from the Comprehensive R Archive Network (CRAN) at \url{https://CRAN.R-project.org/}.
+
+\section*{Acknowledgments}\label{acknowledgments}
+\addcontentsline{toc}{section}{Acknowledgments}
+
+We thank Dr.~Louis Capitaine for FrechForest R code used in \CRANpkg{DynForest}.
+
+This work was funded by the French National Research Agency (ANR-18-CE36-0004-01 for project DyMES), and the French government in the framework of the PIA3 (``Investment for the future'') (project reference 17-EURE-0019) and in the framework of the University of Bordeaux's IdEx ``Investments for the Future'' program / RRI PHDS.
+
+\bibliography{RJreferences.bib}
+
+\address{%
+Anthony Devaux\\
+Inserm U1219 - Bordeaux Population Health - Université de Bordeaux - The George Institute for Global Health - UNSW Sydney - School of Population Health - UNSW Sydney\\%
+Bordeaux (France) - Sydney (Australia)\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-8862-4218}{0000-0002-8862-4218}}\\%
+\href{mailto:anthony.devauxbarault@gmail.com}{\nolinkurl{anthony.devauxbarault@gmail.com}}%
+}
+
+\address{%
+Cécile Proust-Lima\\
+Inserm U1219 - Bordeaux Population Health - Université de Bordeaux\\%
+Bordeaux (France)\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-9884-955X}{0000-0002-9884-955X}}\\%
+%
+}
+
+\address{%
+Robin Genuer\\
+Inserm U1219 - Bordeaux Population Health - Université de Bordeaux\\%
+Bordeaux (France)\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-0981-3943}{0000-0002-0981-3943}}\\%
+%
+}
