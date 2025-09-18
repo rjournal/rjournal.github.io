@@ -28,7 +28,7 @@ knitr::include_graphics("figures/penalized_geo2_1.png")
 knitr::include_graphics("figures/penalized_geo.png")
 
 
-## ----echo = FALSE-------------------------------------------------------------
+## ----pakcage-functions, echo = FALSE------------------------------------------
 library(knitr)
 library(kableExtra)
 
