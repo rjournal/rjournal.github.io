@@ -1,0 +1,831 @@
+% !TeX root = RJwrapper.tex
+\title{SimEngine: A Modular Framework for Statistical Simulations in R}
+\author{by Avi Kenny and Charles J. Wolock}
+
+\maketitle
+
+\begin{abstract}
+This article describes \CRANpkg{SimEngine}, an open-source R package for structuring, maintaining, running, and debugging statistical simulations on both local and cluster-based computing environments. Several R packages exist for facilitating simulations, but \CRANpkg{SimEngine} is the only package specifically designed for running simulations in parallel via job schedulers on high-performance cluster computing systems. The package provides structure and functionality for common simulation tasks, such as setting simulation levels, managing seeds for random number generation, and calculating summary metrics (such as bias and confidence interval coverage). \CRANpkg{SimEngine} also brings several unique features, such as automatic calculation of Monte Carlo error and information sharing across simulation replicates. We provide an overview of the package and demonstrate some of its advanced functionality.
+\end{abstract}
+
+\section[Introduction]{Introduction} \label{sec:intro}
+
+For the past several decades, the design and execution of simulation studies has been a pillar of methodological research in statistics \citep{hauck1984survey}. Simulations are commonly used to evaluate finite sample performance of proposed statistical procedures, but can also be used to identify problems with existing methods, ensure that statistical code functions as designed, and test out new ideas in an exploratory manner. Additionally, simulation can be a statistical method in itself; two common examples are study power calculation \citep{arnold2011simulation} and sampling from a complex distribution \citep{wakefield2013bayesian}.
+
+Although the power of personal computers has increased exponentially over the last four decades, many simulation studies require far more computing power than what is available on even a high-end laptop. Accordingly, many academic (bio)statistics departments and research institutions have invested in so-called cluster computing systems (CCS), which are essentially networks of servers available for high-throughput parallel computation. A single CCS typically serves many researchers, can be securely accessed remotely, and operates job scheduling software (e.g., Slurm) designed to coordinate the submission and management of computing tasks between multiple groups of users.
+
+Thankfully, the majority of statistical simulations can be easily parallelized, since they typically involve running the same (or nearly the same) code many times and then performing an analysis of the results of these replicates. This allows for a simulation study to be done hundreds or thousands of times faster than if the user ran the same code on their laptop. Despite this, many potential users never leverage an available CCS; a major reason for this is that it can be difficult to get R and the CCS to ``work together,'' even for an experienced programmer.
+
+To address this gap, we created \CRANpkg{SimEngine}, an open-source R package \citep{Rsoftware} for structuring, maintaining, running, and debugging statistical simulations on both local and cluster-based computing environments. Several R packages exist for structuring simulations (see Section \ref{sec:discussion}); however, \CRANpkg{SimEngine} is the only package specifically designed for running simulations both locally and in parallel on a high-performance CCS. The package provides structure and functionality for common simulation tasks, such as setting simulation levels, managing random number generator (RNG) seeds, and calculating summary metrics (such as bias and confidence interval coverage). In addition, \CRANpkg{SimEngine} offers a number of unique features, such as automatic calculation of Monte Carlo error \citep{koehler2009assessment} and information sharing across simulation replicates.
+
+This article is organized as follows. In Section \ref{sec:design}, we outline the overarching design principles of the package. In Section \ref{sec:overview}, we give a broad overview of the \CRANpkg{SimEngine} simulation workflow. In Section \ref{sec:parallel}, we describe how simulations can be parallelized both locally and on a CCS. Section \ref{sec:advanced} contains details on advanced functionality of the package. The Appendix includes two example simulation studies carried out using \CRANpkg{SimEngine}.
+
+\section{Design principles} \label{sec:design}
+
+There are four main principles that guided the design of \CRANpkg{SimEngine}, which we refer to as (1) generality, (2) modularity, (3) parallelizability, and (4) appropriate scope. We discuss each in turn.
+
+The first principle is \textit{generality}. Many simulation frameworks assume that users will have a particular type of workflow that involves a data generation step, an analysis step, and an evaluation step. This three-step workflow is common --- in fact, we use it to illustrate the use of the package in the introductory documentation --- but we also do not want to impose this workflow on the user and disallow other possible workflows. In \CRANpkg{SimEngine}, instead of providing facilities for the user to specify a data-generating step, an analysis step, and an evaluation step, the user writes R code representing a single simulation replicate within a special function called the \textit{simulation script}. This imposes virtually no constraints on what the user is able to do within their simulations, and allows for workflows that cannot be shoehorned into this three-step process, such as simulations involving resampling from existing datasets, complex data transformations, saving intermediate objects or plots, and so on. The only requirement of the simulation script is that it returns data in a specific format (to facilitate processing of results), but this format is completely general and allows for arbitrarily complex objects (matrices, dataframes, model objects, etc.) to be returned in addition to simple numeric values.
+
+The second principle is \textit{modularity}. In short, it should be simple and straightforward to change one component of a simulation without breaking other components, such as adding a new estimator or changing a sample size. Additionally, it should be easy to run additional simulation replicates, possibly with certain elements changed, without having to rerun the entire simulation. Finally, the step of evaluating the results of a simulation should be completely separated from the step of actually running the simulation replicates. This implies that a user does not need to decide in advance how they are going to summarize or visualize their results, and that they can calculate new summary statistics, produce new visualizations, and otherwise process their simulation results in an exploratory manner, possibly long after the simulation itself has been run. In short, we designed \CRANpkg{SimEngine} to mirror the real-world workflow of statistical simulations, in which researchers often make small changes in response to new ideas or results.
+
+The third principle is \textit{parallelizability}. As mentioned in Section \ref{sec:intro}, a primary reason for creating \CRANpkg{SimEngine} was to build a package that encapsulated the repetitive tasks related to both local and CCS parallelization. We have seen firsthand that many statistical researchers run time-consuming simulations serially on their laptops because the barrier to entry for parallelizing code, particularly on a CCS, is daunting. It is our hope that making parallelization as easy as possible will allow researchers to easily leverage parallelization hardware and boost productivity.
+
+The fourth principle is \textit{appropriate scope}. We designed \CRANpkg{SimEngine} to \textit{only} provide functionality related to simulations. While some other packages provide functionality to plot results, for example, we intentionally choose to not do so, since all analysts have their own preferences when it comes to displaying data. Similarly, unlike many packages, we do not provide functionality to generate certain data structures, since this would bloat the package and still only satisfy the needs of a small handful of users.
+
+Finally, although not a software design principle per se, an additional goal of \CRANpkg{SimEngine} was to create documentation that assumes as little statistical knowledge as possible. Different statisticians have different areas of background knowledge, and we wanted to avoid having potential users sidetracked by trying to understand the statistics of a particular example rather than understand the functions and workflow of \CRANpkg{SimEngine}. Accordingly, we strove to create the simplest possible illustrations and examples in the package documentation. In general, we aimed to make the documentation as comprehensive and accessible as possible, while remaining concise and minimizing the barriers to entry.
+
+\section{Overview of simulation workflow and primary functions} \label{sec:overview}
+
+The latest stable version of \CRANpkg{SimEngine} can be installed from CRAN using \code{install.packages}. The current development version can be installed using \code{devtools::install\_github}.
+
+% Chunk 3.0.1
+\begin{example}
+R> install.packages("SimEngine")
+R> devtools::install_github(repo="Avi-Kenny/SimEngine")
+\end{example}
+
+The goal of many statistical simulations is to compare the behavior of two or more statistical methods; we use this framework to demonstrate the \CRANpkg{SimEngine} workflow. Most statistical simulations of this type include three basic phases: (1) generate data, (2) run one or more methods using the generated data, and (3) compare the performance of the methods.
+
+To briefly illustrate how these phases are implemented using \CRANpkg{SimEngine}, we use a simple example of estimating the rate parameter $\lambda$ of a $\text{Poisson}(\lambda)$ distribution. To anchor the simulation in a real-world situation, one can imagine that a sample of size $n$ from this Poisson distribution models the number of patients admitted daily to a hospital over the course of $n$ consecutive days. Suppose that the data consist of $n$ independent and identically distributed observations $X_1, X_2, \ldots, X_n$ drawn from a Poisson($\lambda$) distribution. Since the $\lambda$ parameter of the Poisson distribution is equal to both the mean and the variance, one may ask whether the sample mean $\hat{\lambda}_{M,n}:= \frac{1}{n}\sum_{i=1}^{n}X_i$ or the sample variance $\hat{\lambda}_{V,n} := \frac{1}{n-1}\sum_{i=1}^{n}(X_i - \hat{\lambda}_{M,n})^2$ is a better estimator of $\lambda$.
+
+\subsection{Load the package and create a simulation object}
+
+After loading the package, the first step is to create a simulation object (an R object of class \code{sim\_obj}) using the \code{new\_sim} function. The simulation object contains all data, functions, and results related to the simulation.
+
+% Chunk 3.1.1
+\begin{example}
+R> library(SimEngine)
+R> set.seed(1)
+R> sim <- new_sim()
+\end{example}
+
+\subsection{Code a function to generate data}
+
+Many simulations involve a function that creates a dataset designed to mimic a real-world data-generating mechanism. Here, we write and test a simple function to generate a sample of \code{n} observations from a Poisson distribution with $\lambda = 20$.
+
+% Chunk 3.2.1
+\begin{example}
+R> create_data <- function(n) {
++    return(rpois(n=n, lambda=20))
++  }
+R> create_data(n=10)
+ [1] 18 25 25 21 13 22 23 22 18 26
+\end{example}
+
+\subsection{Code the methods (or other functions)}
+
+With \CRANpkg{SimEngine}, any functions declared (or loaded via \code{source}) are automatically stored in the simulation object when the simulation runs. In this example, we test the sample mean and sample variance estimators of the $\lambda$ parameter. For simplicity, we write this as a single function and use the \code{type} argument to specify which estimator to use.
+
+% Chunk 3.3.1
+\begin{example}
+R> est_lambda <- function(dat, type) {
++    if (type=="M") { return(mean(dat)) }
++    if (type=="V") { return(var(dat)) }
++  }
+R> dat <- create_data(n=1000)
+R> est_lambda(dat=dat, type="M")
+[1] 19.646
+R> est_lambda(dat=dat, type="V")
+[1] 20.8195
+\end{example}
+
+\subsection{Set the simulation levels}
+
+Often, we wish to run the same simulation multiple times. We refer to each run as a \textit{simulation replicate}. We may wish to vary certain features of the simulation between replicates. In this example, perhaps we choose to vary the sample size and the estimator used to estimate $\lambda$. We refer to the features that vary as \textit{simulation levels}; in the example below, the simulation levels are the sample size (\code{n}) and the estimator (\code{estimator}). We refer to the values that each simulation level can take on as \textit{level values}; in the example below, the \code{n} level values are \code{10}, \code{100}, and \code{1000}, and the \code{estimator} level values are \code{``M''} (for ``sample mean'') and \code{``V''} (for ``sample variance''). We also refer to a combination of level values as a \textit{scenario}; in this example, the combination of \code{n=10} and \code{estimator=``M''} is one of the six possible scenarios defined by the two values of \code{n} and the three values of \code{estimator}. By default, \CRANpkg{SimEngine} runs one simulation replicate for each scenario, although the user will typically want to increase this; 1,000 or 10,000 replicates per scenario is common. An appropriate number of replicates per scenario may be informed by the desired level of Monte Carlo error; see Section \ref{sec:mc error}.
+
+% Chunk 3.4.1
+\begin{example}
+R> sim %<>% set_levels(
++    estimator = c("M", "V"),
++    n = c(10, 100, 1000)
++  )
+\end{example}
+
+Note that we make extensive use of the pipe operators (\code{\%>\%} and \code{\%<>\%}) from the \CRANpkg{magrittr} package \citep{bache2022magrittr}. Briefly, the operator \code{\%>\%} takes the object to the left of the operator and ``pipes'' it to (the first argument of) the function to the right of the operator; the operator \code{\%<>\%} does the same thing, but then assigns the result back to the variable to the left of the operator. For example, \code{x \%>\% mean()} is equivalent to \code{mean(x)} and \code{x \%<>\% mean()} is equivalent to \code{x <- mean(x)}. See the \CRANpkg{magrittr} documentation for further detail.
+
+\subsection{Create a simulation script}
+
+The simulation script is a user-written function that assembles the pieces above (generating data, analyzing the data, and returning results) to code the flow of a single simulation replicate. Within a script, the level values for the current scenario can be referenced using the special variable \code{L}. For instance, in the running example, when the first simulation replicate is running, \code{L\$estimator} will equal \code{``M''} and \code{L\$n} will equal \code{10}. In the next replicate, \code{L\$estimator} will equal \code{``M''} and \code{L\$n} will equal \code{100}, and so on. The simulation script will automatically have access to any functions or objects that have been declared in the global environment.
+
+% Chunk 3.5.1
+\begin{example}
+R> sim %<>% set_script(function() {
++    dat <- create_data(n=L$n)
++    lambda_hat <- est_lambda(dat=dat, type=L$estimator)
++    return (list("lambda_hat"=lambda_hat))
++  })
+\end{example}
+
+The simulation script should always return a list containing one or more key-value pairs, where the keys are syntactically valid names. The values may be simple data types (numbers, character strings, or boolean values) or more complex data types (lists, dataframes, model objects, etc.); see Section \ref{ssec_complex} for how to handle complex data types. Note that in this example, the estimators could have been coded instead as two different functions and then called from within the script using the \code{use\_method} function.
+
+\subsection{Set the simulation configuration}
+
+The \code{set\_config} function controls options related to the entire simulation, such as the number of simulation replicates to run for each scenario and the parallelization type, if desired (see Section \ref{sec:parallel}). Packages needed for the simulation should be specified using the \code{packages} argument of \code{set\_config} (rather than using \code{library} or \code{require}). We set \code{num\_sim} to 100, and so \CRANpkg{SimEngine} will run a total of 600 simulation replicates (100 for each of the six scenarios).
+
+% Chunk 3.6.1
+\begin{example}
+R> sim %<>% set_config(
++    num_sim = 100,
++    packages = c("ggplot2", "stringr")
++  )
+\end{example}
+
+\subsection{Run the simulation}
+
+All 600 replicates are run at once and results are stored in the simulation object.
+
+% Chunk 3.7.1
+\begin{example}
+R> sim %<>% run()
+  |########################################| 100%
+Done. No errors or warnings detected.
+\end{example}
+
+\subsection{View and summarize results}
+
+Once the simulation replicates have finished running, the \code{summarize} function can be used to calculate common summary statistics, such as bias, variance, mean squared error (MSE), and confidence interval coverage.
+
+% Chunk 3.8.1
+\begin{example}
+R> sim %>% summarize(
++    list(stat="bias", name="bias_lambda", estimate="lambda_hat", truth=20),
++    list(stat="mse", name="mse_lambda", estimate="lambda_hat", truth=20)
++  )
+  level_id estimator    n n_reps bias_lambda   mse_lambda
+1        1         M   10    100 -0.17600000   1.52480000
+2        2         V   10    100 -1.80166667 103.23599630
+3        3         M  100    100 -0.03770000   0.19165100
+4        4         V  100    100  0.22910707   7.72262714
+5        5         M 1000    100  0.01285000   0.01553731
+6        6         V 1000    100  0.02514744   0.92133037
+\end{example}
+
+In this example, we see that the MSE of the sample variance is much higher than that of the sample mean and that MSE decreases with increasing sample size for both estimators, as expected. From the \code{n\_reps} column, we see that 100 replicates were successfully run for each scenario. Results for individual simulation replicates can also be directly accessed via the \code{sim\$results} dataframe.
+
+% Chunk 3.8.2
+\begin{example}
+R> head(sim$results)
+  sim_uid level_id rep_id estimator  n      runtime lambda_hat
+1       1        1      1         M 10 0.0003290176       20.1
+2       7        1      2         M 10 0.0002038479       20.5
+3       8        1      3         M 10 0.0001709461       17.3
+4       9        1      4         M 10 0.0001630783       20.3
+5      10        1      5         M 10 0.0001599789       18.3
+6      11        1      6         M 10 0.0001561642       20.4
+\end{example}
+
+Above, the \code{sim\_uid} uniquely identifies a single simulation replicate and the \code{level\_id} uniquely identifies a scenario (i.e., a combination of level values). The \code{rep\_id} is unique within a given scenario and identifies the index of that replicate within the scenario. The \code{runtime} column shows the runtime of each replicate (in seconds).
+
+\subsection{Update a simulation}\label{ssec_update}
+
+After running a simulation, a user may want to update it by adding additional level values or replicates; this can be done with the \code{update\_sim} function. Prior to running \code{update\_sim}, the functions \code{set\_levels} and/or \code{set\_config} are used to declare the updates that should be performed. For example, the following code sets the total number of replicates to 200 (i.e., adding 100 replicates to those that have already been run) for each scenario, and adds one additional level value for \code{n}.
+
+% Chunk 3.9.1
+\begin{example}
+R> sim %<>% set_config(num_sim = 200)
+R> sim %<>% set_levels(
++    estimator = c("M", "V"),
++    n = c(10, 100, 1000, 10000)
++  )
+\end{example}
+
+After the levels and/or configuration are updated, \code{update\_sim} is called.
+
+% Chunk 3.9.2
+\begin{example}
+R> sim %<>% update_sim()
+  |########################################| 100%
+Done. No errors or warnings detected.
+\end{example}
+
+Another call to \code{summarize} shows that the additional replicates were successful:
+
+% Chunk 3.9.3
+\begin{example}
+R> sim %>% summarize(
++    list(stat="bias", name="bias_lambda", estimate="lambda_hat", truth=20),
++    list(stat="mse", name="mse_lambda", estimate="lambda_hat", truth=20)
++  )
+  level_id estimator     n n_reps  bias_lambda   mse_lambda
+1        1         M    10    200 -0.205500000  1.875450000
+2        2         V    10    200 -1.189166667 96.913110494
+3        3         M   100    200 -0.055000000  0.197541000
+4        4         V   100    200  0.023244949  7.955606709
+5        5         M  1000    200  0.017495000  0.017497115
+6        6         V  1000    200  0.053941807  0.874700025
+7        7         M 10000    200 -0.005233000  0.002096102
+8        8         V 10000    200 -0.007580998  0.072997135
+\end{example}
+
+It is also possible to delete level values. However, it is not possible to add or delete \textit{levels}, as this would require updating the simulation script after the simulation has already run, which is not allowed.
+
+\section{Parallelization}\label{sec:parallel}
+
+User-friendly parallelization is a hallmark of \CRANpkg{SimEngine}. There are two modes of parallelizing code using \CRANpkg{SimEngine}, which we refer to as \textit{local parallelization} and \textit{cluster parallelization}. Local parallelization refers to splitting the computational work of a simulation between multiple cores of a single computer (e.g., a multicore laptop). Cluster parallelization refers to running a simulation on a CCS using job arrays. \CRANpkg{SimEngine} is designed to automate as much of the parallelization process as possible. We give an overview of each parallelization mode below.
+
+\subsection{Local parallelization}
+Local parallelization is the easiest way to parallelize code, as the entire process is handled by the package and executed on the user's computer. This mode is activated using \code{set\_config}, as follows.
+
+% Chunk 4.1.1
+\begin{example}
+R> sim <- new_sim()
+R> sim %<>% set_config(parallel = TRUE)
+\end{example}
+
+\CRANpkg{SimEngine} handles the mechanics related to parallelization internally using the base R package \CRANpkg{parallel} \citep{Rsoftware}. If a single simulation replicate runs in a very short amount of time (e.g., less than one second), using local parallelization can actually result in an \textit{increase} in total runtime. This is because there is a certain amount of computational overhead involved in the parallelization mechanisms inside \CRANpkg{SimEngine}. A speed comparison can be performed by running the code twice, once with \code{set\_config(parallel = TRUE)} and once with \code{set\_config(parallel = FALSE)}, each followed by \code{sim \%>\% vars("total\_runtime")}, to see the difference in total runtime. The exact overhead involved with local parallelization will differ between machines. A simple example of a speed comparison is given below:
+
+% Chunk 4.1.1b
+\begin{example}
+R> for (p in c(FALSE, TRUE)) {
++    sim <- new_sim()
++    sim %<>% set_config(num_sim=20, parallel=p)
++    sim %<>% set_script(function() {
++      Sys.sleep(1)
++      return (list("x"=1))
++    })
++    sim %<>% run()
++    print(paste("Parallelizing:", p))
++    print(sim %>% vars("total_runtime"))
+}
+  |########################################| 100%
+Done. No errors or warnings detected.
+
+[1] "Parallelizing: FALSE"
+[1] 20.42414
+Done. No errors or warnings detected.
+
+[1] "Parallelizing: TRUE"
+[1] 4.41772
+\end{example}
+
+Removing the line \code{Sys.sleep(1)} and rerunning the code above can give a sense of the amount of overhead time incurred for a given simulation and hardware configuration. If the user's computer has \code{n} cores available, \CRANpkg{SimEngine} will use \code{n-1} cores by default. The \code{n\_cores} argument of \code{set\_config} can be used to manually specify the number of cores to use, as follows.
+
+% Chunk 4.1.2
+\begin{example}
+R> sim %<>% set_config(n_cores = 2)
+\end{example}
+
+\subsection{Cluster parallelization}
+
+Parallelizing code using a CCS is more complicated, but \CRANpkg{SimEngine} is built to streamline this process as much as possible. A CCS is a supercomputer that consists of a number of nodes, each of which may have multiple cores. Typically, a user logs into the CCS and runs programs by submitting ``jobs'' to the CCS using a special program called a job scheduler. The job scheduler manages the process of running the jobs in parallel across multiple nodes and/or multiple cores. Although there are multiple ways to run code in parallel on a CCS, \CRANpkg{SimEngine} makes use of job arrays. The main cluster parallelization function in \CRANpkg{SimEngine} is \code{run\_on\_cluster}. Throughout this example, we use Slurm as an example job scheduler, but an analogous workflow will apply to other job scheduling software.
+
+To illustrate the cluster parallelization workflow, consider the simulation from Section \ref{sec:overview}.
+
+% Chunk 4.2.1
+\begin{example}
+R> sim <- new_sim()
+R> create_data <- function(n) { return(rpois(n=n, lambda=20)) }
+R> est_lambda <- function(dat, type) {
++    if (type=="M") { return(mean(dat)) }
++    if (type=="V") { return(var(dat)) }
++  }
+R> sim %<>% set_levels(estimator = c("M","V"), n = c(10,100,1000))
+R> sim %<>% set_script(function() {
++    dat <- create_data(L$n)
++    lambda_hat <- est_lambda(dat=dat, type=L$estimator)
++    return(list("lambda_hat"=lambda_hat))
++  })
+R> sim %<>% set_config(num_sim=100)
+R> sim %<>% run()
+R> sim %>% summarize()
+\end{example}
+
+To run this code on a CCS, we simply wrap it in the \code{run\_on\_cluster} function. To use this function, we must break the code into three blocks, called \code{first}, \code{main}, and \code{last}. The code in the \code{first} block will run only once, and will set up the simulation object. When this is finished, \CRANpkg{SimEngine} will save the simulation object in the filesystem of the CCS. The code in the \code{main} block will then run once for each simulation replicate, and will have access to the simulation object created in the \code{first} block. In most cases, the code in the \code{main} block will simply include a single call to \code{run} (or to \code{update\_sim}, as detailed below). Finally, the code in the \code{last} block will run after all simulation replicates have finished running, and after \CRANpkg{SimEngine} has automatically compiled the results into the simulation object. Use of the \code{run\_on\_cluster} function is illustrated below:
+
+% Chunk 4.2.2
+\begin{example}
+R> run_on_cluster(
++    first = {
++      sim <- new_sim()
++      create_data <- function(n) { return(rpois(n=n, lambda=20)) }
++      est_lambda <- function(dat, type) {
++        if (type=="M") { return(mean(dat)) }
++        if (type=="V") { return(var(dat)) }
++      }
++      sim %<>% set_levels(estimator = c("M","V"), n = c(10,100,1000))
++      sim %<>% set_script(function() {
++        dat <- create_data(L$n)
++        lambda_hat <- est_lambda(dat=dat, type=L$estimator)
++        return(list("lambda_hat"=lambda_hat))
++      })
++      sim %<>% set_config(num_sim=100, n_cores=20)
++    },
++    main = {
++      sim %<>% run()
++    },
++    last = {
++      sim %>% summarize()
++    },
++    cluster_config = list(js="slurm")
++  )
+\end{example}
+
+Note that none of the actual simulation code changed (with the exception of specifying \code{n\_cores=20} in the \code{set\_config} call); we simply divided the code into chunks and placed these chunks into the appropriate block (\code{first}, \code{main}, or \code{last}) within \code{run\_on\_cluster}. Additionally, we specified which job scheduler to use in the \code{cluster\_config} argument list. The command \code{js\_support} can be run in R to see a list of supported job scheduler software; the value in the \code{js\_code} column is the value that should be specified in the \code{cluster\_config} argument. Unsupported job schedulers can still be used for cluster parallelization, as detailed below. Note that the \code{cluster\_config} argument can also be used to specify which folder on the cluster should be used to store the simulation object and associated simulation files (the default is the working directory).
+
+Next, we must give the job scheduler instructions on how to run the above code. In the following, we assume that the R code above is stored in a file called \code{my\_simulation.R}. We also need to create a simple shell script called \code{run\_sim.sh} with the following two lines, which will run \code{my\_simulation.R} (we demonstrate this using BASH scripting language, but any shell scripting language may be used).
+
+% Chunk 4.2.3
+\begin{example}
+> #!/bin/bash
+> Rscript my_simulation.R
+\end{example}
+
+If created on a local machine, the two simulation files (\code{my\_simulation.R} and \code{run\_sim.sh}) must be transferred to the filesystem of the CCS. Finally, we use the job scheduler to submit three jobs. The first will run the \code{first} code, the second will run the \code{main} code, and the third will run the \code{last} code. With Slurm, we run the following three shell commands:
+
+% Chunk 4.2.4
+\begin{example}
+> sbatch --export=sim_run='first' run_sim.sh
+Submitted batch job 101
+> sbatch --export=sim_run='main' --array=1-20 --depend=afterok:101 run_sim.sh
+Submitted batch job 102
+> sbatch --export=sim_run='last' --depend=afterok:102 run_sim.sh
+Submitted batch job 103
+\end{example}
+
+In the first line, we submit the \code{run\_sim.sh} script using the \code{sim\_run=`first'} environment variable, which tells \CRANpkg{SimEngine} to only run the code in the \code{first} block. After running this, Slurm returns the message \code{Submitted batch job 101}. The number \code{101} is called the ``job ID'' and uniquely identifies the job on the CCS.
+
+In the second line, we submit the \code{run\_sim.sh} script using the \code{sim\_run=`main'} environment variable and tell Slurm to run a job array with ``task IDs'' 1-20. Each task corresponds to one core, and so in this case 20 cores will be used. This number should equal the \code{n\_cores} number specified via \code{set\_config}. \CRANpkg{SimEngine} handles the work of dividing the simulation replicates between the cores; the only restriction is that the number of cores cannot exceed the total number of simulation replicates.
+
+Also note that we included the option \code{--depend=afterok:101}, which instructs the job scheduler to wait until the first job finishes before starting the job array. (In practice, the number 101 must be replaced with whatever job ID Slurm assigned to the first job.) Once this command is submitted, the code in the \code{main} block will be run for each replicate. A temporary folder called \code{sim\_results} will be created and filled with temporary objects containing data on the results and/or errors for each replicate.
+
+In the third line, we submit the \code{run\_sim.sh} script using the \code{sim\_run='last'} environment variable. Again, we use \code{--depend=afterok:102} to ensure this code does not run until all tasks in the job array have finished. When this job runs, \CRANpkg{SimEngine} will compile the results from the \code{main} block, run the code in the \code{last} block, save the simulation object to the filesystem, and delete the temporary \code{sim\_results} folder and its contents. If desired, the user can leave the \code{last} block empty, but this third \code{sbatch} command should be run anyway to compile the results and save the simulation object for further analysis.
+
+\subsubsection{Further automating job submission}
+
+Advanced users may wish to automatically capture the job IDs so that they don't need to be entered manually; sample code showing how this can be done is shown below:
+
+% Chunk 4.2.4b
+\begin{example}
+> jid1=$(sbatch --export=sim_run='first' run_sim.sh | sed 's/Submitted batch job //')
+> jid2=$(sbatch --export=sim_run='main' --array=1-20 --depend=afterok:$jid1 \
+    run_sim.sh | sed 's/Submitted batch job //')
+> sbatch --export=sim_run='last' --depend=afterok:$jid2 run_sim.sh
+Submitted batch job 103
+\end{example}
+
+While this is slightly more complicated, this code allows all three lines to be submitted simultaneously without the need to copy and paste the job IDs manually every time.
+
+\subsection{Additional cluster parallelization functionality}
+
+\subsubsection{Running locally}
+
+The \code{run\_on\_cluster} function is programmed such that it can also be run locally. In this case, the code within the \code{first}, \code{main}, and \code{last} blocks will be executed in the calling environment of the \code{run\_on\_cluster} function (typically the global environment); this can be useful for testing simulations locally before sending them to a CCS.
+
+\subsubsection{Using unsupported job schedulers}
+
+There may be job schedulers that \CRANpkg{SimEngine} does not natively support. If this is the case, \CRANpkg{SimEngine} can still be used for cluster parallelization; this requires identifying the environment variable that the job scheduler uses to uniquely identify tasks within a job array. For example, Slurm uses the variable \code{"SLURM\_ARRAY\_TASK\_ID"} and Grid Engine uses the variable \code{"SGE\_TASK\_ID"}. Once this variable is identified, it can be specified in the \code{cluster\_config} block, as follows:
+
+% Chunk 4.3.1
+\begin{example}
+R> run_on_cluster(
++    first = {...},
++    main = {...},
++    last = {...},
++    cluster_config = list(tid_var="SLURM_ARRAY_TASK_ID")
++  )
+\end{example}
+
+\subsubsection{Updating a simulation on a CCS}\label{sssec_update_sim_on_cluster}
+
+To update a simulation on a CCS, the \code{update\_sim\_on\_cluster} function can be used. The workflow is similar to that of \code{run\_on\_cluster}, with several key differences. Instead of creating a new simulation object in the \code{first} block using \code{new\_sim}, the existing simulation object (which would have been saved to the filesystem when \code{run\_on\_cluster} was called originally) is loaded using \code{readRDS}. Then, the functions \code{set\_levels} and/or \code{set\_config} are called to specify the desired updates (see Section \ref{ssec_update}). In the \code{main} block, \code{update\_sim} is called (instead of \code{run}). In the \code{last} block, code can remain the same or change as needed. These differences are illustrated in the code below.
+
+% Chunk 4.3.2
+\begin{example}
+R> update_sim_on_cluster(
++    first = {
++      sim <- readRDS("sim.rds")
++      sim %<>% set_levels(n=c(100,500,1000))
++    },
++    main = {
++      sim %<>% update_sim()
++    },
++    last = {
++      sim %>% summarize()
++    },
++    cluster_config = list(js="slurm")
++  )
+\end{example}
+
+Submission of this code via a job scheduler proceeds in the same manner as described earlier for \code{run\_on\_cluster}.
+
+\section{Advanced functionality}\label{sec:advanced}
+
+In this section, we review the following functionality, targeting advanced users of the package:
+
+\begin{itemize}
+  \item using the \code{batch} function, which allows for information to be shared across simulation replicates;
+  \item using \textit{complex simulation levels} in settings where simple levels (e.g., a vector of numbers) are insufficient;
+  \item handling \textit{complex return data} in settings where a single simulation replicate returns nested lists, dataframes, model objects, etc.;
+  \item managing RNG seeds;
+  \item best practices for debugging and handling errors and warnings;
+  \item capturing Monte Carlo error using the \code{summarize} function.
+\end{itemize}
+
+\subsection{Using the batch function to share information across simulation replicates}
+
+The \code{batch} function is useful for sharing data or objects between simulation replicates. Essentially, it allows simulation replicates to be divided into ``batches;'' all replicates in a given batch will then share a certain set of objects. A common use case for this is a simulation that involves using multiple methods to analyze a shared dataset, and repeating this process over a number of dataset replicates. This may be of interest if, for example, it is computationally expensive to generate a simulated dataset.
+% generating one dataset, analyzing it using multiple methods, and then repeating this a number of times.
+
+To illustrate the use of \code{batch} using this example, we first consider the following simulation:
+
+% Chunk 5.1.1
+\begin{example}
+R> sim <- new_sim()
+R> create_data <- function(n) { rnorm(n=n, mean=3) }
+R> est_mean <- function(dat, type) {
++    if (type=="est_mean") { return(mean(dat)) }
++    if (type=="est_median") { return(median(dat)) }
++  }
+R> sim %<>% set_levels(est=c("est_mean","est_median"))
+R> sim %<>% set_config(num_sim=3)
+R> sim %<>% set_script(function() {
++    dat <- create_data(n=100)
++    mu_hat <- est_mean(dat=dat, type=L$est)
++    return(list(
++      "mu_hat" = round(mu_hat,2),
++      "dat_1" = round(dat[1],2)
++    ))
++  })
+R> sim %<>% run()
+  |########################################| 100%
+Done. No errors or warnings detected.
+\end{example}
+
+From the \code{``dat\_1''} column of the results object (equal to the first element of the \code{dat} vector created in the simulation script), we see that a unique dataset was created for each simulation replicate:
+
+% Chunk 5.1.2
+\begin{example}
+R> sim$results[order(sim$results$rep_id),c(1:7)!=5]
+  sim_uid level_id rep_id        est mu_hat dat_1
+1       1        1      1   est_mean   3.05  4.09
+4       2        2      1 est_median   3.06  3.23
+2       3        1      2   est_mean   3.03  2.99
+5       5        2      2 est_median   3.02  2.78
+3       4        1      3   est_mean   2.85  1.47
+6       6        2      3 est_median   3.03  2.35
+\end{example}
+
+Suppose that instead, we wish to analyze each simulated dataset using multiple methods (in this case corresponding to \code{``est\_mean''} and \code{``est\_median''}), and repeat this procedure a total of three times. We can do this using the \code{batch} function, as follows:
+
+% Chunk 5.1.3
+\begin{example}
+R> sim <- new_sim()
+R> create_data <- function(n) { rnorm(n=n, mean=3) }
+R> est_mean <- function(dat, type) {
++    if (type=="est_mean") { return(mean(dat)) }
++    if (type=="est_median") { return(median(dat)) }
++  }
+R> sim %<>% set_levels(est=c("est_mean","est_median"))
+R> sim %<>% set_config(num_sim=3, batch_levels=NULL)
+R> sim %<>% set_script(function() {
++    batch({
++      dat <- create_data(n=100)
++    })
++    mu_hat <- est_mean(dat=dat, type=L$est)
++    return(list(
++      "mu_hat" = round(mu_hat,2),
++      "dat_1" = round(dat[1],2)
++    ))
++  })
+R> sim %<>% run()
+  |########################################| 100%
+Done. No errors or warnings detected.
+\end{example}
+
+In the code above, we changed two things. First, we added \code{batch\_levels=NULL} to the \code{set\_config} call; this will be explained below. Second, we wrapped the code line \code{dat <- create\_data(n=100)} inside the \code{batch} function. Whatever code goes inside the \code{batch} function will produce the same output for all simulations in a batch.
+
+% Chunk 5.1.4
+\begin{example}
+R> sim$results[order(sim$results$rep_id),c(1:7)!=5]
+  sim_uid level_id rep_id        est mu_hat dat_1
+1       1        1      1   est_mean   3.02  2.74
+4       2        2      1 est_median   3.19  2.74
+2       3        1      2   est_mean   2.91  3.71
+5       5        2      2 est_median   2.95  3.71
+3       4        1      3   est_mean   3.10  3.52
+6       6        2      3 est_median   3.01  3.52
+\end{example}
+
+In this case, from the \code{``dat\_1''} column of the results object, we see that one dataset was created and shared by the batch corresponding to \code{sim\_uids} 1 and 2 (likewise for \code{sim\_uids} $\{3,5\}$ and $\{4,6\}$).
+
+However, the situation is often more complicated. Suppose we have a simulation with multiple levels, some that correspond to creating data and some that correspond to analyzing the data. Here, the \code{batch\_levels} argument of \code{set\_config} plays a role. Specifically, this argument should be a character vector equal to the names of the simulation levels that are referenced (via the special variable \code{L}) from within a \code{batch} block. In the example below, the levels \code{n} and \code{mu} are used within the \code{batch} call, while the level \code{est} is not.
+
+% Chunk 5.1.5
+\begin{example}
+R> sim <- new_sim()
+R> create_data <- function(n, mu) { rnorm(n=n, mean=mu) }
+R> est_mean <- function(dat, type) {
++    if (type=="est_mean") { return(mean(dat)) }
++    if (type=="est_median") { return(median(dat)) }
++  }
+R> sim %<>% set_levels(n=c(10,100), mu=c(3,5), est=c("est_mean","est_median"))
+R> sim %<>% set_config(num_sim=2, batch_levels=c("n", "mu"), return_batch_id=T)
+R> sim %<>% set_script(function() {
++    batch({
++      dat <- create_data(n=L$n, mu=L$mu)
++    })
++    mu_hat <- est_mean(dat=dat, type=L$est)
++    return(list(
++      "mu_hat" = round(mu_hat,2),
++      "dat_1" = round(dat[1],2)
++    ))
++  })
+R> sim %<>% run()
+  |########################################| 100%
+Done. No errors or warnings detected.
+R> sim$results[order(sim$results$batch_id),c(1:10)!=8]
+   sim_uid level_id rep_id batch_id   n mu        est mu_hat dat_1
+1        1        1      1        1  10  3   est_mean   2.87  4.29
+9        5        5      1        1  10  3 est_median   2.94  4.29
+2        9        1      2        2  10  3   est_mean   2.79  2.77
+10      13        5      2        2  10  3 est_median   2.73  2.77
+3        2        2      1        3 100  3   est_mean   2.93  1.77
+11       6        6      1        3 100  3 est_median   3.01  1.77
+4       10        2      2        4 100  3   est_mean   2.80  4.44
+12      14        6      2        4 100  3 est_median   2.71  4.44
+5        3        3      1        5  10  5   est_mean   5.49  4.78
+13       7        7      1        5  10  5 est_median   5.25  4.78
+6       11        3      2        6  10  5   est_mean   4.57  4.48
+14      15        7      2        6  10  5 est_median   4.62  4.48
+7        4        4      1        7 100  5   est_mean   4.98  5.66
+15       8        8      1        7 100  5 est_median   4.95  5.66
+8       12        4      2        8 100  5   est_mean   5.08  5.55
+16      16        8      2        8 100  5 est_median   5.14  5.55
+\end{example}
+
+The batches were created such that each batch contained two replicates, one for each level value of \code{est}. For expository purposes, we also specified the \code{return\_batch\_id=T} option in \code{set\_config} so that the results object would return the \code{batch\_id}. This is not necessary in practice. The \code{batch\_id} variable defines the batches; all simulations that share the same \code{batch\_id} are in a single batch. The \code{return\_batch\_id=T} option can be useful to ensure correct usage of the \code{batch} function.
+
+We note the following about the \code{batch} function:
+
+\begin{itemize}
+  \item The code within the \code{batch} code block must \textit{only} create objects; this code should not change or delete existing objects, as these changes will be ignored.
+  \item In the majority of cases, the \code{batch} function will be called just once, at the beginning of the simulation script. However, it can be used anywhere in the script and can be called multiple times. The \code{batch} function should never be used outside of the simulation script.
+  \item Although we have illustrated the use of the \code{batch} function to create a dataset to share between multiple simulation replicates, it can be used for much more, such as taking a sample from an existing dataset or computing shared nuisance function estimators.
+  \item If the simulation is being run in parallel (either locally or on a CCS), \code{n\_cores} cannot exceed the number of batches, since all simulations within a batch must run on the same core.
+  \item If the simulation script uses the \code{batch} function, the simulation cannot be updated using the \code{update\_sim} or \code{update\_sim\_on\_cluster} functions, with the exception of updates that only entail removing simulation replicates.
+\end{itemize}
+
+\subsection{Complex simulation levels}
+
+Often, simulation levels are simple, such as a vector of sample sizes:
+
+% Chunk 5.2.1
+\begin{example}
+R> sim <- new_sim()
+R> sim %<>% set_levels(n = c(200,400,800))
+\end{example}
+
+However, there are many instances in which more complex objects are needed. For these cases, instead of a vector of numbers or character strings, a named list of lists can be used. The toy example below illustrates this.
+
+% Chunk 5.2.2
+\begin{example}
+R> sim <- new_sim()
+R> sim %<>% set_levels(
++    n = c(10,100),
++    distribution = list(
++      "Beta 1" = list(type="Beta", params=c(0.3, 0.7)),
++      "Beta 2" = list(type="Beta", params=c(1.5, 0.4)),
++      "Normal" = list(type="Normal", params=c(3.0, 0.2))
++    )
++  )
+R> create_data <- function(n, type, params) {
++    if (type=="Beta") {
++      return(rbeta(n, shape1=params[1], shape2=params[2]))
++    } else if (type=="Normal") {
++      return(rnorm(n, mean=params[1], sd=params[2]))
++    }
++  }
+R> sim %<>% set_script(function() {
++    x <- create_data(L$n, L$distribution$type, L$distribution$params)
++    return(list("y"=mean(x)))
++  })
+R> sim %<>% run()
+  |########################################| 100%
+Done. No errors or warnings detected.
+\end{example}
+
+Note that the list names (\code{``Beta 1''}, \code{``Beta 2''}, and \code{``Normal''}) become the entries in the \code{sim\$results} dataframe, as well as the dataframe returned by \code{summarize}.
+
+% Chunk 5.2.3
+\begin{example}
+R> sim %>% summarize(list(stat="mean", x="y"))
+  level_id   n distribution n_reps    mean_y
+1        1  10       Beta 1      1 0.1635174
+2        2 100       Beta 1      1 0.2740965
+3        3  10       Beta 2      1 0.6234866
+4        4 100       Beta 2      1 0.7664522
+5        5  10       Normal      1 3.0903062
+6        6 100       Normal      1 3.0179944
+\end{example}
+
+\subsection{Complex return data}\label{ssec_complex}
+
+In most situations, the results of simulations are numeric. However, we may want to return more complex data, such as matrices, lists, or model objects. To do this, we add a key-value pair to the list returned by the simulation script with the special key \code{".complex"} and a list (containing the complex data) as the value. This is illustrated in the toy example below. Here, the simulation script estimates the parameters of a linear regression and returns these as numeric, but also returns the estimated covariance matrix and the entire model object.
+
+% Chunk 5.3.1
+\begin{example}
+R> sim <- new_sim()
+R> sim %<>% set_levels(n=c(10, 100, 1000))
+R> create_data <- function(n) {
++    x <- runif(n)
++    y <- 3 + 2*x + rnorm(n)
++    return(data.frame("x"=x, "y"=y))
++  }
+R> sim %<>% set_config(num_sim=2)
+R> sim %<>% set_script(function() {
++    dat <- create_data(L$n)
++    model <- lm(y~x, data=dat)
++    return(list(
++      "beta0_hat" = model$coefficients[[1]],
++      "beta1_hat" = model$coefficients[[2]],
++      ".complex" = list(
++        "model" = model,
++        "cov_mtx" = vcov(model)
++      )
++    ))
++  })
+R> sim %<>% run()
+  |########################################| 100%
+Done. No errors or warnings detected.
+\end{example}
+
+After running this simulation, the numeric results can be accessed directly via \code{sim\$results} or using the \code{summarize} function, as usual:
+
+% Chunk 5.3.2
+\begin{example}
+R> head(sim$results)
+  sim_uid level_id rep_id    n     runtime beta0_hat beta1_hat
+1       1        1      1   10 0.012123823  2.113012  3.780972
+2       4        1      2   10 0.001345873  2.058610  3.726216
+3       2        2      1  100 0.006520033  2.784147  2.058041
+4       5        2      2  100 0.001568794  3.066045  2.097569
+5       3        3      1 1000 0.001888037  3.144964  1.783498
+6       6        3      2 1000 0.002427101  3.125128  1.714405
+\end{example}
+
+To examine the complex return data, we can use the special function \code{get\_complex}, as illustrated below:
+
+% Chunk 5.3.3
+\begin{example}
+R> c5 <- get_complex(sim, sim_uid=5)
+R> print(summary(c5$model))
+Call:
+lm(formula = y ~ x, data = dat)
+
+Residuals:
+    Min      1Q  Median      3Q     Max
+-2.7050 -0.7429  0.1183  0.7470  1.9673
+
+Coefficients:
+            Estimate Std. Error t value Pr(>|t|)
+(Intercept)   3.0660     0.2127  14.413  < 2e-16 ***
+x             2.0976     0.3714   5.647 1.59e-07 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 1.003 on 98 degrees of freedom
+Multiple R-squared:  0.2455,	Adjusted R-squared:  0.2378
+F-statistic: 31.89 on 1 and 98 DF,  p-value: 1.593e-07
+R> print(c5$cov_mtx)
+            (Intercept)           x
+(Intercept)  0.04525148 -0.06968649
+x           -0.06968649  0.13795995
+\end{example}
+
+\subsection{Random number generator seeds}
+
+In statistical research, it is desirable to be able to reproduce the exact results of a simulation study. Since R code often involves stochastic (random) functions like \code{rnorm} or \code{sample} that return different values when called multiple times, reproducibility is not guaranteed. In a simple R script, calling the \code{set.seed} function at the beginning of the script ensures that the stochastic functions that follow will produce the same results whenever the script is run. However, a more nuanced strategy is needed when running simulations. When running 100 replicates of the same simulation, we do not want each replicate to return identical results; rather, we would like for each replicate to be different from one another, but for \textit{the entire set of replicates} to be the same when the entire simulation is run twice in a row. \CRANpkg{SimEngine} manages this process, even when simulations are being run in parallel locally or on a cluster computing system. In \CRANpkg{SimEngine}, a single ``global seed'' is used to generate a different seed for each simulation replicate. The \code{set\_config} function is used to set or change this global seed:
+
+% Chunk 5.4.1
+\begin{example}
+R> sim %<>% set_config(seed=123)
+\end{example}
+
+If a seed is not set using \code{set\_config}, \CRANpkg{SimEngine} will set a random seed automatically so that the results can be replicated if desired. To view this seed, we use the \code{vars} function:
+
+% Chunk 5.4.2
+\begin{example}
+R> sim <- new_sim()
+R> print(vars(sim, "seed"))
+[1] 287577520
+\end{example}
+
+\subsection{Debugging and error/warning handling}
+
+In the simulation coding workflow, errors are inevitable. Some errors may affect all simulation replicates, while other errors may only affect a subset of replicates. By default, when a simulation is run, \CRANpkg{SimEngine} will not stop if an error occurs; instead, errors are logged and stored in a dataframe along with information about the simulation replicates that resulted in those errors. Examining this dataframe by typing \code{print(sim\$errors)} can sometimes help to quickly pinpoint the issue. This is demonstrated below:
+
+% Chunk 5.5.1
+\begin{example}
+R> sim <- new_sim()
+R> sim %<>% set_config(num_sim=2)
+R> sim %<>% set_levels(
++    Sigma = list(
++      s1 = list(mtx=matrix(c(3,1,1,2), nrow=2)),
++      s3 = list(mtx=matrix(c(4,3,3,9), nrow=2)),
++      s2 = list(mtx=matrix(c(1,2,2,1), nrow=2)),
++      s4 = list(mtx=matrix(c(8,2,2,6), nrow=2))
++    )
++  )
+R> sim %<>% set_script(function() {
++    x <- MASS::mvrnorm(n=1, mu=c(0,0), Sigma=L$Sigma$mtx)
++    return(list(x1=x[1], x2=x[2]))
++  })
+R> sim %<>% run()
+  |########################################| 100%
+Done. Errors detected in 25% of simulation replicates. Warnings detected in
+0% of simulation replicates.
+R> print(sim$errors)
+  sim_uid level_id rep_id Sigma      runtime                          message
+1       5        3      1    s2 0.0004692078 'Sigma' is not positive definite
+2       6        3      2    s2 0.0006608963 'Sigma' is not positive definite
+                                                     call
+1 MASS::mvrnorm(n = 1, mu = c(0, 0), Sigma = L$Sigma$mtx)
+2 MASS::mvrnorm(n = 1, mu = c(0, 0), Sigma = L$Sigma$mtx)
+\end{example}
+
+From the output above, we see that the code fails for the simulation replicates that use the level with \code{Sigma="s2"} because it uses an invalid (not positive definite) covariance matrix. Similarly, if a simulation involves replicates that throw warnings, all warnings are logged and stored in the dataframe \code{sim\$warnings}. If an error occurs for a subset of simulation replicates and that error is fixed, it is possible to rerun the replicates that had errors, as follows:
+
+% Chunk 5.5.1b
+\begin{example}
+R> sim %<>% update_sim(keep_errors=FALSE)
+\end{example}
+
+The workflow demonstrated above can be useful to pinpoint errors, but it has two main drawbacks. First, it is undesirable to run a time-consuming simulation involving hundreds or thousands of replicates, only to find at the end that every replicate failed because of a typo. It may therefore be useful to stop an entire simulation after a single error has occurred. Second, it can sometimes be difficult to determine exactly what caused an error without making use of more advanced debugging tools. For both of these situations, \CRANpkg{SimEngine} includes the following configuration option:
+
+% Chunk 5.5.2
+\begin{example}
+R> sim %<>% set_config(stop_at_error=TRUE)
+\end{example}
+
+Setting \code{stop\_at\_error=TRUE} will stop the simulation when it encounters any error. Furthermore, the error will be thrown by R in the usual way, so if the simulation is being run in RStudio, the built-in debugging tools (such as ``Show Traceback'' and ``Rerun with debug'') can be used to find and fix the bug. Placing a call to \code{browser} at the top of the simulation script can also be useful for debugging.
+
+\subsection{Monte Carlo error}\label{sec:mc error}
+
+Statistical simulations are often based on the principle of Monte Carlo approximation; specifically, pseudo-random sampling is used to evaluate the performance of a statistical procedure under a particular data-generating process. The performance of the procedure can be viewed as a statistical parameter and, due to the fact that only a finite number of simulation replicates can be performed, there is uncertainty in any estimate of performance. This uncertainty is often referred to as \textit{Monte Carlo error} (see, e.g., \citealp{lee1999effect}). We can quantify Monte Carlo error using, for example, the standard error of the performance estimator.
+
+Measuring and reporting Monte Carlo error is a vital component of a simulation study. \CRANpkg{SimEngine} includes an option in the \code{summarize} function to automatically estimate the Monte Carlo standard error for any inferential summary statistic, e.g., estimator bias or confidence interval coverage. The standard error estimates are based on the formulas provided in \citet{morris2019}. If the option \code{mc\_se} is set to \code{TRUE}, estimates of Monte Carlo standard error will be included in the summary data frame, along with associated 95\% confidence intervals based on a normal approximation.
+
+% Chunk 5.6.1
+\begin{example}
+R> sim <- new_sim()
+R> create_data <- function(n) { rpois(n, lambda=5) }
+R> est_mean <- function(dat) {
++    return(mean(dat))
++  }
+R> sim %<>% set_levels(n=c(10,100,1000))
+R> sim %<>% set_config(num_sim=5)
+R> sim %<>% set_script(function() {
++    dat <- create_data(L$n)
++    lambda_hat <- est_mean(dat=dat)
++    return (list("lambda_hat"=lambda_hat))
++  })
+R> sim %<>% run()
+  |########################################| 100%
+Done. No errors or warnings detected.
+R> sim %>% summarize(
++    list(stat="mse", name="lambda_mse", estimate="lambda_hat", truth=5),
++    mc_se = TRUE
++  )
+  level_id    n n_reps lambda_mse lambda_mse_mc_se lambda_mse_mc_ci_l
+1        1   10      5  0.5020000      0.274178774      -0.0353903966
+2        2  100      5  0.0142800      0.012105759      -0.0094472876
+3        3 1000      5  0.0031878      0.001919004      -0.0005734471
+  lambda_mse_mc_ci_u
+1        1.039390397
+2        0.038007288
+3        0.006949047
+\end{example}
+
+\section{Discussion}\label{sec:discussion}
+
+In this article, we described \CRANpkg{SimEngine}, an open-source R package for structuring, maintaining, running, and debugging statistical simulations. We reviewed the overall guiding design principles of the package, illustrated its workflow and main functions, highlighted local and CCS-based parallelization capabilities, and demonstrated advanced functionality. It is our hope that this article publicizes the existence of the package and leads to an increase in the size and engagement of the active user community.
+
+\CRANpkg{SimEngine} is one of several R packages aimed at users conducting statistical simulations but is, to our knowledge, the only package explicitly intended for use in a CCS environment. The \CRANpkg{simulator} package \citep{bien2016simulator} provides a modular and flexible framework to structure simulations but contains no functionality designed specifically for debugging simulations or leveraging a CCS. The \CRANpkg{simpr} package \citep{brown2023simpr} uses tidy principles but does not emphasize flexibility, with a relatively limited scope. Likewise, \CRANpkg{simFrame} \citep{alfons2010object}, an object-oriented simulation package, makes available a suite of relatively specific simulation tools, which are intended primarily for survey statistics. Both \CRANpkg{SimDesign} \citep{chalmers2020writing} and \CRANpkg{simsalapar} \citep{hofert2013parallel} are designed for ease of use but are somewhat less modular than other packages, with a single function for generating simulated data, running analyses, and summarizing results. The recent \CRANpkg{simChef} package \citep{duncan2024simchef} uses a tidy grammar framework and has additional functionality for preparing reports on the results of a simulation study. Additionally, there are a host of packages available that aid in simulating particular data structures, such as \CRANpkg{riskSimul} \citep{riskSimul}, \CRANpkg{GlmSimulatoR} \citep{GlmSimulatoR}, and \CRANpkg{PhenotypeSimulator} \citep{PhenotypeSimulator}, which can be used in conjunction with a package for structuring simulations if applicable.
+
+We chose to write this package specifically for the R programming language since this language is widely used by statistical methods developers; as evidence of this claim, a review of the top ten studies from a simple Google Scholar search of the term ``simulation study'' (restricted to the last five years) shows that, out of the eight studies that stated the programming language used, six were coded using R \citep{belias2019statistical,edelsbrunner2023simulation,todorov2020applying,rusticus2019impact,manolov2019simulation,bower2021capturing,hamza2021bayesian,thompson2021comparison}. That being said, it could be of practical value in the future to port the package to other programming environments.
+
+Moving forward, future development of the package will be driven mainly by requests from active users, screening and prioritizing potential additions or modifications based on the design principles articulated in Section \ref{sec:design}. In particular, we hope to focus on improving parallelization capabilities, including expansion of SimEngine to other parallelization platforms (e.g., Apache Spark), support for futures/promises (as in the \CRANpkg{future} package), and further automation of the cluster parallelization process (possibly by having \CRANpkg{SimEngine} automatically create and submit \code{sbatch} commands, as is done in the \CRANpkg{rslurm} package). Users can navigate to \url{https://github.com/Avi-Kenny/SimEngine/issues} to submit feature requests and view current open issues. Additionally, because SimEngine is built using the R S3 class system, it is extensible and allows for users to write additional methods customized to their particular needs, workflow, and style, such as functionality for plotting simulation results.
+
+\section*{Computational details}
+
+The results in this paper were obtained using R~4.3.2 with the \CRANpkg{SimEngine}~1.4.0 package. R itself and all packages used are available from the Comprehensive R Archive Network (CRAN) at \url{https://CRAN.R-project.org/}.
+
+\bibliography{article}
+
+\address{Avi Kenny\\
+  Department of Biostatistics and Bioinformatics, Duke University\\
+  Global Health Institute, Duke University\\
+  2424 Erwin Rd\\
+  Durham, NC 27710, USA\\
+  ORCiD: 0000-0002-9465-7307\\
+  \email{avi.kenny@duke.edu}}
+
+\address{Charles J. Wolock\\
+  Department of Biostatistics and Computational Biology\\
+  University of Rochester\\
+  265 Crittenden Boulevard,\\
+  Rochester, New York 14642, USA\\
+  ORCiD: 0000-0003-3527-1102\\
+  \email{c.wolock@rochester.edu}}
+
+% \newpage
