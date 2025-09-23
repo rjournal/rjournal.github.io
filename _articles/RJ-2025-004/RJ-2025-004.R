@@ -28,7 +28,7 @@ knitr::include_graphics("figures/penalized_geo2_1.png")
 knitr::include_graphics("figures/penalized_geo.png")
 
 
-## ----echo = FALSE-------------------------------------------------------------
+## ----pakcage-functions, echo = FALSE------------------------------------------
 library(knitr)
 library(kableExtra)
 
@@ -70,16 +70,20 @@ spheresmooth_functions <- data.frame(
 )
 
 # Create the table using knitr::kable with kableExtra formatting
-kable(spheresmooth_functions,
+tab <- kable(spheresmooth_functions,
       caption = "Summary of the functions in the spheresmooth package.",
       align = c("l", "l"),
       col.names = c("Function", "Description"),
-      format = "latex",
       booktabs = TRUE,
       longtable = FALSE,
-      escape = FALSE) |>
-  column_spec(1, monospace = TRUE) |>
-  column_spec(2, width = "7cm")
+      escape = FALSE)
+    
+if (knitr::is_latex_output()) {
+  tab <- tab |>
+    column_spec(1, monospace = TRUE) |>
+    column_spec(2, width = "7cm")
+}
+tab
 
 
 
@@ -117,7 +121,7 @@ theta_phi
 cartesian_to_spherical(spherical_to_cartesian(theta_phi))
 
 
-## ----piecewise, fig.show='hold', out.width="40%", fig.cap="Plot of (left) piecewise geodesic curve with the control points at (1, 0, 0), (1/$\\sqrt{2}$, 1/$\\sqrt{2}$, 0), (-1/$\\sqrt{3}$, 1/$\\sqrt{3}$, 1/$\\sqrt{3}$), and (0, 0, 1) and (right) piecewise geodesic curve with the control points at (1/$\\sqrt{3}$, 1/$\\sqrt{3}$, 1/$\\sqrt{3}$), (1/$\\sqrt{3}$, 1/$\\sqrt{3}$, -1/$\\sqrt{3}$, (-1/$\\sqrt{3}$, 1/$\\sqrt{3}$, 1/$\\sqrt{3}$), and (-1/$\\sqrt{3}$, 1/$\\sqrt{3}$, -1/$\\sqrt{3}$).", fig.subcap=c("",""), fig.align='center'----
+## ----piecewise, fig.show='hold', out.width="40%", fig.cap="Plot of (left) piecewise geodesic curve with the control points at (1, 0, 0), (1/$\\sqrt{2}$, 1/$\\sqrt{2}$, 0), (-1/$\\sqrt{3}$, 1/$\\sqrt{3}$, 1/$\\sqrt{3}$), and (0, 0, 1) and (right) piecewise geodesic curve with the control points at (1/$\\sqrt{3}$, 1/$\\sqrt{3}$, 1/$\\sqrt{3}$), (1/$\\sqrt{3}$, 1/$\\sqrt{3}$, -1/$\\sqrt{3}$), (-1/$\\sqrt{3}$, 1/$\\sqrt{3}$, 1/$\\sqrt{3}$), and (-1/$\\sqrt{3}$, 1/$\\sqrt{3}$, -1/$\\sqrt{3}$).", fig.subcap=c("",""), fig.align='center'----
 knitr::include_graphics("figures/piecewise_geo1.png")
 knitr::include_graphics("figures/piecewise_geo2.png")
 
