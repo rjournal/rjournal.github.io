@@ -29,7 +29,7 @@ set.seed(123)
 # set consistent theme
 theme_set(
   theme_bw() +
-    theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black", linewidth=1.5), 
+    theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black", linewidth=1.5),
           axis.title = element_blank(),
           axis.ticks = element_blank())
 )
@@ -39,13 +39,13 @@ theme_set(
 ## -----------------------------------------------------------------------------
 # load data
 
-# datasets are all available at https://github.com/horankev/quake_data 
+# datasets are all available at https://github.com/horankev/quake_data
 # or https://github.com/horankev/london_liverpool_data
 # alongside details on precisely how they were sourced etc
 
 # indonesia
 quakes_df <- readRDS(gzcon(url("https://github.com/horankev/quake_data/raw/main/datasets/quakes_df.rds")))
-provinces_df <- readRDS(gzcon(url("https://github.com/horankev/quake_data/raw/main/datasets/provinces_df.rds"))) |> 
+provinces_df <- readRDS(gzcon(url("https://github.com/horankev/quake_data/raw/main/datasets/provinces_df.rds"))) |>
   rename(damaging_quakes_total = quake_mlxl_total,
          damaging_quakes_density = quake_mlxl_density)
 counties_df <- readRDS(gzcon(url("https://github.com/horankev/quake_data/raw/main/datasets/counties_df.rds")))
@@ -79,8 +79,8 @@ prefunc <- tribble(
 
 ## ----prefunc-latex, eval = knitr::is_latex_output()---------------------------
 knitr::kable(prefunc, format = "latex", caption = "Pre-functions: setting up a neighbourhood structure.") |>
-  row_spec(0, bold = TRUE) |> 
-  kableExtra::kable_styling(font_size = 9) |> 
+  row_spec(0, bold = TRUE) |>
+  kableExtra::kable_styling(font_size = 9) |>
   column_spec(2, width = "7cm")
 
 
@@ -99,27 +99,26 @@ rect4_sf <- st_sf(geometry = st_sfc(rect4))
 rect5_sf <- st_sf(geometry = st_sfc(rect5))
 
 # Combine the rectangles into one sf object
-rectangles <- rbind(rect1_sf, rect2_sf, rect3_sf, rect4_sf, rect5_sf) |> 
+rectangles <- rbind(rect1_sf, rect2_sf, rect3_sf, rect4_sf, rect5_sf) |>
   mutate(name = c("Rect1","Rect2","Rect3","Rect4","Rect5"))
 
 
 ## ----rects1, fig.width=4, fig.height=2, fig.cap = "Simplified scenario with five rectangles. "----
-ggplot(rectangles) + geom_sf(colour="black", linewidth=1) + geom_sf_label(aes(label=name),size=2.5) + 
-  coord_sf(datum=NA) + 
+ggplot(rectangles) + geom_sf(colour="black", linewidth=1) + geom_sf_label(aes(label=name),size=2.5) +
+  coord_sf(datum=NA) +
   theme(axis.title = element_blank(),
         axis.ticks = element_blank(),
         panel.background = element_rect(fill = "#ECF6F7", colour = "black", linewidth=1.5))
 
 
 
-
 ## ----echo=TRUE----------------------------------------------------------------
 # output a named list
 
-st_bridges(rectangles, 
-           "name", 
-           remove_islands = TRUE, 
-           nb_structure = "list", 
+st_bridges(rectangles,
+           "name",
+           remove_islands = TRUE,
+           nb_structure = "list",
            add_to_dataframe = FALSE) |>
   head()
 
@@ -128,11 +127,11 @@ st_bridges(rectangles,
 ## ----echo=TRUE----------------------------------------------------------------
 # output a named matrix
 
-st_bridges(rectangles, 
-           "name", 
-           remove_islands = TRUE, 
-           nb_structure = "matrix", 
-           add_to_dataframe = FALSE) |> 
+st_bridges(rectangles,
+           "name",
+           remove_islands = TRUE,
+           nb_structure = "matrix",
+           add_to_dataframe = FALSE) |>
   head()
 
 
@@ -140,10 +139,10 @@ st_bridges(rectangles,
 ## ----echo=TRUE----------------------------------------------------------------
 # output a named list as a column "nb" in original dataframe
 
-st_bridges(rectangles, 
-           "name", 
-           link_islands_k = 1, 
-           nb_structure = "list") |> 
+st_bridges(rectangles,
+           "name",
+           link_islands_k = 1,
+           nb_structure = "list") |>
   head()
 
 
@@ -151,10 +150,10 @@ st_bridges(rectangles,
 ## ----echo=TRUE----------------------------------------------------------------
 # output a named matrix as a column "nb" in original dataframe
 
-st_bridges(rectangles, 
-           "name", 
-           link_islands_k = 1, 
-           nb_structure = "matrix") |> 
+st_bridges(rectangles,
+           "name",
+           link_islands_k = 1,
+           nb_structure = "matrix") |>
   head()
 
 
@@ -162,9 +161,9 @@ st_bridges(rectangles,
 ## ----rects2, fig.width=2, fig.height=1, echo=TRUE, fig.cap = "Queen contiguity and islands connected to nearest neighbour. "----
 # default is 'nodes = "point"'
 
-st_bridges(rectangles, 
-           "name", 
-           link_islands_k = 1) |> 
+st_bridges(rectangles,
+           "name",
+           link_islands_k = 1) |>
   st_quickmap_nb()
 
 
@@ -172,9 +171,9 @@ st_bridges(rectangles,
 ## ----rects3, fig.width=2, fig.height=1, echo=TRUE, fig.cap = "Queen contiguity and islands connected to nearest neighbour. Nodes are shown as numeric indices. "----
 # with 'nodes = "numeric"'
 
-st_bridges(rectangles, 
-           "name", 
-           link_islands_k = 1) |> 
+st_bridges(rectangles,
+           "name",
+           link_islands_k = 1) |>
   st_quickmap_nb(nodes = "numeric")
 
 
@@ -182,9 +181,9 @@ st_bridges(rectangles,
 ## ----echo=TRUE----------------------------------------------------------------
 # show summary of non-contiguous connections in a dataframe
 
-st_bridges(rectangles, 
-           "name", 
-           link_islands_k = 1) |> 
+st_bridges(rectangles,
+           "name",
+           link_islands_k = 1) |>
   st_check_islands()
 
 
@@ -192,19 +191,19 @@ st_bridges(rectangles,
 ## ----rects4, fig.width=2, fig.height=1, echo=TRUE, fig.cap = "With an additional connection between 3 and 4. "----
 # add an extra connection using numeric index
 
-st_bridges(rectangles, "name", 
-           link_islands_k = 1) |> 
-  st_force_join_nb(3,4) |> 
+st_bridges(rectangles, "name",
+           link_islands_k = 1) |>
+  st_force_join_nb(3,4) |>
   st_quickmap_nb(nodes = "numeric")
 
 
 ## ----rects5, fig.width=2, fig.height=1, echo=TRUE, fig.cap = "With the removal of connection between 1 and 2. "----
 # remove an existing connection using unit name, not index
 
-st_bridges(rectangles, "name", 
-           link_islands_k = 1) |> 
-  st_force_join_nb(3,4) |> 
-  st_force_cut_nb("Rect1","Rect2") |> 
+st_bridges(rectangles, "name",
+           link_islands_k = 1) |>
+  st_force_join_nb(3,4) |>
+  st_force_cut_nb("Rect1","Rect2") |>
   st_quickmap_nb(nodes = "numeric")
 
 
@@ -223,8 +222,8 @@ postfunc <- tribble(
 
 
 ## ----postfunc-latex, eval = knitr::is_latex_output()--------------------------
-knitr::kable(postfunc, format = "latex", caption = "Post-functions: tidy estimates from mgcv.") |> 
-  row_spec(0, bold = TRUE) |> 
+knitr::kable(postfunc, format = "latex", caption = "Post-functions: tidy estimates from mgcv.") |>
+  row_spec(0, bold = TRUE) |>
   kableExtra::kable_styling(font_size = 9, full_width = FALSE)
 
 
@@ -273,23 +272,23 @@ st_aug_tab_latex <- tribble(
 
 
 ## ----staugtab-latex, eval = knitr::is_latex_output()--------------------------
-knitr::kable(st_aug_tab_latex, format = "latex", caption = "The naming procedure for augmented columns from different mgcv structures.") |> 
-  row_spec(0, bold = TRUE) |> 
+knitr::kable(st_aug_tab_latex, format = "latex", caption = "The naming procedure for augmented columns from different mgcv structures.") |>
+  row_spec(0, bold = TRUE) |>
   kableExtra::kable_styling(font_size = 9, full_width = FALSE)
 
 
 ## ----fault-buffers, fig.width=12, fig.height=6, out.width="100%", fig.cap = "Indonesia faults. Surrounded by a 10 kilometre buffer. "----
 
-faults_buf <- faults_df |> 
+faults_buf <- faults_df |>
   st_buffer(dist = 10000)
 
-ggplot() + 
+ggplot() +
   geom_sf(data=nearby_countries_df, fill="gray50", linewidth=0.5, colour="black") +
   geom_sf(data = provinces_df, fill="antiquewhite", colour="black",linewidth=0.5) +
   geom_sf(data = faults_buf, fill="darkgreen", colour="gray50",linewidth=0.9) +
   geom_sf(data=faults_df, colour="yellow", linewidth=0.4) +
   annotation_scale() +
-  coord_sf(datum=NA) + 
+  coord_sf(datum=NA) +
   theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", linewidth=1.5),
         axis.title = element_blank(),
         axis.ticks = element_blank())
@@ -298,42 +297,42 @@ ggplot() +
 
 ## ----fault-conc, fig.width=12, fig.height=6, out.width="100%", fig.cap = "Indonesia fault concentration. Square kilometre of buffered fault per square kilometre of province area. "----
 
-ggplot() + 
+ggplot() +
   geom_sf(data=nearby_countries_df, fill="gray50", colour="black", linewidth=0.5) +
   geom_sf(data=provinces_df, aes(fill=fault_concentration), colour="black", linewidth=0.5) +
   geom_sf(data=faults_df, colour="gray10", linetype="dashed", linewidth=0.5) +
-  scale_fill_distiller(palette = "YlGn", direction = 1) + 
-  labs(fill="fault\nconcentration") + 
+  scale_fill_distiller(palette = "YlGn", direction = 1) +
+  labs(fill="fault\nconcentration") +
   annotation_scale() +
-  coord_sf(datum=NA) + 
+  coord_sf(datum=NA) +
   theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", linewidth=1.5),
         legend.position = "inside",
-        legend.position.inside = c(0.92,0.8), 
+        legend.position.inside = c(0.92,0.8),
         legend.box.background = element_rect(colour = "black", linewidth = 1))
 
 
 
 ## ----quake-occur, fig.width=12, fig.height=6, out.width="100%", fig.cap = "Earthquakes in Indonesia of magnitude > 5.5, 1985-2023. Categorised by magnitude as medium, large or extra-large. "----
 
-quakes_df_temp <- quakes_df |> 
+quakes_df_temp <- quakes_df |>
   mutate(magfact = case_when(magfact == "M" ~ "M: 5.5 - 6",
                              magfact == "L" ~ "L: 6.1 - 6.9",
-                             magfact == "XL" ~ "XL: 7+")) |> 
+                             magfact == "XL" ~ "XL: 7+")) |>
   mutate(magfact = factor(magfact,
                           levels = c("M: 5.5 - 6",
                                      "L: 6.1 - 6.9",
                                      "XL: 7+")))
-ggplot() + 
+ggplot() +
   geom_sf(data=nearby_countries_df, fill="gray50", linewidth=0.5, colour="black") +
-  geom_sf(data=provinces_df, fill="antiquewhite", colour="black", linewidth=0.5) + 
-  geom_sf(data=quakes_df_temp |> filter(magfact != "S") |> filter(province != "undersea"), 
+  geom_sf(data=provinces_df, fill="antiquewhite", colour="black", linewidth=0.5) +
+  geom_sf(data=quakes_df_temp |> filter(magfact != "S") |> filter(province != "undersea"),
           aes(fill=magfact, size=magfact), shape=21, colour="black") +
   scale_fill_manual(values = c("white","khaki","tomato4")) +
-  scale_size_manual(values = c(3.5,5.5,7.5)) + 
+  scale_size_manual(values = c(3.5,5.5,7.5)) +
   labs(fill="magnitude",
-       size="magnitude") + 
+       size="magnitude") +
   annotation_scale() +
-  coord_sf(datum=NA) + 
+  coord_sf(datum=NA) +
   theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", linewidth=1.5),
         legend.position = "inside",
         legend.position.inside = c(0.92,0.8),
@@ -347,15 +346,15 @@ ggplot() +
 ggplot() +
   geom_sf(data=nearby_countries_df, fill="gray50", colour="black", linewidth=0.5) +
   geom_sf(data=provinces_df, aes(fill=damaging_quakes_total), colour="black", linewidth=0.5) +
-  scale_fill_distiller(palette = "YlOrRd", direction = 1) + 
-  labs(fill="count") + 
+  scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+  labs(fill="count") +
   annotation_scale() +
-  coord_sf(datum=NA) + 
+  coord_sf(datum=NA) +
   theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", linewidth=1.5),
         legend.position = "inside",
         legend.position.inside = c(0.92,0.78),
         legend.box.background = element_rect(colour = "black", linewidth = 1))
-  
+
 
 
 ## ----quake-conc, fig.width=12, fig.height=6, out.width="100%", fig.cap = "Earthquake incidence in Indonesia, 1985-2023, mag > 5.5: count per square kilometre by province. "----
@@ -363,10 +362,10 @@ ggplot() +
   ggplot() +
   geom_sf(data=nearby_countries_df, fill="gray50", colour="black", linewidth=0.5) +
   geom_sf(data=provinces_df, aes(fill=damaging_quakes_density), colour="black", linewidth=0.5) +
-  scale_fill_distiller(palette = "YlOrRd", direction = 1) + 
-  labs(fill="incidence") + 
+  scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+  labs(fill="incidence") +
   annotation_scale() +
-  coord_sf(datum=NA) + 
+  coord_sf(datum=NA) +
   theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", linewidth=1.5),
   axis.title = element_blank(),
         axis.ticks = element_blank(),
@@ -381,15 +380,15 @@ ggplot() +
 # various arguments exist for altering colours and sizes
 # additional ggplot themes and layers can be added
 
-st_bridges(provinces_df, "province", link_islands_k = 2) |> 
-  st_quickmap_nb(fillcol = "antiquewhite1", 
-                 bordercol = "black", bordersize = 0.5, 
-                 linkcol = "darkblue", linksize = 0.8, 
-                 pointcol = "red", pointsize = 2) + 
-  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", 
+st_bridges(provinces_df, "province", link_islands_k = 2) |>
+  st_quickmap_nb(fillcol = "antiquewhite1",
+                 bordercol = "black", bordersize = 0.5,
+                 linkcol = "darkblue", linksize = 0.8,
+                 pointcol = "red", pointsize = 2) +
+  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black",
                                         linewidth=1.5),
         axis.text = element_blank()) +
-  geom_sf(data=nearby_countries_df, 
+  geom_sf(data=nearby_countries_df,
           fill="gray50", linewidth=0.5, colour="black")
 
 
@@ -415,15 +414,15 @@ st_bridges(provinces_df, "province", link_islands_k = 2) |>
 ## ----ind-contig2, fig.width=12, fig.height=6, echo=FALSE, out.width="100%", eval=knitr::is_latex_output(), fig.cap = "(ref:my-caption2)"----
 # with 'concavehull = TRUE' and 'nodes = "numeric"'
 
-st_bridges(provinces_df, "province", link_islands_k = 2) |> 
-  st_quickmap_nb(fillcol = "antiquewhite1", 
-                 bordercol = "black", bordersize = 0.5, 
-                 linkcol = "tomato", linksize = 0.5, 
-                 nodes = "numeric", 
-                 numericcol = "black", numericsize = 6, 
-                 concavehull = TRUE, 
-                 hullcol = "darkgreen", hullsize = 0.2) + 
-  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", 
+st_bridges(provinces_df, "province", link_islands_k = 2) |>
+  st_quickmap_nb(fillcol = "antiquewhite1",
+                 bordercol = "black", bordersize = 0.5,
+                 linkcol = "tomato", linksize = 0.5,
+                 nodes = "numeric",
+                 numericcol = "black", numericsize = 6,
+                 concavehull = TRUE,
+                 hullcol = "darkgreen", hullsize = 0.2) +
+  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black",
                                         linewidth=1.5),
         axis.text = element_blank())
 
@@ -468,18 +467,18 @@ joins_df <- tribble(
   22, 28
 )
 
-st_bridges(provinces_df, "province", link_islands_k = 2) |> 
-  st_force_join_nb(xy_df = joins_df) |> 
-  st_force_cut_nb(19,22) |> 
-  st_quickmap_nb(fillcol = "antiquewhite1", 
-                 bordercol = "black", bordersize = 0.5, 
-                 linkcol = "darkblue", linksize = 0.8, 
-                 pointcol = "red", pointsize = 2) + 
-  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", 
+st_bridges(provinces_df, "province", link_islands_k = 2) |>
+  st_force_join_nb(xy_df = joins_df) |>
+  st_force_cut_nb(19,22) |>
+  st_quickmap_nb(fillcol = "antiquewhite1",
+                 bordercol = "black", bordersize = 0.5,
+                 linkcol = "darkblue", linksize = 0.8,
+                 pointcol = "red", pointsize = 2) +
+  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black",
                                         linewidth=1.5),
         axis.text = element_blank()) +
-  geom_sf(data=nearby_countries_df, 
-          fill="gray50", linewidth=0.5, colour="black") + 
+  geom_sf(data=nearby_countries_df,
+          fill="gray50", linewidth=0.5, colour="black") +
   annotation_scale()
 
 
@@ -526,15 +525,15 @@ st_bridges(provinces_df, "province", link_islands_k = 2) |>
 
 provinces_df$province <- factor(provinces_df$province)
 
-prep_data <- st_bridges(provinces_df, "province",link_islands_k = 2) |> 
-  st_force_join_nb(xy_df = joins_df) |> 
+prep_data <- st_bridges(provinces_df, "province",link_islands_k = 2) |>
+  st_force_join_nb(xy_df = joins_df) |>
   st_force_cut_nb(19,22)
 
 
 
 ## ----echo=TRUE----------------------------------------------------------------
 
-mod_pois_mrf <- gam(damaging_quakes_total ~ 
+mod_pois_mrf <- gam(damaging_quakes_total ~
                       fault_concentration +
                       s(province, bs='mrf', xt=list(nb=prep_data$nb), k=24) +
                       offset(log(area_province)),
@@ -573,11 +572,11 @@ mod_pois_mrf |>
 ## ----ind-mrf1, fig.width=12, fig.height=6, echo=TRUE, out.width="100%", eval=knitr::is_latex_output(), fig.cap = "(ref:my-caption4)"----
 # st_quickmap_preds() outputs a list of ggplots
 
-plot_mrf <- mod_pois_mrf |> 
+plot_mrf <- mod_pois_mrf |>
   st_augment(prep_data) |>
   st_quickmap_preds(scale_low = "darkgreen",
-                    scale_mid = "ivory", 
-                    scale_high = "darkred", 
+                    scale_mid = "ivory",
+                    scale_high = "darkred",
                     scale_midpoint = 0)
 
 # in this case, there is only one plot in the list
@@ -586,12 +585,12 @@ plot_mrf <- mod_pois_mrf |>
 
 plot_mrf[[1]] +
   coord_sf(datum=NA, default = TRUE) +
-  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", 
+  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black",
                                         linewidth=1.5),
         axis.text = element_blank()) +
-  geom_sf(data=provinces_df, fill=NA, colour="black", linewidth=0.5) + 
-  geom_sf(data=nearby_countries_df, fill="gray50", colour="black", 
-          linewidth=0.5) + 
+  geom_sf(data=provinces_df, fill=NA, colour="black", linewidth=0.5) +
+  geom_sf(data=nearby_countries_df, fill="gray50", colour="black",
+          linewidth=0.5) +
   labs(fill="relative\nincidence") +
   annotation_scale() +
   coord_sf(datum=NA, default = TRUE) +
@@ -634,44 +633,44 @@ plot_mrf[[1]] +
 
 ## ----ind-mrf2, fig.width=12, fig.height=6, out.width="100%", eval=knitr::is_latex_output(), fig.cap = "(ref:my-caption5)"----
 
-qpois_mod_aug <- mod_pois_mrf |> 
+qpois_mod_aug <- mod_pois_mrf |>
   st_augment(prep_data)
 
-largest <- qpois_mod_aug |> 
-  arrange(desc(mrf.smooth.province)) |> 
+largest <- qpois_mod_aug |>
+  arrange(desc(mrf.smooth.province)) |>
   head(3)
-smallest <- qpois_mod_aug |> 
-  arrange(mrf.smooth.province) |> 
+smallest <- qpois_mod_aug |>
+  arrange(mrf.smooth.province) |>
   head(2)
 
-ggplot() + 
-  geom_sf(data=nearby_countries_df, 
-          fill="gray50", colour="black", linewidth=0.5) + 
-  geom_sf(data=qpois_mod_aug, aes(fill=exp(mrf.smooth.province)), 
-          colour="black", linewidth=0.5) + 
+ggplot() +
+  geom_sf(data=nearby_countries_df,
+          fill="gray50", colour="black", linewidth=0.5) +
+  geom_sf(data=qpois_mod_aug, aes(fill=exp(mrf.smooth.province)),
+          colour="black", linewidth=0.5) +
   geom_sf_label(data=largest,
                       aes(label=paste(province,":",
                                       round(exp(mrf.smooth.province),1))),
-                      colour="darkred", size=2.5, fill="white", alpha=0.9, 
+                      colour="darkred", size=2.5, fill="white", alpha=0.9,
                 nudge_y= 130000, nudge_x = 130000) +
   geom_sf_label(data=smallest |> mutate(geometry=st_centroid(geometry)),
                aes(label=paste(province,":",round(exp(mrf.smooth.province),3))),
                size=2.5, fill="white", alpha=0.9) +
-  scale_fill_gradient2(low = "darkgreen", 
-                       mid = "ivory", 
-                       high = "darkred", 
+  scale_fill_gradient2(low = "darkgreen",
+                       mid = "ivory",
+                       high = "darkred",
                        midpoint = 1) +
-  scale_colour_gradient2(low = "darkgreen", 
-                         mid = "ivory", 
-                         high = "darkred", 
+  scale_colour_gradient2(low = "darkgreen",
+                         mid = "ivory",
+                         high = "darkred",
                          midpoint = 1) +
-  guides(colour="none") + 
-  labs(fill="exp.\nrelative\nincidence") + 
+  guides(colour="none") +
+  labs(fill="exp.\nrelative\nincidence") +
   annotation_scale() +
-  coord_sf(datum=NA) + 
-  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", linewidth=1.5), 
+  coord_sf(datum=NA) +
+  theme(panel.background = element_rect(fill = "#ECF6F7", colour = "black", linewidth=1.5),
         axis.title = element_blank(),
-        axis.ticks = element_blank(), 
+        axis.ticks = element_blank(),
         legend.position = "inside",
         legend.position.inside = c(0.92,0.76),
         legend.box.background = element_rect(colour = "black", linewidth = 1))
@@ -749,7 +748,7 @@ ggplot() +
 
 
 ## ----message=TRUE, echo=TRUE--------------------------------------------------
-st_bridges(london, "GSS_CODE") |> 
+st_bridges(london, "GSS_CODE") |>
   st_check_islands()
 
 
@@ -757,10 +756,10 @@ st_bridges(london, "GSS_CODE") |>
 # same as sfdep:st_contiguity() as there are no islands
 # an extra layer for the river Thames
 
-st_bridges(london, "GSS_CODE") |> 
-  st_quickmap_nb() + 
-  geom_sf(data=thames, colour="blue", linewidth=1.5) + 
-  theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black", 
+st_bridges(london, "GSS_CODE") |>
+  st_quickmap_nb() +
+  geom_sf(data=thames, colour="blue", linewidth=1.5) +
+  theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black",
                                         linewidth=1.5))
 
 
@@ -771,27 +770,27 @@ riverside <- thames |> st_intersects(london) |> unlist() |> unique()
 
 # only map these wards
 
-st_bridges(london[riverside,],"NAME") |> 
+st_bridges(london[riverside,],"NAME") |>
   st_quickmap_nb(linksize = 0.5) +
-  geom_sf(data=thames, colour="blue", linewidth=1.5) + 
+  geom_sf(data=thames, colour="blue", linewidth=1.5) +
   annotation_scale(location="br") +
-  coord_sf(datum=NA) + 
-  theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black", 
+  coord_sf(datum=NA) +
+  theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black",
                                         linewidth=1.5))
 
 
 ## ----lon-crossings, fig.width=12, fig.height=6, out.width="100%", fig.cap = "Riverside wards of Greater London. Road and pedestrian crossing and tunnels surrounded by 1 kilometre buffer shaded green. "----
 
-ggplot() + 
-  geom_sf(data=london[riverside,], fill="gray90", colour="gray50", linewidth=0.5) + 
-  geom_sf(data=crossings_roadped |> st_buffer(1000), fill="darkgreen", alpha=0.4) + 
-  geom_sf(data=thames, colour="blue", linewidth=1.5) + 
-  geom_sf(data=crossings_roadped, size=1, colour="yellow") + 
-  geom_label_repel(data=crossings_roadped[1:11,], 
-                   aes(label=crossing, x=st_coordinates(geometry)[,1], y=st_coordinates(geometry)[,2]), 
-                   size=2.5, nudge_y=-10000, fill="white", fontface="bold") + 
-  geom_label_repel(data=crossings_roadped[12:22,], 
-                   aes(label=crossing, x=st_coordinates(geometry)[,1], y=st_coordinates(geometry)[,2]), 
+ggplot() +
+  geom_sf(data=london[riverside,], fill="gray90", colour="gray50", linewidth=0.5) +
+  geom_sf(data=crossings_roadped |> st_buffer(1000), fill="darkgreen", alpha=0.4) +
+  geom_sf(data=thames, colour="blue", linewidth=1.5) +
+  geom_sf(data=crossings_roadped, size=1, colour="yellow") +
+  geom_label_repel(data=crossings_roadped[1:11,],
+                   aes(label=crossing, x=st_coordinates(geometry)[,1], y=st_coordinates(geometry)[,2]),
+                   size=2.5, nudge_y=-10000, fill="white", fontface="bold") +
+  geom_label_repel(data=crossings_roadped[12:22,],
+                   aes(label=crossing, x=st_coordinates(geometry)[,1], y=st_coordinates(geometry)[,2]),
                    size=2.5, nudge_y=10000, fill="white", fontface="bold") +
   annotation_scale(location="br") +
   coord_sf(datum=NA)
@@ -801,9 +800,9 @@ ggplot() +
 ## -----------------------------------------------------------------------------
 # which riverside units do not fall within any of the buffers...
 
-crossing_buffer_summarised <- crossings_roadped |> 
-  st_buffer(1000) |> 
-  st_transform(st_crs(london)) |> 
+crossing_buffer_summarised <- crossings_roadped |>
+  st_buffer(1000) |>
+  st_transform(st_crs(london)) |>
   summarise()
 
 touch_buffer <- st_intersects(london[riverside,],
@@ -822,16 +821,16 @@ no_touch_buffer <- london[riverside,][indices,]
 ## ----lon-contig3, fig.width=12, fig.height=6, echo=TRUE, out.width="100%", fig.cap = "Riverside wards of Greater London. Index number for each ward shown at centroid. Wards which are not within 1 kilometre of a crossing are shaded pink. "----
 # with 'nodes = "numeric"'
 
-st_bridges(london[riverside,],"NAME") |> 
+st_bridges(london[riverside,],"NAME") |>
   st_quickmap_nb(nodes = "numeric", numericsize = 4, linksize = 0.5) +
-  geom_sf(data=no_touch_buffer, fill="pink", alpha=0.3) + 
-  geom_sf(data=crossings_roadped |> st_buffer(1000), 
+  geom_sf(data=no_touch_buffer, fill="pink", alpha=0.3) +
+  geom_sf(data=crossings_roadped |> st_buffer(1000),
           fill="darkgreen", alpha=0.3) +
-  geom_sf(data=thames, colour="blue", linewidth=1.5) + 
-  geom_sf(data=crossings_roadped, size=1, colour="yellow") + 
+  geom_sf(data=thames, colour="blue", linewidth=1.5) +
+  geom_sf(data=crossings_roadped, size=1, colour="yellow") +
   annotation_scale(location="br") +
-  coord_sf(datum=NA) + 
-  theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black", 
+  coord_sf(datum=NA) +
+  theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black",
                                         linewidth=1.5))
 
 
@@ -851,15 +850,15 @@ cut_df <- tribble(
   39, 65,
   1, 2
 )
-st_bridges(london[riverside,], "NAME") |> 
-  st_force_cut_nb(xy_df = cut_df) |> 
+st_bridges(london[riverside,], "NAME") |>
+  st_force_cut_nb(xy_df = cut_df) |>
   st_quickmap_nb(bordercol = "black", bordersize = 0.5, linksize = 0.5) +
-  geom_sf(data=no_touch_buffer, fill = "pink", alpha = 0.3) + 
-  geom_sf(data=crossings_roadped |> st_buffer(1000), 
+  geom_sf(data=no_touch_buffer, fill = "pink", alpha = 0.3) +
+  geom_sf(data=crossings_roadped |> st_buffer(1000),
           fill= "darkgreen", alpha = 0.3) +
   geom_sf(data=thames, colour = "blue", linewidth = 1.5) +
   annotation_scale(location = "br") +
-  coord_sf(datum=NA) + 
-  theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black", 
+  coord_sf(datum=NA) +
+  theme(panel.background = element_rect(fill = "#F6F3E9", colour = "black",
                                         linewidth = 1.5))
 
