@@ -59,7 +59,7 @@ ctv::ctv("Econometrics")
 ctv::available.views()
 
 
-## ----ctv-citation, output.lines=2:16------------------------------------------
+## ----ctv-citation, output.lines=2:15------------------------------------------
 ctv::ctv("Econometrics")$citation
 
 
