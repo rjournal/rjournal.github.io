@@ -103,7 +103,7 @@ rectangles <- rbind(rect1_sf, rect2_sf, rect3_sf, rect4_sf, rect5_sf) |>
   mutate(name = c("Rect1","Rect2","Rect3","Rect4","Rect5"))
 
 
-## ----rects1, fig.width=4, fig.height=2, fig.cap = "Simplified scenario with five rectangles. "----
+## ----rects1, fig.width=4, fig.height=2, fig.cap = "Simplified scenario with five rectangles."----
 ggplot(rectangles) + geom_sf(colour="black", linewidth=1) + geom_sf_label(aes(label=name),size=2.5) +
   coord_sf(datum=NA) +
   theme(axis.title = element_blank(),
