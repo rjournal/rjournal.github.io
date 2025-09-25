@@ -16,7 +16,7 @@ groupNorm <- function(beta,groups){
 
 getGroupPenObj <- function(x,y,beta,tau,lambda, groups){
   fits <- cbind(1,x)%*%beta
-  resids <- y - fits 
+  resids <- y - fits
   loss <- rqPen:::check(resids,tau=tau)
   obj <- apply(loss,2,mean)
   penbeta <- beta[-1,]
@@ -30,7 +30,7 @@ getX <- function(n,p){
   x <- NULL
   for(i in 1:k){
     x <- cbind(x, t(rmultinom(n,1,c(1/3,1/3,1/3)))[,-1])
-  } 
+  }
   x
 }
 
@@ -46,22 +46,22 @@ simFunc <- function(i){
         x <- getX(n,p) #matrix(rnorm(n*p),n,p)
         y <- as.numeric(x%*%bstar + rnorm(n)) #rt(n,3)
         g <- rep(seq(1,p/2),each=2)
-        
+
         lambda <- seq(.05,.001,length=50)
         rtime <- system.time(r1 <- rq.group.pen(x,y,groups=g, scalex=FALSE, lambda.discard=FALSE,lambda=lambda))
         ctime <- system.time(c1 <- conquer.reg(x,y,lambda=lambda, penalty="group",group=g,iteMax=5000))
-        
+
         robj  <- getGroupPenObj(x,y,coefficients(r1),.5,lambda,g)
         cobj  <- getGroupPenObj(x,y,c1$coeff,.5,c1$lambda,g)
         cobj$penRho <- rev(cobj$penRho)
-        
+
         times <- rbind(times, c(n,p,i,rtime[3],"rqPen-huber"),
                               c(n,p,i,ctime[3],"conquer"))
-        
+
         obj <- rbind(obj, cbind(n,p,i,robj$penRho,lambda, "rqPen-huber"),
                           cbind(n,p,i,cobj$penRho,lambda, "conquer"),
                           cbind(n,p,i,robj$penRho/cobj$penRho,lambda,"rq-conquer"))
-        
+
       #}
     }
   }
@@ -72,7 +72,7 @@ simFunc <- function(i){
 #mc_results <- mclapply(1:50,simFunc, mc.cores=ncores)#
 mc_results <- list()
 for(i in 1:50){
-  mc_results[[i]] <- simFunc(i) 
+  mc_results[[i]] <- simFunc(i)
 }
 save.image("lassoSpeedGroupBen.Rdata")
 4+4
@@ -112,15 +112,18 @@ for(i in 1:((ncol(obj)-1))){
 obj$p <- revalue(obj$p, c("30"="p=30","100"="p=100","300"="p=300"))
 obj$p <- factor(obj$p, levels=c("p=30","p=100","p=300"))
 
-pdf("lassoSpeedCompareGroup.pdf")
-ggplot(times, aes(x=as.factor(n),y=log(time,10), fill=method)) + geom_boxplot()+facet_wrap(.~p)+ylab("Log Base 10 Time in seconds")+
+#pdf("lassoSpeedCompareGroup.pdf")
+p <- ggplot(times, aes(x=as.factor(n),y=log(time,10), fill=method)) + geom_boxplot()+facet_wrap(.~p)+ylab("Log Base 10 Time in seconds")+
   xlab("n")
-dev.off()
+#dev.off()
+saveRDS(p, file = "lassoSpeedCompareGroup.rds")
 
-pdf("lassoObjCompareGroup.pdf")
-ggplot(subset(obj,method=="rq-conquer"), aes(x=as.factor(n),y=ratio, fill=p)) + geom_boxplot()+ylab("Ratio of rqPen and conquer penalized objective function at solution")+
+
+#pdf("lassoObjCompareGroup.pdf")
+p <- ggplot(subset(obj,method=="rq-conquer"), aes(x=as.factor(n),y=ratio, fill=p)) + geom_boxplot()+ylab("Ratio of rqPen and conquer penalized objective function at solution")+
   xlab("n")
-dev.off()
+saveRDS(p, file = "lassoObjCompareGroup.rds")
+#dev.off()
 
 
 
@@ -130,15 +133,15 @@ dev.off()
 # colnames(times) <- c("n","p","i","time","method")
 # colnames(obj) <- c("n","p","i","ratio","lambda","method")
 # times$time <- as.numeric(paste(times$time))
-# 
+#
 # ggplot(obj, aes(x=s,y=log(value),fill=method)) + geom_boxplot() + ylab("log(se)") + ggtitle("Log Out of sample squared error")
 # library(ggplot2)
-# 
+#
 # ggplot(subset(times,p==30 & method !="rq-br"), aes(x = n, y = time, fill = method))  + geom_boxplot() + labs(y="Time in seconds",title="Time comparison for p=30")
 # ggplot(subset(times,p==100 & method !="rq-br"), aes(x = n, y = time, fill = method))  + geom_boxplot() + labs(y="Time in seconds",title="Time comparison for p=100")
 # ggplot(subset(times,p==300 & method !="rq-br"), aes(x = n, y = time, fill = method))  + geom_boxplot() + labs(y="Time in seconds",title="Time comparison for p=300")
-# 
+#
 # ggplot(subset(a,p==30), aes(x = as.factor(n), y = ratio, fill = method))  + geom_boxplot() + labs(y="Ratio of objective function at solution with rq-br",title="Objective function solution comparison for p=30")
 # ggplot(subset(a,p==100), aes(x = as.factor(n), y = ratio, fill = method))  + geom_boxplot() + labs(y="Ratio of objective function at solution with rq-br",title="Objective function solution comparison for p=300")
 # ggplot(subset(a,p==300), aes(x = as.factor(n), y = ratio, fill = method))  + geom_boxplot() + labs(y="Ratio of objective function at solution with rq-br",title="Objective function solution comparison for p=300")
-# 
+#

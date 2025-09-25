@@ -3,6 +3,7 @@
 
 ## ----setup, include=FALSE-----------------------------------------------------
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(ggplot2)
 
 
 ## ----cache=TRUE, echo=TRUE, eval=FALSE----------------------------------------
@@ -66,7 +67,7 @@ colnames(coefDf) <- c("br","fn","huber")
 coefDf
 
 
-## ----cache=TRUE, echo=TRUE, out.width="250px", out.height="250px", fig.align = 'center'----
+## ----cache=TRUE, echo=TRUE, out.width="100%", fig.align = 'center'------------
 plot(qhuber)
 
 
@@ -74,7 +75,7 @@ plot(qhuber)
 qmult <- rq.pen(x,y,tau=c(.1,.5,.9),a=c(3,4),penalty="SCAD")
 
 
-## ----cache=TRUE, echo=TRUE, out.width="250px", out.height="250px", fig.align = 'center'----
+## ----cache=TRUE, echo=TRUE, out.width="100%", fig.align = 'center'------------
 plot(qmult, tau=.1,a=4)
 
 
@@ -116,11 +117,11 @@ qcv <- rq.pen.cv(x,y,tau=tauVals,a=c(.1,.5,1),penalty="ENet",
                  tauWeights = tauVals*(1-tauVals))
 
 
-## ----cache=TRUE, echo=TRUE, out.width="250px", out.height="250px", fig.align = 'center'----
+## ----cache=TRUE, echo=TRUE, out.width="100%", fig.align = 'center'------------
 plot(qcv,tau=.5)
 
 
-## ----cache=TRUE, echo=TRUE, out.width="250px", out.height="250px", fig.align = 'center'----
+## ----cache=TRUE, echo=TRUE, out.width="100%", fig.align = 'center'------------
 plot(qcv,septau=FALSE)
 
 
@@ -184,7 +185,7 @@ qAmes2 <- rq.group.pen(x_g,y_g,groups=g, group.pen.factor = gpf, tau=tauVals,
                       penalty="gSCAD",tau.penalty.factor=tauVals*(1-tauVals))
 
 
-## ----cache=TRUE, echo=TRUE, out.width="250px", out.height="250px", fig.align = 'center'----
+## ----cache=TRUE, echo=TRUE, out.width="100%", fig.align = 'center'------------
 plot(qAmes1,tau=.5)
 plot(qAmes2,tau=.5)
 
@@ -193,7 +194,7 @@ plot(qAmes2,tau=.5)
 coefficients(qAmes1,tau=.5, lambdaIndex=40)
 
 
-## ----cache=TRUE, echo=TRUE, out.width="250px", out.height="250px", fig.align = 'center'----
+## ----cache=TRUE, echo=TRUE, out.width="100%", fig.align = 'center'------------
 bytau.plot(qAmes1,vars=7,lambdaIndex=40)
 
 
@@ -201,22 +202,22 @@ bytau.plot(qAmes1,vars=7,lambdaIndex=40)
 qgl <- rq.group.pen.cv(x_g,y_g,g,tau=tauVals)
 
 
-## ----cache=TRUE, echo=TRUE, out.width="250px", out.height="250px", fig.align = 'center'----
+## ----cache=TRUE, echo=TRUE, out.width="100%", fig.align = 'center'------------
 bytau.plot(qgl,vars=7,septau=FALSE,cvmin=FALSE)
 
 
-## ----lassoSpeedCompare, out.width="250px", out.height="250px", fig.cap = "Log time in seconds of lasso quantile regression using conquer and the Huber approximation in rqPen.", fig.align = 'center'----
-knitr::include_graphics("figures/lassoSpeedCompare.pdf")
+## ----lassoSpeedCompare, fig.width=8, fig.height=4, out.width="100%", fig.cap = "Log time in seconds of lasso quantile regression using conquer and the Huber approximation in rqPen.", fig.align = 'center'----
+readRDS("simulationCode/lassoSpeedCompare2.rds")
 
 
-## ----lassoObjCompare, out.width="250px", out.height="250px", fig.cap = "Ratio of quantile regression lasso objective function at the rqPen-huber and conquer solutions, where rqPen-br is the baseline.", fig.align = 'center'----
-knitr::include_graphics("figures/lassoObjCompare.pdf")
+## ----lassoObjCompare, fig.width=8, fig.height=4, out.width="100%", fig.cap = "Ratio of quantile regression lasso objective function at the rqPen-huber and conquer solutions, where rqPen-br is the baseline.", fig.align = 'center'----
+readRDS("simulationCode/lassoObjCompare2.rds")
 
 
-## ----lassoSpeedCompareGroup, out.width="250px", out.height="250px", fig.cap = "Log time in seconds of group lasso quantile regression using conquer and the Huber approximation in rqPen.", fig.align = 'center'----
-knitr::include_graphics("figures/lassoSpeedCompareGroup.pdf")
+## ----lassoSpeedCompareGroup, fig.width=8, fig.height=4, out.width="100%", fig.cap = "Log time in seconds of group lasso quantile regression using conquer and the Huber approximation in rqPen.", fig.align = 'center'----
+readRDS("simulationCode/lassoSpeedCompareGroup.rds")
 
 
-## ----lassoObjCompareGroup, out.width="250px", out.height="250px", fig.cap = "Ratio of quantile regression group lasso objective function at the rqPen and conquer group lasso solutions.", fig.align = 'center'----
-knitr::include_graphics("figures/lassoObjCompareGroup.pdf")
+## ----lassoObjCompareGroup, fig.width=8, fig.height=5, out.width="100%", fig.cap = "Ratio of quantile regression group lasso objective function at the rqPen and conquer group lasso solutions.", fig.align = 'center'----
+readRDS("simulationCode/lassoObjCompareGroup.rds")
 
