@@ -38,7 +38,7 @@ knit_hooks$set(output = function(x, options) {
 })
 
 
-## ----econometrics, fig.cap = 'Screenshot of the header and introduction of the "Econometrics" task view.', fig.alt = 'Screenshot of the header and introduction of the Econometrics task view, captured on 2025-04-01 at https://CRAN.R-project.org/view=Econometrics. The header displays the title (Econometrics), maintainers (Achim Zeileis, Grant McDermott, Kevin Tappe), contact e-mail address, version/date, URL, GitHub link, information for potential contributors, the recommended citation, and installation instructions. The introduction starts by outlining the scope and links to other related task views (Finance, TimeSeries, CausalInference).', fig.pos = "t!", out.width = "100%", dpi = 300, echo = FALSE----
+## ----econometrics, fig.cap = 'Screenshot of the header and introduction of the Econometrics task view.', fig.alt = 'Screenshot of the header and introduction of the Econometrics task view, captured on 2025-04-01 at https://CRAN.R-project.org/view=Econometrics. The header displays the title (Econometrics), maintainers (Achim Zeileis, Grant McDermott, Kevin Tappe), contact e-mail address, version/date, URL, GitHub link, information for potential contributors, the recommended citation, and installation instructions. The introduction starts by outlining the scope and links to other related task views (Finance, TimeSeries, CausalInference).', fig.pos = "t!", out.width = "100%", dpi = 300, echo = FALSE----
 knitr::include_graphics("figures/econometrics.png")
 
 
