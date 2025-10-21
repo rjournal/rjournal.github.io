@@ -1,0 +1,300 @@
+---
+title: "Replication Material"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error=TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+# Some ggplots yield warnings because of smoothing parameters.
+# This is due to the choice of Bsim, see next
+# Because most numbers are based on simulation runs the exact
+# numbers in the paper will not match those in this Rmd. 
+Bsim=250 # simulation sample sizes for power estimation
+PrintGraph=FALSE 
+set.seed(1111)
+```
+
+- p-value adjustment
+
+```{r}
+A=matrix(0, 500, 2)
+pnull = function(x) punif(x)
+rnull = function() runif(250)
+for(i in 1:500) {
+   tmp=Rgof::gof_test(rnull(), NA, pnull, rnull, B=500)[["p.values"]]
+   A[i, 1] = min(tmp[c("KS", "K", "AD", "CvM")])
+   A[i, 2] = min(tmp[c("W", "AD", "ZC", "ES-s-P")])
+}
+x=seq(0,1,length=100)
+y1=x
+y2=x
+for(i in 1:100) {
+   y1[i]=sum(A[, 1]<x[i])/500
+   y2[i]=sum(A[, 2]<x[i])/500
+}
+lvls=c("Identical Tests","Correlated Selection",
+       "Good Selection","Independent Tests")
+dta=data.frame(x=rep(x, 4),
+               y=c(x, y1, y2, 1-(1-x)^4),
+               Tests=factor(
+                 c(rep("Identical Tests", 100),
+                       rep("Correlated Selection", 100),
+                       rep("Good Selection", 100),
+                       rep("Independent Tests", 100)
+                 ), ordered = TRUE, levels = lvls))
+ggplot2::ggplot(data=dta, aes(x,y,color=Tests)) +
+  geom_line() + 
+  labs(x="smallest p value", y="ECDF") +
+  theme(legend.position = "bottom")+
+  ggplot2::scale_color_manual(labels=lvls,
+    values=c("black", "green", "blue", "red"))
+if(PrintGraph) ggsave("figures/fig1.png")
+```
+
+- Test for normal distribution with mean estimated. Data set x is from a normal distribution, y from a t distribution with 5 degrees of freedom
+
+```{r}
+pnull = function(x, mu=0) pnorm(x, mu) # cdf under null hypothesis
+rnull = function(mu=0) rnorm(1000, mu) # generate data under null hypothesis
+phat = function(x) mean(x) # estimate parameter 
+x = rnull() # data from distribution under the null hypothesis
+Rgof::gof_test(x, NA, pnull, rnull, phat=phat)
+```
+
+- finding the adjusted p-value
+
+```{r message=TRUE}
+Rgof::gof_test_adjusted_pvalue(x, NA, pnull, rnull, phat=phat, B=Bsim, maxProcessor = 1)
+```
+
+- data actually from a t distribution
+
+```{r}
+y = rt(1000, 5) # data where null hypothesis is false
+Rgof::gof_test(y, NA, pnull, rnull, phat=phat)[["p.values"]]
+```
+
+- same as above, with quantile function.
+
+```{r}
+TSextra = list(qnull=function(x, mu=0) qnorm(x, mu))
+Rgof::gof_test(x, NA, pnull, rnull, phat=phat, TSextra=TSextra)[["p.values"]]
+```
+
+- test of above with a user supplied test.
+
+```{r}
+NeymanSmoothTest = function(x, pnorm, param) {
+  ts=as.numeric(unlist(ddst::ddst.norm.test(x))[1])
+  names(ts) = "DDST"
+  ts
+}
+Rgof::gof_test(x, NA, pnull, rnull, phat=phat, TS=NeymanSmoothTest)[["p.values"]]
+Rgof::gof_test(y, NA, pnull, rnull, phat=phat, TS=NeymanSmoothTest)[["p.values"]]
+```
+
+- example with random sample size
+
+```{r}
+Rgof::gof_test(x, NA, pnull, rnull, phat=phat, TSextra=TSextra, rate=950)[["p.values"]]
+```
+
+- example with importance sampling weights
+
+```{r}
+rnull = function(mu=0) c(rnorm(500, -1), rnorm(500, 1))
+x = rnull()
+w=function(x, mu=0) dnorm(x, mu)/(dnorm(x, -1)/2+dnorm(x, 1)/2)
+Rgof::gof_test(x, NA, pnull, rnull, w=w, phat=phat)[["p.values"]]
+Rgof::gof_test(y, NA, pnull, rnull, w=w, phat=phat)[["p.values"]]
+```
+
+- example for discrete data. Test to see whether data comes from a binomial distribution with the success probability estimated from the data. Null hypothesis is true for x and false for y.
+
+```{r}
+vals = 0:100 # all possible values
+pnull = function(p=0.5) pbinom(0:100, 100, p)
+rnull = function(p=0.5) table(c(0:100,rbinom(1000, 100, p)))-1  
+phat = function(x) mean(0:100*x)/1000
+x = rnull()
+Rgof::gof_test(x, vals, pnull, rnull, phat=phat)[["p.values"]]
+y = table(c(0:100, rbinom(900, 100, 0.5), sample(30:70, size=100, replace=TRUE)))-1
+Rgof::gof_test(y, vals, pnull, rnull, phat=phat)[["p.values"]]
+```
+
+- estimation of power for normal vs t distribution, with degrees of freedom of t distribution 4,6,..,40.
+
+**Note that this is run with simulation sample sizes B=250 as it would take a long time otherwise**. For higher precision estimates, change to Bsim=1000 in setup.
+
+```{r}
+pnull = function(x, p=c(0,1)) pnorm(x, p[1], p[2]) # cdf under null hypothesis
+rnull = function(p=c(0,1)) rnorm(500, p[1], p[2]) # generate data under null hypothesis
+phat = function(x) c(mean(x), sd(x)) # estimate parameters
+TSextra = list(qnull = function(x, p=c(0,1)) qnorm(x, p[1], p[2])) # quantile function
+ralt = function(df) rt(500, df) # generate data under alternative
+tmp=Rgof::gof_power(pnull, NA, rnull, ralt,
+           param_alt=2*2:20, 
+           phat=phat, TSextra = TSextra, B=Bsim)
+Rgof::plot_power(tmp, "df", 
+          "Standard Normal vs t Distributions")
+if(PrintGraph) ggsave("figures/fig2.png")
+```
+
+```{r}
+vals=70:140
+pnull=function(lambda) (ppois(70:140, lambda)-ppois(69,lambda))/(ppois(140, lambda)-ppois(69,lambda))
+rnull=function(lambda) {
+  vals=70:140
+  x=rpois(1000, lambda)
+  x[x<70]=70
+  x[x>140]=140
+  x=table(c(70:140, x))-1
+}
+phat=function(x) sum(70:140*x)/1000
+ralt=function(lambda) {
+  vals=70:140
+  x=c(rpois(500, 100), rpois(500, 100+lambda))
+  x[x<70]=70
+  x[x>140]=140
+  x=table(c(70:140, x))-1
+}
+tmp=Rgof::gof_power(pnull, vals, rnull, ralt,
+                    param_alt=0:15, phat=phat, B=Bsim)
+Rgof::plot_power(tmp, "lambda", 
+      "Poisson vs Mixture of Poisson Distributions")
+if(PrintGraph) ggsave("figures/fig3.png")
+```
+
+- two sample test for continuous data.
+
+```{r}
+x = rnorm(100)
+y1 = rnorm(150) # Null hypothesis is true
+y2 = rnorm(150, 1) # Null hypothesis is false
+R2sample::twosample_test(x, y1)[["p.values"]]
+R2sample::twosample_test(x, y2)[["p.values"]]
+```
+
+-  with user supplied test 
+
+```{r}
+DiffStandardizedMeans = function(x, y) {
+   TS = abs(mean(x)/sd(x)-mean(y)/sd(y))
+   names(TS) = "DSM"
+   TS
+}
+R2sample::twosample_test(x, y1, TS=DiffStandardizedMeans)[["p.values"]]
+R2sample::twosample_test(x, y2, TS=DiffStandardizedMeans)[["p.values"]]
+```
+
+- with weights
+
+```{r}
+x = rt(100, 5)
+wx = dnorm(x)/dt(x, 5)
+R2sample::twosample_test(x, y1, wx=wx)[["p.values"]]
+R2sample::twosample_test(x, y2, wx=wx)[["p.values"]]
+```
+
+- two sample tests using large sample approximations
+
+```{r}
+x = rnorm(1e5)
+y1 = rnorm(1e5)
+y2 = rnorm(1e5, 0.02)
+R2sample::twosample_test(x, y1)[["p.values"]]
+R2sample::twosample_test(x, y2)[["p.values"]]
+```
+
+- two sample test for discrete data
+
+```{r}
+x = table(rgeom(1000, 0.7))
+y = table(rgeom(1000, 0.8))
+vals = unique(c(names(x), names(y))) # all values from either x or y
+x1 = rep(0, length(vals))
+names(x1)=vals
+y1 = x1
+x1[names(x)]=x
+y1[names(y)]=y
+vals = as.numeric(vals)
+R2sample::twosample_test(x1, y1, vals)[["p.values"]]
+```
+
+- power estimation for two sample problem
+
+```{r}
+f=function(df) {
+  x=rnorm(10001)
+  y=rt(10002, df)
+  list(x=x, y=y)
+}
+tmp=R2sample::twosample_power(f, df=seq(5, 100, 5), B=Bsim)
+R2sample::plot_power(tmp, "df", "Data from Standard Normal vs t Distributions")
+if(PrintGraph) ggsave("figures/fig4.png")
+```
+
+```{r}
+f=function(a) {
+  vals=70:140
+  x=rpois(1000, 100)
+  x[x<70]=70
+  x[x>140]=140
+  x=table(c(70:140, x))-1
+  y=c(rpois(500, 100), rpois(500, 100+a))
+  y[y<70]=70
+  y[y>140]=140
+  y=table(c(70:140, y))-1
+  I=seq_along(vals)[x+y>0]
+  list(x=x[I], y=y[I], vals=vals[I])
+}
+tmp=R2sample::twosample_power(f, a=seq(0,5,0.25), B=Bsim)
+R2sample::plot_power(tmp, "lambda", "Data from Poisson vs Mixture of Poisson Distributions")
+if(PrintGraph) ggsave("figures/fig5.png")
+```
+
+- Benchmarking example
+
+```{r}
+myTS=function(x, pnull, param) {
+     if(length(formals(pnull))==1) 
+        mypnull=function(x) pnull(x)
+     else mypnull=function(x) pnull(x, param)
+     z=ks.test(x, mypnull)$p.value
+     names(z)="RKS"
+     z
+  }
+pwrs=Rgof::run.studies(myTS, With.p.value = TRUE)
+```
+
+- Sunspot data example
+
+```{r}
+library(ggplot2)
+dta=data.frame(Sunspots=c(sunspots))
+ggplot(dta, aes(x=Sunspots)) + 
+  geom_histogram(color="black", fill="white", bins=20) + 
+  ggtitle("Sunspots Data")
+if(PrintGraph) ggsave("figures/fig6.png")
+pnull = function(x, p=1) pexp(x, p)
+TSextra=list(qnull= function(x, p=1) qexp(x, p))
+rnull = function(p) rexp(length(sunspots), p)
+phat = function(x) 1/mean(x)
+Rgof::gof_test(c(sunspots), NA, pnull, rnull, phat=phat, TSextra = TSextra, Range=c(0, Inf))
+```
+
+- Horsekicks example
+
+```{r}
+vals=0:5
+x=c(109, 65, 22, 3, 1, 0)
+pnull = function(lambda=1) c(ppois(0:4,lambda), 1)
+rnull = function(lambda=1) {
+  x =  rpois(200, lambda)
+  x[x>5]=5
+  table(c(0:5, x))-1
+}  
+phat = function(x) sum(0:5*x)/200
+Rgof::gof_test(x, vals, pnull, rnull, phat=phat)
+```
