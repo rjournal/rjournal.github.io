@@ -1,0 +1,368 @@
+---
+output: pdf_document
+#bibliography: RImageReview.bib
+---
+
+```{r setup5, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+# Combining forces - making use of the open-source approach
+
+The majority of the aforementioned packages are designed to encompass all facets
+of image analysis, including preprocessing, quantification, and visualization.
+This integration is typically achieved through the utilization of one or more
+general-purpose packages (Table \@ref(tab:overview1) and \@ref(tab:overview2)).
+The combination of existing packages or libraries with new code facilitates the
+development of specialized packages. `R`, as a package-based language, provides a
+convenient means of combining these specialized packages to meet the specific
+needs of the individual user. The following section illustrates the combination of
+packages to perform statistical analysis on quantified image data.
+
+## `biopixR` and `countfitteR`: quantitative analysis of DNA double strand breaks
+
+DNA double strand breaks (DSBs) represent a particularly severe form of DNA
+damage, frequently resulting in apoptotic cell death in the absence of repair.
+The extent of DNA damage can be quantified through immunofluorescence
+staining, which employs antibodies against the phosphorylated histone protein
+H2AX ($\gamma$H2AX). The staining process results in the formation of
+$\gamma$H2AX foci, which serve as a quantitative representation of the number of
+DNA DSBs. It has been proposed that the number of DNA DSBs is indicative of the
+efficacy of an anti-tumor agent, thereby enabling the assessment of individual
+patient responses to therapies and the evaluation of the general cytotoxic
+effects of treatments *in vivo*. This enables more precise modulation of therapy
+according to the patient's individual needs [@Roediger2018; @Ruhe2019;
+@schneider_open_2019].
+
+In the following example, the `biopixR` package was employed to quantify DNA
+double-strand breaks, resulting in an output of foci per cell (Figure
+\@ref(fig:DSB)). To achieve this objective, the green fluorescent foci were
+extracted by applying the `objectDetection()` function to the green color
+channel of the image (Figure \@ref(fig:DSB)A). The result of the foci extraction
+is illustrated in Figure \@ref(fig:DSB)B using the `changePixelColor()` function,
+whereby each of the distinct foci is highlighted in a different color. The DAPI-stained
+nuclei were extracted through the application of thresholding on the blue color
+channel. Subsequently, the resulting data frame was subjected to size filtering
+in order to eliminate any detected noise. The final quantification of foci per
+cell was achieved by comparing the coordinates of nuclei and foci in the
+obtained data frames. This result can then be further analyzed using the
+`countfitteR` package, which provides an automated evaluation of
+distribution models for count data [@Burdukiewicz2019; @Chilimoniuk2021]. The
+resulting distribution is presented in Figure \@ref(fig:countfitteR).
+
+```{r DSBanalysis, eval=FALSE, echo=TRUE}
+# Load the 'biopixR' package
+library(biopixR)
+
+# Import image from specified path
+DSB_img <- importImage("figures/tim_242602_c_s3c1+2+3m4.tif")
+
+# Extract the blue color channel representing the nuclei and
+# the green color channel representing yH2AX foci
+core <- as.cimg(DSB_img[, , , 3])
+yH2AX <- as.cimg(DSB_img[, , , 2])
+
+# Process the nuclei: thresholding, labeling, and converting to a data frame
+cores <-
+  threshold(core) |> label() |> as.data.frame() |> subset(value > 0)
+
+# Calculate the center and size for the nuclei
+DT <- as.data.table(cores)
+cores_center <-
+  DT[, list(mx = mean(x),
+            my = mean(y),
+            size = length(x)), by = value]
+
+# Filter the nuclei based on size, to discard noise
+cores_clean <-
+  sizeFilter(cores_center,
+             cores,
+             lowerlimit = 150,
+             upperlimit = Inf)
+
+# Detect objects yH2AX foci in green color channel
+DSB <- objectDetection(yH2AX, alpha = 1.1, sigma = 0)
+
+# Function to compare coordinates from two data frames and count matches
+compareCoordinates <- function(df1, df2) {
+  # Create a single identifier for each coordinate pair
+  df1$coord_id <- paste(round(df1$mx), round(df1$my), sep = ",")
+  df2$coord_id <- paste(df2$x, df2$y, sep = ",")
+
+  # Find matches by checking if coordinates from df2 exist in df1
+  matches <- df2$coord_id %in% df1$coord_id
+
+  # Convert df2 to a data table and add a column indicating matches
+  DT <- data.table(df2)
+  DT$DSB <- matches
+
+  # Summarize the results
+  result <-
+    DT[, list(count = length(which(DSB == TRUE))), by = value]
+
+  return(result)
+}
+
+# Compare coordinates between detected DSB centers and cleaned nuclei coordinates
+count <- compareCoordinates(DSB$centers, cores_clean$coordinates)
+
+# Extract the count column for further analysis
+to_analyze <- count[, 2]
+```
+
+(ref:DSB) **Quantification of DNA Double Strand Breaks**: **A**) The image displays cells with nuclei stained using DAPI. The quantitative marker for DNA double strand breaks, $\gamma$H2AX, targeted with a specific antibody, is visible as green fluorescent foci. The experimental procedure follows the method described by @Roediger2018. **B**) The $\gamma$H2AX foci are quantified using the `biopixR` package. The detected foci are highlighted in different colors using the `changePixelColor()` function.
+
+```{r DSB, out.width="95%", fig.cap="(ref:DSB)", fig.show='hold'}
+knitr::include_graphics("figures/fig_DSB.png")
+```
+
+(ref:countfitteR) **Analyzing Count Data with the `countfitteR` Package**: The data representing the number of foci per cell obtained from the `biopixR` analysis were imported into the interactive `shiny` interface of the `countfitteR` package. This package analyzed the distribution and summarized the results. One outcome is illustrated in this figure, which shows the frequency distribution of a specific count of foci per cell.
+
+```{r countfitteR, out.width="89%", fig.cap="(ref:countfitteR)"}
+knitr::include_graphics("figures/count_distr.png")
+```
+
+# Exploring the blank spot - z-stack imaging in `R`
+
+Z-stack imaging refers to the capture of images that possess a third dimension,
+specifically image depth, which enables the spatial capture of molecules or the
+reconstruction of the three-dimensional architecture of tissues. One method for
+achieving z-stacking involves capturing multiple two-dimensional images at
+uniform intervals over the depth of an object by changing the focal plane. The
+individual 2D images are then reconstructed to create a 3D model [@Trivedi2020;
+@Kim2022].
+
+The only packages currently available in the `R` programming language for
+dealing with z-stack imaging are `spatialTIME` and `MaxContrastProjection`.
+However, the `spatialTIME` package necessitates preprocessing and is therefore
+unable to handle the images directly [@Creed2021]. The other package,
+`MaxContrastProjection`, has unfortunately been removed from Bioconductor. The
+package is capable of performing maximum contrast projection, whereby the
+z-stacks of a 3D image are merged into a 2D image [@MaxContrastProjection]. To
+the best of our knowledge, these are the only packages in `R` that address the
+topic of z-stack imaging.
+
+# Scaling new heights - high throughput analysis in the era of small and big data?
+
+The exponential growth of data, which reached levels of zettabytes ($10^{21}$
+bytes) as early as 2012 [@Sagiroglu2013], is accompanied by a significant
+increase in image generation due to advancements in imaging technologies such as
+microscopy. High-resolution images produced in a single experiment can result in
+data sets exceeding terabytes [@Peng2012; @Eliceiri2012]. This surge in data
+generation across various fields has initiated the era of Big Data, which
+presents considerable challenges in the handling and interpretation of massive
+data sets [@Cui2015]. In automated microscopy, the rapid acquisition of large
+image volumes facilitates extensive screening processes but complicates the
+conversion of image stacks into actionable information and discoveries, resulting in
+a critical need for analytical pipelines that can efficiently identify regions
+of interest, compute relevant features, and perform statistical analysis,
+ensuring reproducibility and reliability [@Wollman2007].
+
+The extraction of quantitative information from images is a common practice, but
+it is becoming increasingly complex and error-prone when performed manually.
+This complexity requires the implementation of high-throughput methods capable
+of autonomously processing multiple images [@Olivoto2022]. These developments
+are crucial not only in specialized fields such as immunohistochemistry,
+fluorescence *in situ* hybridization [@Ollion2013], drug discovery, and cell
+biology [@Shariff2010], but also in promoting a data-driven approach to
+biological research, thereby accelerating tasks and enhancing research
+productivity [@Rittscher2010].
+
+The `R` programming language has limitations in handling large data sets. Since
+`R` places temporary copies of data in the random access memory (RAM) to access
+objects, it can lead to memory overload when processing data sets that exceed
+the available RAM. Additionally, `R` uses RAM to store generated data, so large
+lists of imported images can easily overwhelm the RAM. Moreover, `R` typically
+executes code on a single thread, not utilizing the full capabilities of the
+central processing unit (CPU). Several packages address issues such as
+file-based access and parallel computing, thereby enhancing `R`'s capability to
+handle big data. One approach is to combine `R` with the 'Hadoop' library
+[@Prajapati2013; @Oussous2018]. Another effective method for managing big data
+is the use of the HDF5, which efficiently manages
+data storage and access, provides multicore reading and writing, and is
+well-suited for organizing complex data collections. The `cytomapper` package
+utilizes HDF5 to optimize file management [@cytomapper; @Folk2011;
+@Koranne2011].
+
+Other packages, such as `pliman`, `biopixR`, and `FIELDimageR`, include features
+for optimized batch processing, such as parallel processing, by utilizing the
+`foreach` package for multi-core processing [@Olivoto2022; @biopixR;
+@Matias2020]. However, these packages are not fully optimized for big data. The
+`biopixR` package simplifies image processing by providing a pipeline that scans
+entire directories and verifies image uniqueness using Message Digest 5 (MD5)
+sums. It enables the application of specific filters to batches of images and
+generates an `RMarkdown` log file detailing the operations performed. The results
+are saved in a manageable CSV format, enhancing the
+efficiency of handling whole image directories [@biopixR].
+
+In conclusion, while `R` offers a range of options for handling big data, these
+options are not widely implemented in image processing packages. Consequently,
+the optimization and creation of workflows capable of handling big data is left
+to the end-user.
+
+# Summary
+
+In conclusion, we present a summary of the major `R` packages previously
+discussed. This summary provides an overview of the general applications,
+published repositories, and licensing information associated with these
+packages. Furthermore, it includes a list of the dependencies or libraries that
+these packages rely on. The status column indicates both the initial publication
+date and the date of the most recent update, thereby demonstrating the ongoing
+commitment to maintaining these packages (Table \@ref(tab:overview2)).
+
+```{r overview2}
+library(knitr)
+library(kableExtra)
+
+if (knitr::is_latex_output()) {
+  data <- read.csv("data/package_summary_pdf.csv")
+} else {
+  data <- read.csv("data/package_summary_html.csv")
+}
+
+kable(
+  data,
+  format = "markdown",
+  booktabs = TRUE,
+  caption = "Summary of key characteristics of major `R` packages for image processing. The table details general applications, repository (Repo) sources (CRAN, Bioconductor (Bioc), and GitHub), primary package or library dependencies, and licensing information. The status column indicates the date of first publication (*) and the most recent update (°) for each package.",
+  col.names = c(
+    "",
+    "Application",
+    "Repo",
+    "based on",
+    "License",
+    "Status"
+  ),
+  align = "lccccc",
+  escape = FALSE
+)
+```
+
+The packages outlined in Table \@ref(tab:overview2) are examined in terms of
+their individual dependencies. A minimal number of dependencies is essential for
+ensuring long-term stability and functionality. The packages are organized
+according to their dependencies and imports, which were extracted from the
+`DESCRIPTION` files to facilitate the identification of similarities between the
+packages. The relationships between the packages are illustrated in the form of
+a dendrogram (Figure \@ref(fig:dendro)).
+
+(ref:dendro) **Dendrogram of Hierarchically Clustered Package Dependencies**: The dendrogram depicts the outcomes of a hierarchical clustering of various image analysis packages, based on their named dependencies and imports, as extracted from their respective `DESCRIPTION` files. Each branch represents a distinct package, and the proximity between branches reflects the degree of similarity in their dependencies and imports. The required distance matrix was calculated using the binary method, also known as Jaccard distance. To perform the hierarchical clustering, the complete linkage clustering method was employed [@R_Core_Team].
+
+```{r dendro, echo=FALSE, message=FALSE, fig.cap="(ref:dendro)", fig.show='hold', out.width="79%", fig.align='center'}
+# to do: check if all packages are installed [x] 
+
+# list of packages
+packages <-
+  c(
+    "imager",
+    "magick",
+    "EBImage",
+    "biopixR",
+    "pliman",
+    "mxnorm",
+    "DIMPLE",       # not available for R4.3.3
+    "cytomapper",   # not available for R4.3.3
+    "SPIAT",        # not available for R4.3.3
+    "spatialTIME",
+    "celltrackR",
+    "FIELDimageR",
+    "fslr",
+    "colocr",
+    "imageseg",
+    "SimpleITK",
+    "pixelclasser",
+    "OpenImageR",
+    "RNiftyReg"
+  )
+
+# install all packages
+for (pkg in packages) {
+  # check if package is installed
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    if (pkg == "SimpleITK") {
+      install.packages("remotes")
+      remotes::install_github("SimpleITK/SimpleITKRInstaller")
+    }
+
+    if(!require(pkg == "SPIAT")) {
+      BiocManager::install("SPIAT")
+    }
+
+    install.packages(pkg)
+  }
+}
+
+# function to generate dependency matrix
+generate_dependancy_matrix <- function(packages) {
+  dependency_matrix <-
+    matrix(
+      0,
+      nrow = length(packages),
+      ncol = length(packages),
+      dimnames = list(packages, packages)
+    )
+
+  # iterate over each package
+  for (pkg in packages) {
+    # check if package is installed
+    if (requireNamespace(pkg, quietly = TRUE)) {
+      # load packages
+      library(pkg, character.only = TRUE)
+
+      # check for dependencies and imports of the packages
+      dependencies <-
+        c(packageDescription(pkg)$Depends,
+          packageDescription(pkg)$Imports)
+      dependencies <- unlist(strsplit(dependencies, ", |,"))
+
+      # add new packages to the list of packages
+      new_packages <- setdiff(dependencies, packages)
+      packages <- c(packages, new_packages)
+
+      # update dependency matrix
+      if (length(new_packages) > 0) {
+        dependency_matrix <-
+          cbind(dependency_matrix,
+                matrix(
+                  0,
+                  nrow = nrow(dependency_matrix),
+                  ncol = length(new_packages)
+                ))
+        #dependency_matrix <- rbind(dependency_matrix, matrix(0, nrow = length(new_packages), ncol = ncol(dependency_matrix)))
+        colnames(dependency_matrix) <- packages
+      }
+
+      # check which dependencies are also in the list of packages and change value
+      for (dep in unlist(strsplit(dependencies, ","))) {
+        dep <- gsub("", "", dep)
+        if (dep %in% packages) {
+          # update packages matrix
+          dependency_matrix[pkg, dep] <- 1
+        }
+      }
+    }
+  }
+
+  # return the dependency matrix and update list of packages
+  return(list(dependency_matrix, packages))
+}
+
+result <- generate_dependancy_matrix(packages)
+dependency_matrix <- result[[1]]
+
+#print(dependency_matrix)
+
+# Load necessary library
+library(stats)
+
+# Calculate distance matrix for rows
+row_dist <- stats::dist(dependency_matrix, method = "binary")
+
+# Perform hierarchical clustering
+row_clusters <- hclust(row_dist, method = "complete")
+
+plot(as.dendrogram(row_clusters), ann = FALSE)
+#mtext("Distance", side = 1, line = 2) 
+mtext("Relation", side = 2, line = 2)
+```
