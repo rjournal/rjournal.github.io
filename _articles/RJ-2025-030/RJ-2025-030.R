@@ -170,16 +170,16 @@ knitr::include_graphics("figures/beads4.png")
 knitr::include_graphics("figures/beads5.png")
 
 
-## ----echo=FALSE---------------------------------------------------------------
-if(!require(EBImage)) {
-  if (!require("BiocManager", quietly = TRUE)) {
-    install.packages("BiocManager")
-  }
-  BiocManager::install("EBImage")
-}
-if(!require(pliman)) {
-  install.packages("pliman")
-}
+## ----echo=FALSE, eval=FALSE---------------------------------------------------
+# if(!require(EBImage)) {
+#   if (!require("BiocManager", quietly = TRUE)) {
+#     install.packages("BiocManager")
+#   }
+#   BiocManager::install("EBImage")
+# }
+# if(!require(pliman)) {
+#   install.packages("pliman")
+# }
 
 
 ## ----pliman1, echo=TRUE, error=TRUE, fig.cap="(ref:pliman1)", out.width="49%"----
@@ -772,9 +772,5 @@ knitr::kable(
   align = "lccccc",
   escape = FALSE
 )
-
-
-## -----------------------------------------------------------------------------
-sessionInfo()
 
 
