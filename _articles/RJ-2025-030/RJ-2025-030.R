@@ -658,21 +658,21 @@ packages <-
   )
 
 # install all packages
-for (pkg in packages) {
-  # check if package is installed
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    if (pkg == "SimpleITK") {
-      install.packages("remotes")
-      remotes::install_github("SimpleITK/SimpleITKRInstaller")
-    }
-
-    if(!require(pkg == "SPIAT")) {
-      BiocManager::install("SPIAT")
-    }
-
-    install.packages(pkg)
-  }
-}
+# for (pkg in packages) {
+#   # check if package is installed
+#   if (!requireNamespace(pkg, quietly = TRUE)) {
+#     if (pkg == "SimpleITK") {
+#       install.packages("remotes")
+#       remotes::install_github("SimpleITK/SimpleITKRInstaller")
+#     }
+#
+#     if(!require(pkg == "SPIAT")) {
+#       BiocManager::install("SPIAT")
+#     }
+#
+#     install.packages(pkg)
+#   }
+# }
 
 # function to generate dependency matrix
 generate_dependancy_matrix <- function(packages) {
