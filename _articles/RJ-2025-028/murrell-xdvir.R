@@ -48,6 +48,7 @@ pheno <- rnorm(n = n, mean = 3.2, sd = 0.5)
 ## Make y height just for vizualisation purpose 
 fit <- rnorm(length(pheno), mean = .12, sd =.01)
 
+
 ## Load functions ----------------------------------------------------------
 ## Mathematical fitness function (2 peaks )
 ## This is a speculative fitness function, you could design your own.
