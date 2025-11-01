@@ -303,6 +303,12 @@ if (knitr::is_latex_output()) {
 }
 
 
+## ----leafletHTML, echo=FALSE, out.width="1%", fig.cap="(ref:leafletHTML)"-----
+if (!knitr::is_latex_output()) {
+  knitr::include_graphics("figures/empty.png")
+}
+
+
 ## ----SOM, eval=FALSE, echo=TRUE-----------------------------------------------
 # # Load the 'biopixR' package
 # library(biopixR)
