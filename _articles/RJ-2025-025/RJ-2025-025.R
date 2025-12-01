@@ -22,7 +22,7 @@ knitr::include_graphics("figures/fig2.png")
 knitr::include_graphics("figures/fig3.png")
 
 
-## ----ex5.1, echo=T------------------------------------------------------------
+## ----ex5.1, echo=T, cache=FALSE-----------------------------------------------
 library(terra)
 library(magrittr)
 
@@ -37,7 +37,7 @@ songs <- crop(songs, genetic) %>%
 knitr::include_graphics("figures/fig4.png")
 
 
-## ----ex5.2, echo=T, tidy=T----------------------------------------------------
+## ----ex5.2, echo=T, tidy=T, cache=FALSE---------------------------------------
 library(BoundaryStats)
 
 song_boundaries <- define_boundary(songs)
@@ -52,7 +52,7 @@ genetic_boundaries <- define_boundary(genetic, calculate_intensity = TRUE)
 plot_boundary(genetic_boundaries, song_boundaries, trait_names = c('Genetic', 'Song'))
 
 
-## ----ex5.4, echo=T, tidy=T, tidy.opts=list(width.cutoff=80), results='hide'----
+## ----ex5.4, cache=TRUE, echo=T, tidy=T, tidy.opts=list(width.cutoff=80), results='hide'----
 song_boundary_null <- boundary_null_distrib(songs, calculate_intensity = FALSE, cat = FALSE, n_iterations = 100, threshold = 0.2, model = 'gaussian')
 genetic_boundary_null <- boundary_null_distrib(genetic, calculate_intensity = TRUE, cat = FALSE, n_iterations = 100, threshold = 0.2, model = 'gaussian')
 
