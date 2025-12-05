@@ -76,13 +76,16 @@ parse_doi_xml <- function(xml_file) {
   })
 }
 
-issues <- c(
-  paste(2022, 1:4, sep = "-"),
-  paste(2023, 1:4, sep = "-"),
-  paste(2024, 1:4, sep = "-"),
-  paste(2025, 1:2, sep = "-")
-)
-for (iss in issues) {
+rjbib <- bib2df::bib2df("RJournal.bib")
+last_issue <- paste0(rjbib$YEAR, "-", rjbib$NUMBER) |>
+  unique() |>
+  max()
+
+new_issues <- fs::dir_ls("_issues") |>
+  stringr::str_remove("_issues/")
+new_issues <- new_issues[new_issues > last_issue]
+
+for (iss in new_issues) {
   df <- parse_doi_xml(paste0("_issues/", iss, "/doi.xml"))
   bib2df::df2bib(df, "RJournal.bib", append = TRUE)
 }
