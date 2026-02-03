@@ -1,0 +1,564 @@
+% !TeX root = RJwrapper.tex
+\title{simlandr: Simulation-Based Landscape Construction for Dynamical Systems}
+
+
+\author{by Jingmeng Cui, Merlijn Olthof, Anna Lichtwarck-Aschoff, Tiejun Li, and Fred Hasselman}
+
+\maketitle
+
+\abstract{%
+We present the simlandr package for R, which provides a set of tools for constructing potential landscapes for dynamical systems using Monte Carlo simulation. Potential landscapes can be used to quantify the stability of system states. While the canonical form of a potential function is defined for gradient systems, generalized potential functions can also be defined for non-gradient dynamical systems. Our method is based on the potential landscape definition from the steady-state distribution, and can be used for a large variety of models. To facilitate simulation and computation, we introduce several novel features, including data structures optimized for batch simulations under varying conditions, an out-of-memory computation tool with integrated hash-based file-saving systems, and an algorithm for efficiently searching the minimum energy path. Using a multistable cell differentiation model as examples, we illustrate how simlandr can be used for model simulation, landscape construction, and barrier height calculation. The simlandr package is available at \url{https://CRAN.R-project.org/package=simlandr}, under GPL-3 license.
+}
+
+\section{Introduction}\label{sec:intro}
+
+To better understand a dynamical system, it is often important to know the stability of different states. The metaphor of a potential landscape consisting of hills and valleys has been used to illustrate differences in stability in many fields, including genetics \citep{wangQuantifyingWaddingtonLandscape2011, WaddingtonPrinciplesDevelopmentDifferentiation1966}, ecology \citep{lamotheLinkingBallandcupAnalogy2019}, and psychology \citep{olthofComplexityTheoryPsychopathology2020}. In such a landscape, the stable states of the system correspond to the lowest points (minima) in the valleys of the landscape. Just like a ball that is thrown in such a landscape will eventually gravitate towards such a minimum, the dynamical system is conceptually more likely to visit its stable states in which the system is also more resilient to noise. For example, in the landscape metaphor of psychopathology (Figure \ref{fig:metaphor}), the valleys represent different mental health states, their relative depth represents the relative stability of the states, and the barriers between valleys represent the difficulty of transitioning between these states \citep[\citet{hayesComplexSystemsApproach2020}]{olthofComplexityTheoryPsychopathology2020}. When the healthy state is more stable, the person is more likely to stay mentally healthy, whereas when the maladaptive state is more stable, the person is more likely to suffer from mental disorders.
+
+\begin{figure}
+\includegraphics[width=1\linewidth,alt={Three landscape plots, each with a ball resting in one of two basins. The left basin is labeled maladaptive, the right basin healthy. In the first plot, the maladaptive basin is deeper; in the second, both basins are equally deep; in the third, the healthy basin is deeper.}]{figures/metaphor} \caption{Illustration of the ball-and-landscape metaphor commonly used in the field of psychopathology.}\label{fig:metaphor}
+\end{figure}
+
+Yet, formally quantifying the stability of states is a nontrivial question. Here we present an R package, \CRANpkg{simlandr}, that can quantify the stability of various kinds of systems without many mathematical restrictions.
+
+Dynamical systems are usually modeled by stochastic differential equations, which may depend on the past history (i.e., may be non-Markovian, \citet{StumpfEtAlModelingStemCell2021}). They take the general form of
+\begin{equation}
+\mathrm{d} \boldsymbol{X}_t = \boldsymbol{b}(\boldsymbol{X}_t, \boldsymbol{H}_t){\mathrm{d}t} + \boldsymbol{\sigma}( \boldsymbol{X}_t, \boldsymbol{H}_t)\mathrm{d}\boldsymbol{W},
+\label{eq:sde}
+\end{equation}
+where \(\boldsymbol{X}_t\) is the random variable representing the current state of the system and \(\boldsymbol{H_t}\) represents the past history of the system \(\boldsymbol{H}_t=\{\boldsymbol{X_s} | s \in [0, t)\}\)\footnote{The corresponding variable representing positions in the state space is not a random variable, so we use lowercase \(\boldsymbol{x}\) for it. This convention will be followed throughout this article.} The first term on the right-hand side of Eq \eqref{eq:sde} represents the deterministic part of the dynamics, which is a function of the system's current state \(\boldsymbol{b}(\boldsymbol{X}_t, \boldsymbol{H}_t)\). The second term represents the stochastic part, which is standard white noise \(\mathrm{d}\boldsymbol{W}\) multiplied by the noise strength \(\boldsymbol{\sigma}( \boldsymbol{X}_t, \boldsymbol{H}_t)\).
+
+If the dynamical equation (Eq \eqref{eq:sde}) can be written in the following form
+\begin{equation} 
+\mathrm{d} \boldsymbol{X} = - \nabla U {\mathrm{d} t} +\sqrt{2}\mathrm{d}\boldsymbol{W}, 
+\label{eq:canon}
+\end{equation}
+then \(U\) is the potential function of the system.\footnote{Under zero inertia approximation.}. However, this is not possible for general dynamical systems. The trajectory of such a system may contain loops which are not possible to be represented by a gradient system (this issue was compared to Escher's stairs by \citet{rodriguez-sanchezClimbingEscherStairs2020}). In this case, further generalization is needed. The theoretical background of \CRANpkg{simlandr} is the generalized potential landscape by \citet{wangPotentialLandscapeFlux2008}, which is based on the Boltzmann distribution and the steady-state distribution of the system. The Boltzmann distribution is a distribution law in physics, which states the distribution of classical particles depends on the energy level they occupy. When the energy is higher, the particle is exponentially less likely to be in such states
+\begin{equation} 
+P(\boldsymbol{x}) \propto \exp (-U).
+\label{eq:Boltzmann}
+\end{equation}
+
+This is then linked to dynamical systems by the steady-state distribution. The steady-state distribution of stochastic differential equations is the distribution that does not change over time, denoted by \(P_{\mathrm{SS}}\) which satisfies
+\begin{equation} 
+\frac{\partial P_{\mathrm{SS}} (\boldsymbol{x},t)}{\partial t} = 0.
+\label{eq:ss}
+\end{equation}
+The steady-state distribution is important because it extracts time-invariant information from a set of stochastic differential equations. Substituting the steady-state distribution to Eq \eqref{eq:Boltzmann} gives Wang's generalized potential landscape function \citep{wangPotentialLandscapeFlux2008}
+\begin{equation}
+U(\boldsymbol{x}) = - \ln P_{\mathrm{SS}}(\boldsymbol{x}).
+\label{eq:Wang}
+\end{equation}
+If the system has ergodicity (i.e., after sufficient time it can travel to all possible states in the state space), the long-term sample distribution can be used to estimate the steady-state distribution, and the generalized potential function can be calculated.
+
+Our approach is not the only possible way for constructing potential landscapes. Many other theoretical approaches are available, including the SDE decomposition method by \citet{AoPotentialStochasticDifferential2004} and the quasi-potential by \citet{FreidlinWentzellRandomPerturbationsDynamical2012}. Various strategies to numerically compute these landscapes have been proposed (see \citet{zhouConstructionLandscapeMultistable2016} for a review). However, available realizations are still scarce. To our knowledge, besides \CRANpkg{simlandr}, there are two existing packages specifically for computing potential landscapes: the \CRANpkg{waydown} package \citep{rodriguez-sanchezPabRodRolldownPostpublication2020} and the \pkg{QPot} package \citep{MooreEtAlQPotPackageStochastic2016, dahiyaOrderedLineIntegral2018}. The \CRANpkg{waydown} package uses the skew-symmetric decomposition of the Jacobian, which theoretically produces landscapes that are similar to \citet{wangPotentialLandscapeFlux2008} (but see \citet{CuiEtAlCommentsClimbingEscher2023} for a potential technical issue with this package.). The \pkg{QPot} package uses a path integral method that produces quasi-landscapes following the definition by \citet{FreidlinWentzellRandomPerturbationsDynamical2012}. Because of the analytical methods used by \CRANpkg{waydown} and \pkg{QPot}, they both require the dynamic function to be Markovian and differentiable in the whole state space. Moreover, they can only be used for systems of up to two dimensions. \CRANpkg{simlandr}, in contrast, is based on Monte Carlo simulation and the steady-state distribution. It does not have specific requirements for the model. Even for models that are not globally differentiable, have history-dependence, and are defined in a high-dimensional space, \CRANpkg{simlandr} is still applicable (e.g., \citet{CuiEtAlMetaphorComputationConstructing2021}). Therefore, \CRANpkg{simlandr} can be applied to a much wider range of dynamical systems, illustrate a big picture of dominated attractors, and investigate how the stability of different attractors may be influenced by model parameters. As a trade-off, \CRANpkg{simlandr} is not designed for rare events sampling in which the noise strength \(\boldsymbol{\sigma}(\boldsymbol{X})\) is extremely small, nor for the precise calculation of the tail probability and transition paths. Instead, it is better to view \CRANpkg{simlandr} as a semi-quantitative tool that provides a broad overview of key attractors in dynamic systems, allowing for comparisons of their relative stability and the investigation of system parameter influences. We will show some typical use cases of \CRANpkg{simlandr} in later sections. Some key terms used in this article are summarized in Table \ref{tab:terms}.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.3158}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.6842}}@{}}
+\caption{\label{tab:terms} Summary of key terms used in this article.}\tabularnewline
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Term
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Explanation
+\end{minipage} \\
+\midrule\noalign{}
+\endfirsthead
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Term
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Explanation
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Potential landscape metaphor & A conceptual metaphor representing the stability of a complex dynamic system as an uneven landscape, with a ball on it representing the system's state. This can be quantitatively realized in various ways \citep{zhouConstructionLandscapeMultistable2016}. \\
+Gradient system & A system whose deterministic motion can be described solely by the gradient of a potential function. \\
+Non-Markovian system & A system whose future evolution depends not only on its current state but also on its past history. \\
+Steady-state distribution & The probability distribution of a dynamic system that remains unchanged over time. \\
+Ergodic system & A dynamic system that, given enough time, will eventually pass through all possible states. \\
+Minimum energy path (MEP) & A transition path linking two local minima and passing through a saddle point \citep{WanEtAlFindingTransitionState2024}. It is always parallel to the gradient of the energy landscape, representing an efficient transition route. \\
+\end{longtable}
+
+\section{Design and implementation}\label{design-and-implementation}
+
+The general workflow of \CRANpkg{simlandr} involves three steps: model simulation, landscape construction, and barrier height computation. See Figure \ref{fig:diagram} for a summary.
+
+\begin{figure}
+\includegraphics[width=1\linewidth,alt={A flow chart showing the analysis steps in simlandr, with functions listed under each step.}]{figures/diagram} \caption{The structure and workflow of simlandr.}\label{fig:diagram}
+\end{figure}
+
+\subsection{Step 1: model simulation}\label{step-1-model-simulation}
+
+For the first step, a simulation function should be created by the user. This function should be able to simulate how the dynamical system of interest evolves over time and record its state in every time step. This can often be done with the Euler-Maruyama method. If the SDEs are up to three dimensions and Markovian, a helper function from \CRANpkg{simlandr}, \texttt{sim\_SDE()}, can also be used. This function is based on the simulation utilities from the \CRANpkg{Sim.DiffProc} \citep{GuidoumBoukhetalaPerformingParallelMonte2020} and the output can be directly used for later steps. Moreover, the \texttt{multi\_init\_simulation()} function can be used to simulate trajectories from various starting points, thus reducing the possibility for the system to be trapped in a local minimum. The \texttt{multi\_init\_simulation()} function also supports parallel simulation based on the \CRANpkg{future} framework to improve time efficiency \citet{RJ-2021-048}.
+
+For Monte Carlo methods, it is important that the simulation \emph{converges}, which means the distribution of the system is roughly stable. The precision of the steady-state distribution estimation, according to Eq \eqref{eq:Wang}, determines the precision of the distribution estimation. \CRANpkg{simlandr} provides a visual tool to compare the sample distributions in different stages (\texttt{check\_conv()}), whereas the \CRANpkg{coda} package \citep{PlummerEtAlCODAConvergenceDiagnosis2006} can be used for more advanced diagnostics. The output of the \texttt{sim\_SDE()} and \texttt{multi\_init\_simulation()} functions also uses the classes from the \CRANpkg{coda} package to enable easy convergence diagnosis. To achieve ergodicity in reasonable time, sometimes stronger noises need to be added to the system.
+
+A simulation function is sufficient if the user is only interested in a single model setting. If the model is parameterized and the user wants to investigate the influence of parameters on the stability of the system, then multiple simulations need to be run with different parameter settings. \CRANpkg{simlandr} provides functions to perform batch simulations and store the outputs for landscape construction as one object. This can later be used to compare the stability under different parameter settings or produce animations to show how a model parameter influences the stability of the model.
+
+In many cases, the output of the simulation is so large that it cannot be properly stored in the memory. \CRANpkg{simlandr} provides a hash\_big\_matrix class, which is a modification of the big.matrix class from the \CRANpkg{bigmemory} package \citep{KaneEtAlScalableStrategiesComputing2013}, that can perform out-of-memory computation and organize the data files in the disk. In an out-of-memory computation, the majority of the data is not loaded into the memory, but only the small subset of data that is used for the current computation step. Therefore, the memory occupation is dramatically reduced. The big.matrix class in the \CRANpkg{bigmemory} package provides a powerful tool for out-of-memory computation. It, however, requires an explicit file name for each matrix, which can be cumbersome if there are many matrices to be handled, and this is likely to be the case in a batch simulation. The \texttt{hash\_big\_matrix} class automatically generates the file names using the md5 values of the matrices with the \CRANpkg{digest} package\citep{EddelbuettelEtAlPkgdigestCreateCompact2021} and stores it within the object. Therefore, the file links can also be restored automatically.
+
+\subsection{Step 2: landscape construction}\label{step-2-landscape-construction}
+
+\CRANpkg{simlandr} provides a set of tools to construct 2D, 3D, and 4D\footnote{In this package, we use the number of dimensions in landscape plots (including \(U\) to define the dimension of landscapes. The x-, y-, z-, and color- axes can all be regarded as a dimension. Therefore, the dimension of a landscape can be one more than the dimension of the kernel smooth function.} landscapes from single or multiple simulation results. The steady-state distribution for selected variables of the system is first estimated using the kernel density estimates (KDE). The density function in R is used for 2D landscapes, whereas the \CRANpkg{ks} package \citep{ChaconDuongMultivariateKernelSmoothing2018} is used by default for 3D and 4D landscapes because of its higher efficiency. Then the potential function \(U\) is calculated from Eq \eqref{eq:Wang}. The landscape plots without a z-axis are created with \CRANpkg{ggplot2} \citep{WickhamGgplot2ElegantGraphics2016}, and those with a z-axis are created with \CRANpkg{plotly} \citep{SievertInteractiveWebbasedData2020}. These plots can be further refined using the standard \CRANpkg{ggplot2} or \CRANpkg{plotly} methods. See Table \ref{tab:overview} for an overview for the family of landscape functions.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2639}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2639}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.4722}}@{}}
+\caption{\label{tab:overview} Overview of various landscape functions provided by \texttt{simlandr}. Dimensions in bold represent the potential U calculated by the function. Dimensions in italic represent model parameters. Dimensions in parentheses are optional.}\tabularnewline
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Type of Input
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Function
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Dimensions
+\end{minipage} \\
+\midrule\noalign{}
+\endfirsthead
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Type of Input
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Function
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Dimensions
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Single simulation data & \texttt{make\_2d\_static()} & x, \textbf{y} \\
+& \texttt{make\_3d\_static()} & \(1\) x, y, \textbf{z+color}; (2) x, y, \textbf{color} \\
+& \texttt{make\_4d\_static()} & x, y, z, \textbf{color} \\
+Multiple simulation data & \texttt{make\_2d\_matrix()} & x, \textbf{y}, \emph{cols}, \emph{(rows)} \\
+& \texttt{make\_3d\_matrix()} & x, y, \textbf{z+color}, \emph{cols}, \emph{(rows)} \\
+& \texttt{make\_3d\_animation()} & \(1\) x, y, \textbf{z+color}, \emph{fr}; (2) x, y, \textbf{color}, \emph{fr}; (3) x, y, \textbf{z+color}, \emph{cols} \\
+\end{longtable}
+
+\subsection{Step 3: barrier height calculation}\label{sec:singlel}
+
+An important property of the states in a landscape is their stability, which can be indicated by the barrier height that the system has to overcome when it transitions between one stable state to another adjacent state (see \citet{CuiEtAlMetaphorComputationConstructing2021} for further discussions about different stability indicators). The barrier height is also related to the escape time that the system transitions from one valley to another, which can be tested empirically \citep{wangPotentialLandscapeFlux2008}. \CRANpkg{simlandr} provides tools to calculate the barrier heights from landscapes. These functions look for the local minima in given regions and try to find the saddle point between two local minima. The potential differences between the saddle point and local minima are calculated as barrier heights.
+
+In 2D cases, there is only one possible path connecting two local minima. The point on the path with the highest \(U\) is identified as the saddle point. For 3D landscapes, there are multiple paths between two local minima. If we treat the system \emph{as if} it is a gradient system with Brownian noise, then the most probable path (termed as the \emph{minimum energy path}, MEP) that the system transitions is that it first goes along the steepest \emph{ascent} path from the starting point, and then goes along the steepest \emph{descent} path to the end point \citep{EVanden-EijndenTransitionpathTheoryPathfinding2010}. We find this path by minimizing the following action using the \citet{dijkstra1959note} algorithm \citep{HeymannVanden-EijndenPathwaysMaximumLikelihood2008}
+\begin{equation}
+\varphi_{\mathrm{MEP}} = \arg\min_\varphi \int_A^B |\nabla U||\mathrm{d}\varphi|\left( \approx \min_\varphi \Sigma_i |\nabla U_i||\Delta \varphi_i|\right), 
+\label{eq:optim}
+\end{equation}
+where \(A\) and \(B\) are the starting and end points and \(\varphi\) is the path starting at \(A\) and ending in \(B\). After that, the point with the maximum potential value on the MEP is identified as the saddle point. Note that while the barrier height still indicates the stability of local minima, the MEP may not be the true most probable path for a nongradient system to transition between stable states.
+
+\section{Examples}\label{examples}
+
+We use two dynamical systems to illustrate the usage of the \CRANpkg{simlandr} package. The first one is a two-dimensional stochastic non-gradient gene expression model, which was used by \citet{wangQuantifyingWaddingtonLandscape2011} to represent cell development and differentiation. The second example is a dynamic model of panic disorder \citep{robinaugh2024} which contains many more variables and parameters, non-Markovian property, and non-differentiable formulas. We mainly use the first example to show the agreement of the results from \CRANpkg{simlandr} with previous analytic results, and the second example as a typical use case of a complex dynamic model which is not treatable with other methods (also see \citet{CuiEtAlMetaphorComputationConstructing2021} for more substantive discussions). Note that, both systems include more than two variables, making it impossible to perform the landscape analysis with other available R packages.
+
+\subsection{Example 1: the gene expression model}\label{example-1-the-gene-expression-model}
+
+This model is built on the mutual regulations of the expressions of two genes, in which \(X_1\) and \(X_2\) represent the expression levels of two genes which activate themselves and inhibit each other. A graphical illustration is shown in Figure \ref{fig:e1} (adapted from \citet{wangQuantifyingWaddingtonLandscape2011}). Their dynamic functions can be written as
+\begin{align}
+\frac {\mathrm{d}X_ {1}}{\mathrm{d}t}  &=  \frac {ax_ {1}^ {n}}{S^ {n}+x_ {1}^ {n}} + \frac {bS^ {n}}{S^ {n}+x_ {2}^ {n}} - kx_ {1}+ \sigma_1 \frac{\mathrm{d}W_1}{\mathrm{d}t}, 
+\label{eq:sim2x1}
+\\
+\frac {\mathrm{d}X_ {2}}{\mathrm{d}t}  &=  \frac {ax_ {2}^ {n}}{S^ {n}+x_ {2}^ {n}} + \frac {bS^ {n}}{S^ {n}+x_ {1}^ {n}} - kx_ {2}+ \sigma_2 \frac{\mathrm{d}W_2}{\mathrm{d}t}, 
+\label{eq:sim2x2}
+\\
+\frac {\mathrm{d}a}{\mathrm{d}t} &= -\lambda a+ \sigma_3 \frac{\mathrm{d}W_3}{\mathrm{d}t}, 
+\label{eq:sim2a}
+\end{align}
+where \(a\) represents the strength of self-activation, \(b\) represents the strength of mutual-inhibition, and \(k\) represents the speed of degradation. The development of an organism is modeled as \(a\) decreasing at a certain speed \(\lambda\). In the beginning, there is only one possible state for the cell. After a certain milestone, the cell differentiates into one of the two possible states.
+
+\begin{figure}
+\includegraphics[width=0.5\linewidth,alt={Two large circles labeled X1 and X2. Dashed arrows labeled b connect the circles in both directions. Each circle has a solid self-loop labeled a and a dashed self-loop labeled k.}]{figures/diagram-e1} \caption{A graphical illustration of the relationship between the activation levels of the two genes. Solid arrows represent positive relationships (i.e., activation) and dashed arrows represent negative relationships (i.e., inhibition).}\label{fig:e1}
+\end{figure}
+
+This model can be simulated using the \texttt{sim\_SDE()} function in \CRANpkg{simlandr}, with the default parameter setting \(b = 1, k = 1, S = 0.5, n = 4, \lambda = 0.01\), and \(\sigma_1 = \sigma_2 = \sigma_3 = 0.2\).
+
+\begin{verbatim}
+# Load the package.
+library(simlandr)
+
+# Specify the simulation function.
+b <- 1
+k <- 1
+S <- 0.5
+n <- 4
+lambda <- 0.01
+
+drift_gene <- c(rlang::expr(z * x^(!!n)/((!!S)^(!!n) + x^(!!n)) + (!!b) *
+    (!!S)^(!!n)/((!!S)^(!!n) + y^(!!n)) - (!!k) * x), rlang::expr(z * y^(!!n)/((!!S)^(!!n) +
+    y^(!!n)) + (!!b) * (!!S)^(!!n)/((!!S)^(!!n) + x^(!!n)) - (!!k) * y),
+    rlang::expr(-(!!lambda) * z)) |>
+    as.expression()
+
+diffusion_gene <- expression(0.2, 0.2, 0.2)
+\end{verbatim}
+
+\begin{verbatim}
+# Perform a simulation and save the output.
+set.seed(1614)
+single_output_gene <- sim_SDE(drift = drift_gene, diffusion = diffusion_gene,
+    N = 1e+06, M = 10, Dt = 0.1, x0 = c(0, 0, 1), keep_full = FALSE)
+\end{verbatim}
+
+After the simulation, we perform some basic data wrangling to produce a dataset that can be used for further analysis. We create a new variable \texttt{delta\_x} as the difference between X1 (X) and X2 (Y), and we rename the variable Z as \texttt{a}.
+
+\begin{verbatim}
+single_output_gene2 <- do.call(rbind, single_output_gene)
+single_output_gene2 <- cbind(single_output_gene2[, "X"] - single_output_gene2[,
+    "Y"], single_output_gene2[, "Z"])
+colnames(single_output_gene2) <- c("delta_x", "a")
+\end{verbatim}
+
+We then perform the convergence check on the simulation result. First, we convert the simulation output to the format for the \texttt{coda} package, and thin the output to speed up the convergence check.
+
+\begin{verbatim}
+single_output_gene_mcmc_thin <- as.mcmc.list(lapply(single_output_gene,
+    function(x) x[seq(1, nrow(x), by = 100), ]))
+\end{verbatim}
+
+We then show the convergence diagnosis plot to check the convergence of the simulation in Figure \ref{fig:converge-gene}. The distribution of the two key variables in different simulation stages are converging, indicating that the simulation is long enough to provide reliable estimation of the steady-state distribution. Other convergence checks can also be readily performed using the \CRANpkg{coda} package.
+
+\begin{verbatim}
+plot(single_output_gene_mcmc_thin)
+\end{verbatim}
+
+\begin{figure}
+\includegraphics[width=1\linewidth,alt={Trace and density plots for variables x, y, and z.}]{RJ-2025-039_files/figure-latex/converge-gene-1} \caption{The convergence check result for the simulation of the gene expression model. The variables in different simulation stages did not show distributional differences, indicating that the simulation is long enough to provide a reliable estimation of the steady-state distribution.}\label{fig:converge-gene}
+\end{figure}
+
+We generated the 3D landscape for this model with \texttt{make\_3d\_single()}. Here, we use \texttt{x}, \texttt{y} to specify the variables of interest, and use \texttt{lims} to specify the limits of the x and y axes for the landscape. The \texttt{lims} argument can be left blank, then the limits will be automatically calculated.
+
+\begin{verbatim}
+l_single_gene_3d <- make_3d_single(single_output_gene2, x = "delta_x",
+    y = "a", lims = c(-1.5, 1.5, 0, 1.5), Umax = 8)
+\end{verbatim}
+
+The resulting landscape is shown in the left panel of Figure \ref{fig:3dstaticgene}. In this plot, the x-axis represents \(\Delta x (= x_1-x_2)\), and the y-axis represents \(a\). To compare with, the potential landscape obtained analytically by \citet{wangQuantifyingWaddingtonLandscape2011} is shown in the right panel Figure \ref{fig:3dstaticgene}. The result of \CRANpkg{simlandr} appears to be very close to the result based on the analytical derivation. Note that because different normalization methods were used, the \(U\) values of the two landscapes are not directly comparable. Here, we are mainly interested in their relative shape.
+
+\begin{verbatim}
+plot(l_single_non_grad_3d)
+\end{verbatim}
+
+\begin{figure}
+\includegraphics[width=0.5\linewidth,alt={Two similar landscape plots, each with three basins.}]{figures/3dstatic_gene} \includegraphics[width=0.5\linewidth,alt={Two similar landscape plots, each with three basins.}]{figures/wang2011} \caption{The 3D landscape (potential value as z-axis) for the gene expression model. The left panel is the plot produced by simlandr; the right panel is the potential landscape obtained analytically by Wang et al. (2008), reproduced with the permission of the authors and in accordance with the journal policy.}\label{fig:3dstaticgene}
+\end{figure}
+
+We then calculate the barrier for the landscape using \texttt{calculate\_barrier()}. The barrier is calculated by specifying the start and end locations, and the radii of the start and end locations. The height of the barrier from two sides can be calculated with \texttt{get\_barrier\_height()}.
+
+\begin{verbatim}
+b_single_gene_3d <- calculate_barrier(l_single_gene_3d, start_location_value = c(0,
+    1.2), end_location_value = c(1, 0.2), start_r = 0.3, end_r = 0.3)
+
+get_barrier_height(b_single_gene_3d)
+\end{verbatim}
+
+\begin{verbatim}
+#> delta_U_start   delta_U_end 
+#>      2.506326      2.810604
+\end{verbatim}
+
+The local minima, the saddle point, and the MEP can be added to the landscape with \texttt{autolayer()}, shown in Figure \ref{fig:bsingle3dgene}.
+
+\begin{verbatim}
+plot(l_single_gene_3d, 2) + autolayer(b_single_gene_3d)
+\end{verbatim}
+
+\begin{figure}
+\includegraphics[width=0.5\linewidth,alt={A landscape plot with a white line connecting two white dots, passing through a red dot in the middle.}]{RJ-2025-039_files/figure-latex/bsingle3dgene-1} \caption{The landscape for the gene expression model. The local minima are marked as white dots, the saddle points are marked as red dots, and the MEPs are marked as white lines.}\label{fig:bsingle3dgene}
+\end{figure}
+
+Next, we use multiple simulations to investigate the influence of two parameters, \(k\) and \(b\), on the stability of the system. As explained above, the parameter \(b\) represents the strength of mutual-inhibition between the two genes. Therefore, as \(b\) increases, we expect the differentiation is more extreme, that is, the cell is more likely to develop into one of the two cell types with very different gene expression levels. The valleys in the landscape representing the two types will become further apart and the barrier becomes clearer. The parameter \(k\) represents the speed of degradation of the gene products. As \(k\) increases, the gene products degrade faster, and this effect is more pronounced when the gene products are at high levels. Therefore, the dominant gene will express at a less extreme level, and we expect that the two valleys become closer, and the barrier will become less clear as \(k\) increases.
+
+We use the batch simulation functions of \CRANpkg{simlandr}. First, we create the argument set for the batch simulation. This specifies the parameters to be varied. We examined three \(b\) values, 0.5, 1, 1.5, and three \(k\) values, 0.5, 1, 1.5, which form 9 possible combinations.
+
+\begin{verbatim}
+batch_arg_set_gene <- new_arg_set()
+batch_arg_set_gene <- batch_arg_set_gene |>
+    add_arg_ele(arg_name = "parameter", ele_name = "b", start = 0.5, end = 1.5,
+        by = 0.5) |>
+    add_arg_ele(arg_name = "parameter", ele_name = "k", start = 0.5, end = 1.5,
+        by = 0.5)
+batch_grid_gene <- make_arg_grid(batch_arg_set_gene)
+\end{verbatim}
+
+We then perform the batch simulation with the \texttt{batch\_simulation()} function. Here, we specify the simulation function to be used, which is similar to the single simulation we showed above, together with the data wrangling procedure. The simulation function is defined with the \texttt{sim\_fun} argument. We also use \texttt{bigmemory\ =\ TRUE} to store the simulation results in the \texttt{hash\_big\_matrix} format, which is more memory-efficient.
+
+\begin{verbatim}
+batch_output_gene <- batch_simulation(batch_grid_gene, sim_fun = function(parameter) {
+    b <- parameter[["b"]]
+    k <- parameter[["k"]]
+    drift_gene <- c(rlang::expr(z * x^(!!n)/((!!S)^(!!n) + x^(!!n)) + (!!b) *
+        (!!S)^(!!n)/((!!S)^(!!n) + y^(!!n)) - (!!k) * x), rlang::expr(z *
+        y^(!!n)/((!!S)^(!!n) + y^(!!n)) + (!!b) * (!!S)^(!!n)/((!!S)^(!!n) +
+        x^(!!n)) - (!!k) * y), rlang::expr(-(!!lambda) * z)) |>
+        as.expression()
+    set.seed(1614)
+    single_output_gene <- sim_SDE(drift = drift_gene, diffusion = diffusion_gene,
+        N = 1e+06, M = 10, Dt = 0.1, x0 = c(0, 0, 1), keep_full = FALSE)
+    single_output_gene2 <- do.call(rbind, single_output_gene)
+    single_output_gene2 <- cbind(single_output_gene2[, "X"] - single_output_gene2[,
+        "Y"], single_output_gene2[, "Z"])
+    colnames(single_output_gene2) <- c("delta_x", "a")
+    single_output_gene2
+}, bigmemory = TRUE)
+\end{verbatim}
+
+If the output is saved in an RDS file, upon next use, it can be read as follows.
+
+\begin{verbatim}
+saveRDS(batch_output_gene, "batch_output_gene.RDS")
+batch_output_gene <- readRDS("batch_output_gene.RDS") |>
+    attach_all_matrices()
+\end{verbatim}
+
+We then make the 3D matrix for the batch output, using \texttt{make\_3d\_matrix()}.
+
+\begin{verbatim}
+l_batch_gene_3d <- make_3d_matrix(batch_output_gene, x = "delta_x", y = "a",
+    cols = "b", rows = "k", lims = c(-5, 5, -0.5, 2), h = 0.005, Umax = 8,
+    kde_fun = "ks", individual_landscape = TRUE)
+\end{verbatim}
+
+For the barrier calculation step, the start and end points of the barrier may be different for each landscape plot. The following code shows how to create a barrier grid for each landscape plot. First, we create a barrier grid template using the function \texttt{make\_barrier\_grid\_3d()}. Next, we modify the barrier grid template to create a barrier grid for the landscape plot.
+
+\begin{verbatim}
+make_barrier_grid_3d(batch_grid_gene, start_location_value = c(0, 1.5),
+    end_location_value = c(1, -0.5), start_r = 1, end_r = 1, print_template = TRUE)
+\end{verbatim}
+
+\begin{verbatim}
+#> structure(list(start_location_value = list(c(0, 1.5), c(0, 1.5
+#> ), c(0, 1.5), c(0, 1.5), c(0, 1.5), c(0, 1.5), c(0, 1.5), c(0, 
+#> 1.5), c(0, 1.5)), start_r = list(c(1, 1), c(1, 1), c(1, 1), c(1, 
+#> 1), c(1, 1), c(1, 1), c(1, 1), c(1, 1), c(1, 1)), end_location_value = list(
+#>     c(1, -0.5), c(1, -0.5), c(1, -0.5), c(1, -0.5), c(1, -0.5
+#>     ), c(1, -0.5), c(1, -0.5), c(1, -0.5), c(1, -0.5)), end_r = list(
+#>     c(1, 1), c(1, 1), c(1, 1), c(1, 1), c(1, 1), c(1, 1), c(1, 
+#>     1), c(1, 1), c(1, 1))), row.names = c(NA, -9L), class = c("arg_grid", 
+#> "data.frame"))
+\end{verbatim}
+
+\begin{verbatim}
+#>   ele_list   b   k start_location_value start_r end_location_value end_r
+#> 1 0.5, 0.5 0.5 0.5             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+#> 2 1.0, 0.5 1.0 0.5             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+#> 3 1.5, 0.5 1.5 0.5             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+#> 4 0.5, 1.0 0.5 1.0             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+#> 5     1, 1 1.0 1.0             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+#> 6 1.5, 1.0 1.5 1.0             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+#> 7 0.5, 1.5 0.5 1.5             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+#> 8 1.0, 1.5 1.0 1.5             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+#> 9 1.5, 1.5 1.5 1.5             0.0, 1.5    1, 1          1.0, -0.5  1, 1
+\end{verbatim}
+
+\begin{verbatim}
+bg_gene <- make_barrier_grid_3d(batch_grid_gene, df = structure(list(start_location_value = list(c(0,
+    1.5), c(0, 1.5), c(0, 1.5), c(0, 1.5), c(0, 1.5), c(0, 1.5), c(0, 1.5),
+    c(0, 1.5), c(0, 1.5)), start_r = list(c(0.2, 1), c(0.2, 1), c(0.2,
+    1), c(0.2, 0.5), c(0.2, 0.5), c(0.2, 0.5), c(0.2, 0.3), c(0.2, 0.3),
+    c(0.2, 0.3)), end_location_value = list(c(2, 0), c(2, 0), c(2, 0),
+    c(1, 0), c(1, 0), c(1, 0), c(1, 0), c(1, 0), c(1, 0)), end_r = list(c(1,
+    1), c(1, 1), c(1, 1), c(1, 1), c(1, 1), c(1, 1), c(1, 1), c(1, 1),
+    c(1, 1))), row.names = c(NA, -9L), class = c("arg_grid", "data.frame")))
+\end{verbatim}
+
+With the barrier grid template, we can calculate the barrier for each landscape plot.
+
+\begin{verbatim}
+b_batch_gene_3d <- calculate_barrier(l_batch_gene_3d, bg = bg_gene)
+\end{verbatim}
+
+If the barrier grid was not needed, the following code can be used to calculate the barrier.
+
+\begin{verbatim}
+b_batch_gene_3d <- calculate_barrier(l_batch_gene_3d, start_location_value = c(0,
+    1.5), end_location_value = c(1, 0), start_r = 1, end_r = 1)
+\end{verbatim}
+
+The resulting landscapes and the MEPs between states are shown in Figure \ref{fig:bbatch3dgene}.
+
+\begin{verbatim}
+plot(l_batch_gene_3d) + autolayer(b_batch_gene_3d)
+\end{verbatim}
+
+\begin{figure}
+\includegraphics[width=1\linewidth,alt={Nine landscape plots arranged in a 3×3 grid. The x-axis is labeled delta x, the y-axis is labeled a. Rows correspond to k values (0.5, 1, 1.5), and columns to b values (0.5, 1, 1.5).}]{RJ-2025-039_files/figure-latex/bbatch3dgene-1} \caption{The landscape for the gene expression model of different \( b \) and \( k \) values. The local minima are marked as white dots, the saddle points are marked as red dots, and the MEPs are marked as white lines.}\label{fig:bbatch3dgene}
+\end{figure}
+
+From the landscapes, it is clear that increasing \(b\), which represents higher strength of gene mutual prohibition, makes the two differentiated states further apart from each other. Increasing \(k\), which represents faster degradation, makes the undifferentiated state disappear earlier, thus makes the differentiation earlier. When \(b\) is low enough and \(k\) is high enough, there is no differentiation anymore because the two differentiated states merge together and form a more stable state at \(\Delta x = 0\). In this case, there is no actual differentiation in the system, but only a one-to-one conversion of cell types. Only when \(b\) is high enough and \(k\) is low enough is it possible for the cell to differentiate into two types.
+
+\subsection{Example 2: panic disorder model}\label{example-2-panic-disorder-model}
+
+The second example we use is the panic disorder model proposed by \citet{robinaugh2024}. The model is implemented in the \pkg{PanicModel} package (\url{https://github.com/jmbh/PanicModel/}). It contains 12 variables and 33 parameters and also involves history dependency and non-differentiable formula (such as if-else conditions) to model the complex interplay of individual and environmental elements in different time scales. The most important variables of the model are the physical arousal (\(A\)) of a person (e.g., heart beat, muscle tension, sweating), the person's perceived threat (\(PT\), how dangerous the person cognitively evaluates the environment), and the person's tendency to escape from the situation (\(E\)). The core theoretical idea of the model is that physical arousal and perceived threat of a person may strengthen each other in certain circumstances, leading to sudden increases in both variables, manifesting as panic attacks. The tendency that a person tends to use physical arousal as cognitive evidence of threat is represented by another variable, arousal schema \(S\). A comprehensive introduction of the model is beyond the scope of the current article, and we would like to refer interested readers to \citet{robinaugh2024}. Here, to simplify the context, we assume that \(AS\) does not change over time, and no psychotherapy is being administered. We focus on the influence of \(AS\) on the system's stability represented by \(A\) and \(PT\). A graphical illustration of several core variables of this model is shown in Figure \ref{fig:e2} (adapted from \citet{CuiEtAlMetaphorComputationConstructing2021}).
+
+\begin{figure}
+\includegraphics[width=1\linewidth,alt={Four large circles labeled H, A, PT, and E from left to right. Solid arrows go from A to H, A to PT, PT to A, and PT to E. Dashed arrows go from H to A and from E to PT. The solid arrow from A to PT is labeled AS.}]{figures/diagram-e2} \caption{A graphical illustration of the relationships between several important psychological variables in the panic disorder model. Solid arrows represent positive relationships and dashed arrows represent negative relationships.}\label{fig:e2}
+\end{figure}
+
+To construct the potential landscapes for this model, we first create a function that performs a simulation using the \texttt{simPanic()} function from \pkg{PanicModel}. This is required as we need to modify some default options for illustration.
+
+\begin{verbatim}
+library(PanicModel)
+
+sim_fun_panic <- function(x0, par) {
+
+    # Change several default parameters
+    pars <- pars_default
+    # Increase the noise strength to improve sampling efficiency
+    pars$N$lambda_N <- 200
+    # Make S constant through the simulation
+    pars$TS$r_S_a <- 0
+    pars$TS$r_S_e <- 0
+
+    # Specify the initial values of A and PT according to the format
+    # requirement by `multi_init_simulation()`, while the other
+    # variables use the default initial values.
+    initial <- initial_default
+    initial$A <- x0[1]
+    initial$PT <- x0[2]
+
+    # Specify the value of S according to the format requirement by
+    # `batch_simulation()`.
+    initial$S <- par$S
+
+    # Extract the simulation output from the result by simPanic().
+    # Only keep the core variables.
+    return(as.matrix(simPanic(1:5000, initial = initial, parameters = pars)$outmat[,
+        c("A", "PT", "E")]))
+}
+\end{verbatim}
+
+We then perform a single simulation from multiple starting points. To speed up the simulation, we use parallel computing.
+
+\begin{verbatim}
+future::plan("multisession")
+set.seed(1614, kind = "L'Ecuyer-CMRG")
+single_output_panic <- multi_init_simulation(sim_fun = sim_fun_panic, range_x0 = c(0,
+    1, 0, 1), R = 4, par = list(S = 0.5))
+\end{verbatim}
+
+The convergence check results of the simulation, shown in Figure \ref{fig:converge-panic}, indicate that the time series of the first 100 data points are strongly influenced by the choice of initial value. Therefore, we remove the first 100 data points in the following analysis.
+
+\begin{verbatim}
+plot(single_output_panic)
+\end{verbatim}
+
+\begin{figure}
+\includegraphics[width=1\linewidth,alt={Trace and density plots for variables x, y, and z.}]{RJ-2025-039_files/figure-latex/converge-panic-1} \caption{The convergence check result for the simulation of the panic disorder model.}\label{fig:converge-panic}
+\end{figure}
+
+We then create the 3D landscape for the panic disorder model, shown in Figure \ref{fig:3dstaticpanic}. The landscape shows that the system has two stable states, which are represented by the valleys in the landscape. The system can be trapped in these valleys, leading to different levels of physical arousal and perceived threat. The valley with higher potential value represents a state with higher physical arousal and perceived threat, which corresponds to a panic attack. In contrast, the valley with lower potential value represents a state with lower physical arousal and perceived threat, which corresponds to a healthy state.
+
+\begin{figure}
+\includegraphics[width=0.5\linewidth,alt={A landscape plot with two basins.}]{RJ-2025-039_files/figure-latex/3dstaticpanic-1} \caption{The 3D landscape (potential value as color) for the panic disorder model}\label{fig:3dstaticpanic}
+\end{figure}
+
+We now investigate the effect of the parameter \(S\) on the potential landscape. This parameter represents the tendency that a person considers physical arousal as a sign of danger. Therefore, we expect that higher \(S\) will stabilize the panic state and destabilize the healthy state.
+
+We perform a batch simulation with varying \(S\) values to construct the potential landscapes for different \(S\) values. This, again, starts with the creation of a grid of parameter values.
+
+\begin{verbatim}
+batch_arg_grid_panic <- new_arg_set() |>
+    add_arg_ele(arg_name = "par", ele_name = "S", start = 0, end = 1, by = 0.5) |>
+    make_arg_grid()
+\end{verbatim}
+
+We then perform the batch simulation using parallel computing.
+
+\begin{verbatim}
+future::plan("multisession")
+set.seed(1614, kind = "L'Ecuyer-CMRG")
+batch_output_panic <- batch_simulation(batch_arg_grid_panic, sim_fun = function(par) {
+    multi_init_simulation(sim_fun_panic, range_x0 = c(0, 1, 0, 1), R = 4,
+        par = par) |>
+        window(start = 100)
+})
+\end{verbatim}
+
+The 3D landscapes for different \(S\) values are shown in Figure \ref{fig:lbatch3dpanic}. The landscapes show that the system only has one stable state when \(S\) is low, but has two stable states when \(S\) is high. The stability of the panic state also increases when \(S\) is higher. This indicates that a higher \(S\) value corresponds to a higher risk of panic attacks.
+
+\begin{verbatim}
+l_batch_panic_3d <- make_3d_matrix(batch_output_panic, x = "A", y = "PT",
+    cols = "S", h = 0.005, lims = c(-1, 1.5, -0.5, 1.5))
+plot(l_batch_panic_3d)
+\end{verbatim}
+
+\begin{figure}
+\includegraphics[width=1\linewidth,alt={Three landscape plots arranged in a row. The x-axis is labeled A, the y-axis is labeled PT. Columns correspond to S values of 0, 0.5, and 1.}]{RJ-2025-039_files/figure-latex/lbatch3dpanic-1} \caption{The landscape for the panic disorder model of different \( S \) values. Two landscapes are shown for different variable combinations, \( A \) and \( PT \), or \( A \) and \( E \).}\label{fig:lbatch3dpanic}
+\end{figure}
+
+\section{Discussion}\label{discussion}
+
+Potential landscapes can show the stability of states for a dynamical system in an intuitive and quantitative way. They are especially informative for multistable systems. In this article, we illustrated how to construct potential landscapes using \CRANpkg{simlandr}. The potential landscapes generated by \CRANpkg{simlandr} are based on the steady-state distribution of the system, which is in turn estimated using Monte Carlo simulation. Compared to analytic methods, Monte Carlo estimation is more flexible and thus more applicable for complex models. The flexibility comes together with a higher demand for time and storage, which is necessary to make the estimation precise enough. The hash\_big\_matrix class partly solved this problem by dumping the memory storage to hard disk space. Also, it is important that the simulation function itself is efficient enough. The functions \texttt{sim\_SDE()} and \texttt{multi\_init\_simulation()} make use of the efficient simulations provided by \CRANpkg{Sim.DiffProc} \citep{GuidoumBoukhetalaPerformingParallelMonte2020} and the parallel computing with the \CRANpkg{future} framework \citep{RJ-2021-048}. For customized simulation functions, there are also multiple approaches that can be used to improve the performance, for which we refer interested readers to \citet{WickhamImprovingPerformance2019a}. In Supplementary Materials A, we provide a benchmark of the typical time and memory usage of the procedures in \CRANpkg{simlandr}. From there, we can see that time and memory usage are acceptable in most cases on a personal computer. When the transition between attractors is rare, the \texttt{multi\_init\_simulation()} function may help to speed up the convergence, and more advanced sampling methods like importance sampling or rare event sampling may be needed in more complex situations. The detailed ways to implement such methods are highly dependent on the specific model and are beyond the scope of this package. We direct interested readers to \citet{RubinoTuffinRareEventSimulation2009} and \citet{KloekvanDijkBayesianEstimatesEquation1978} for a comprehensive review of rare event simulation methods. Nevertheless, the landscape construction functions in \CRANpkg{simlandr} allow users to provide weights for the simulation results, which can be used to adjust the sampling distribution.
+
+In addition, the length of the simulation and the choice of noise strength may also have an important influence on the results. If the length is too short, the density estimation will be inaccurate, resulting in rugged landscapes. If the length is too long, the simulation part would require more computational resources, which is not always realistic. If the noise is too weak, the system may not be able to converge in a reasonable time, resulting in problems in convergence checks, overly noisy landscapes, or failure to show valleys that are theoretically present. If the noise is too strong, the simulation may be unstable and the boundaries between valleys may be blurry. In Supplementary Materials B, we showed the influence of simulation length and noise strength on the landscape output. With some theoretical expectation of the system's behavior, it is not difficult to spot that the simulation is too short, or the noise level might be unsuitable. In that case, some adjustments are required before the landscape can be well constructed.
+
+All landscape construction and barrier calculation functions in \CRANpkg{simlandr} contain both visual aids and numerical data that can be used for further processing. The html plots based on \CRANpkg{plotly} are more suitable for interactive illustrations, while it is also possible to export them to static plots using \texttt{plotly::orca()}. The \CRANpkg{ggplot2} plots are readily usable for flat printing.
+
+We also want to note some limitations of the potential landscape generated by \CRANpkg{simlandr}. First, the generalized potential landscape is not a complete description of all dynamics in a system. It emphasizes the stability of different states by filtering out other dynamical information. Some behaviors are not possible in gradient systems (e.g., oscillations and loops), thus cannot be shown in a potential landscape \citep{zhouConstructionLandscapeMultistable2016}. Second, since the steady-state distribution is estimated using a kernel smoothing method, which depends on stochastic simulations, the resulting potential function may not be highly accurate. Its accuracy is further affected by the choice of kernel bandwidth and noise strength. This issue is particularly pronounced at valley edges, where fewer samples are available for estimation. Similar limitations apply to MEP calculations, as they are derived from the generalized landscape rather than the original dynamics. Therefore, we do not recommend directly interpreting the potential function or barrier height results for applications requiring high precision. Instead, the potential landscape is best used as a semi-quantitative tool to gain insights into the system's overall behavior, guide further analysis, and compare system behavior under different parameter settings, provided the same simulation and kernel estimation conditions are used. The examples in this article illustrated some typical use cases we recommend.
+
+\section{Availability and future directions}\label{availability-and-future-directions}
+
+This package is publicly available from the Comprehensive R Archive Network (CRAN) at \url{https://CRAN.R-project.org/package=simlandr}, under GPL-3 license. The results in the current article were generated with \CRANpkg{simlandr} 0.4.0 version. R script to replicate all the results in this article can be found in the supporting information.
+
+The barrier height data calculated by \CRANpkg{simlandr} can also be further analyzed and visualized. For example, sometimes it is helpful to look into how the barrier height changes with varying parameters (e.g., \citet{CuiEtAlMetaphorComputationConstructing2021}). We encourage users to explore other ways of analyzing and visualizing the various results provided by \CRANpkg{simlandr}.
+
+The method we chose for \CRANpkg{simlandr} is not the only possible one. The generalized landscape by \citet{wangPotentialLandscapeFlux2008}, which we implemented, is more flexible and emphasizes the possibility that the system is in a specific state, while other methods may have other strengths (e.g., the method by \citet{rodriguez-sanchezPabRodRolldownPostpublication2020} emphasizes the gradient part of the vector field, and the method by \citet{MooreEtAlQPotPackageStochastic2016} emphasizes the possibility of transition processes under small noise). We look forward to future theoretical and methodological developments in this direction.
+
+\section{Acknowledgments}\label{acknowledgments}
+
+TL was supported by the NSFC under Grant No.~11825102 and the Beijing Academy of Artificial Intelligence (BAAI). ALA and MO were supported by an NWO VIDI grant, Grant No.~VI.Vidi.191.178.
+
+\bibliography{RJreferences.bib}
+
+\address{%
+Jingmeng Cui\\
+University of GroningenRadboud University\\%
+Faculty of Behavioural and Social Sciences, Groningen, the Netherlands\\ Behavioural Science Institute, Nijmegen, the Netherlands\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0003-3421-8457}{0000-0003-3421-8457}}\\%
+\href{mailto:jingmeng.cui@rug.nl}{\nolinkurl{jingmeng.cui@rug.nl}}%
+}
+
+\address{%
+Merlijn Olthof\\
+University of GroningenRadboud University\\%
+Faculty of Behavioural and Social Sciences, Groningen, the Netherlands\\ Behavioural Science Institute, Nijmegen, the Netherlands\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-5975-6588}{0000-0002-5975-6588}}\\%
+\href{mailto:merlijn.olthof@ru.nl}{\nolinkurl{merlijn.olthof@ru.nl}}%
+}
+
+\address{%
+Anna Lichtwarck-Aschoff\\
+University of GroningenRadboud University\\%
+Faculty of Behavioural and Social Sciences, Groningen, the Netherlands\\ Behavioural Science Institute, Nijmegen, the Netherlands\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-4365-1538}{0000-0002-4365-1538}}\\%
+\href{mailto:a.lichtwarck-aschoff@rug.nl}{\nolinkurl{a.lichtwarck-aschoff@rug.nl}}%
+}
+
+\address{%
+Tiejun Li\\
+Peking University\\%
+\textit{(corresponding author)} LMAM and School of Mathematical Sciences, Beijing, China\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-2086-1620}{0000-0002-2086-1620}}\\%
+\href{mailto:tieli@pku.edu.cn}{\nolinkurl{tieli@pku.edu.cn}}%
+}
+
+\address{%
+Fred Hasselman\\
+Radboud University\\%
+\textit{(corresponding author)} Behavioural Science Institute, Nijmegen, the Netherlands\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0003-1384-8361}{0000-0003-1384-8361}}\\%
+\href{mailto:fred.hasselman@ru.nl}{\nolinkurl{fred.hasselman@ru.nl}}%
+}
