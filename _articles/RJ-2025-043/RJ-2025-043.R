@@ -9,7 +9,7 @@ library(kableExtra)
 dir <- getwd()
 
 
-## ----figurememshare, out.width = "100%", fig.cap = "A schematic about where the memory is located and how different sessions access it."----
+## ----figurememshare, out.width = "100%", fig.cap = "A schematic about where the memory is located and how different sessions access it.", echo=FALSE----
 knitr::include_graphics("figures/Grafik_Memshare.png")
 
 
@@ -55,7 +55,7 @@ MAX.CORES = NULL # defaults to detectCores() - 1
   MAX.CORES = 1) #MAX.CORES=1 for simplicity
 
 
-## ----figure1, out.width = "100%", fig.cap = "Matrix size depicted as magnitude vs median runtime (left) and vs memory overhead (MB) during the run relative to idle (right) for `memshare`, `SharedObject` as error-bar style plots with intevals given by the median ± AMAD across 100 runs. In addition, the serial baseline is shown as a line in magenta. The top subfigures present the full range of matrix sizes, and the bottom subfigures zoom in."----
+## ----figure1, out.width = "100%", fig.cap = "Matrix size depicted as magnitude vs median runtime (left) and vs memory overhead (MB) during the run relative to idle (right) for `memshare`, `SharedObject` as error-bar style plots with intevals given by the median ± AMAD across 100 runs. In addition, the serial baseline is shown as a line in magenta. The top subfigures present the full range of matrix sizes, and the bottom subfigures zoom in.", echo=FALSE----
 knitr::include_graphics("figures/Figure1.png")
 
 
@@ -69,18 +69,18 @@ DataVisualizations::InspectVariable(mi_values$MI,Name = "Distribution of Mutual 
 #Header
 
 
-## ----figure1-detail, out.width = "100%", fig.cap = "Median runtime (log-scale) vs matrix size for `memshare`, `SharedObject`, and serial baseline; ribbons show IQR across 100 runs. Insets show difference in total RSS in log(MB), i,e., the memory overhead, during the run relative to idle for Mac presenting the details of Figure \ref{fig:figure1}."----
+## ----figure1-detail, out.width = "100%", fig.cap = "Median runtime (log-scale) vs matrix size for `memshare`, `SharedObject`, and serial baseline; ribbons show IQR across 100 runs. Insets show difference in total RSS in log(MB), i,e., the memory overhead, during the run relative to idle for Mac presenting the details of Figure \ref{fig:figure1, echo=FALSE}."----
 knitr::include_graphics("figures/Figure1_appendix_secs_vs_Resident_Set_Size_mac.png")
 
 
-## ----appendix-figure1, out.width = "100%", fig.cap = "Median runtime (log-scale) vs matrix size for `memshare`, `SharedObject`, and serial baseline; ribbons show IQR across 100 runs. Insets show the difference in total RSS in log(MB) (i.e., memory overhead) during the run relative to idle for Windows~10 via Boot Camp."----
+## ----appendix-figure1, out.width = "100%", fig.cap = "Median runtime (log-scale) vs matrix size for `memshare`, `SharedObject`, and serial baseline; ribbons show IQR across 100 runs. Insets show the difference in total RSS in log(MB) (i.e., memory overhead) during the run relative to idle for Windows~10 via Boot Camp.", echo=FALSE----
 knitr::include_graphics("figures/Figure1_appendix_secs_vs_Resident_Set_Size_win.png")
 
 
-## ----app-a-1, out.width = "100%", fig.cap = "First Screenshot of ShareObjects Computation."----
+## ----app-a-1, out.width = "100%", fig.cap = "First Screenshot of ShareObjects Computation.", echo=FALSE----
 knitr::include_graphics("figures/Crash_message1.png")
 
 
-## ----app-a-2, out.width = "100%", fig.cap = "Second Screenshot of ShareObjects Computation."----
+## ----app-a-2, out.width = "100%", fig.cap = "Second Screenshot of ShareObjects Computation.", echo=FALSE----
 knitr::include_graphics("figures/Crash_message2.png")
 

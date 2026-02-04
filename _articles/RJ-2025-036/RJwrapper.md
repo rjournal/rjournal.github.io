@@ -4,16 +4,21 @@ abstract: |
   research, aiming to improve the accuracy and robustness of medical
   diagnostics. While existing tools focus primarily on linear
   combination methods, there is a lack of comprehensive tools that
-  integrate diverse methodologies. In this study, we present dtComb, a
-  comprehensive R package and web tool designed to address the
+  integrate diverse methodologies. In this study, we present
+  [`dtComb`](https://cran.r-project.org/web/packages/dtComb/index.html),
+  a comprehensive R package and web tool designed to address the
   limitations of existing diagnostic test combination platforms. One of
-  the unique contributions of dtComb is offering a range of 142 methods
-  to combine two diagnostic tests, including linear, non-linear, machine
-  learning algorithms, and mathematical operators. Another significant
-  contribution of dtComb is its inclusion of advanced tools for ROC
-  analysis, diagnostic performance metrics, and visual outputs such as
-  sensitivity-specificity curves. Furthermore, dtComb offers
-  classification functions for new observations, making it an
+  the unique contributions of
+  [`dtComb`](https://cran.r-project.org/web/packages/dtComb/index.html)
+  is offering a range of 142 methods to combine two diagnostic tests,
+  including linear, non-linear, machine learning algorithms, and
+  mathematical operators. Another significant contribution of
+  [`dtComb`](https://cran.r-project.org/web/packages/dtComb/index.html)
+  is its inclusion of advanced tools for ROC analysis, diagnostic
+  performance metrics, and visual outputs such as
+  sensitivity-specificity curves. Furthermore,
+  [`dtComb`](https://cran.r-project.org/web/packages/dtComb/index.html)
+  offers classification functions for new observations, making it an
   easy-to-use tool for clinicians and researchers. The web-based version
   is also available at <https://biotools.erciyes.edu.tr/dtComb/> for
   non-R users, providing an intuitive interface for test combination and
@@ -69,7 +74,7 @@ title: "dtComb: A Comprehensive R Library and Web Tool for Combining
   Diagnostic Tests"
 ---
 
-:::::::: article
+::::::::: article
 ## Introduction
 
 A typical scenario often encountered in combining diagnostic tests is
@@ -623,8 +628,10 @@ and incorrect predictions. It compares predicted and actual
   : (#tab:T1) Confusion Matrix
 :::
 
+::: flush
 TP: True Positive, TN: True Negative, FP: False Positive, FN: False
 Negative, n: Sample size
+:::
 
 class labels, with diagonal elements representing the correct
 predictions and off-diagonal elements representing the number of
@@ -964,6 +971,7 @@ highest AUC value, indicating that the combined strategy performs the
 best overall.](Figure/Figure_2.png){#figure:roc width="70.0%"
 alt="graphic without alt text"}
 
+\
 To see the results of the binary comparison between the combination
 score and markers:
 
@@ -1224,7 +1232,7 @@ now available on the CRAN website
 We would like to thank the Proofreading & Editing Office of the Dean for
 Research at Erciyes University for the copyediting and proofreading
 service for this manuscript.
-::::::::
+:::::::::
 
 [^1]: [https://cran.r-project.org/web/
     packages/splines/index.html](https://cran.r-project.org/web/

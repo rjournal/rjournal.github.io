@@ -50,7 +50,7 @@ library(AcceptReject)
 # library(AcceptReject)
 
 
-## ----logo, out.width = "25%", fig.align = "center", fig.cap="Logo of the package.", eval=TRUE, echo = FALSE, fig.pos="H"----
+## ----logo, out.width = "25%", fig.align = "center", fig.cap="Logo of the package.", eval=TRUE, echo = FALSE, fig.pos="H", echo=FALSE----
 knitr::include_graphics("figures/logo.png")
 
 
