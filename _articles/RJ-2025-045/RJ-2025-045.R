@@ -327,7 +327,7 @@ if (knitr::is_latex_output()) {
 kableExtra::kbl(KPItab,
   escape = F, caption = "Arithmetic and geometric mean of the KPI (both instance-normalized and non-normalized) for each algorithm on the test set, along with the results for the algorithm selected by the learning model (first row).",
   col.names = col_names,
-  booktabs = TRUE, 
+  booktabs = TRUE,
 ) %>%
   kableExtra::kable_styling(full_width = FALSE, position = "center", latex_options = "hold_position", font_size = fs) %>%
   column_spec(column = 2:5, width = wi)
@@ -358,7 +358,7 @@ if (knitr::is_latex_output()) {
 kableExtra::kbl(KPItab,
   escape = F, caption = "Arithmetic and geometric mean of the non-normalized KPI for single best choice, ML choice, and optimal choice.",
   col.names = col_names,
-  booktabs = TRUE, 
+  booktabs = TRUE,
 ) %>%
   kableExtra::kable_styling(full_width = FALSE, position = "center", latex_options = "hold_position", font_size = fs) %>%
   column_spec(column = 2:3, width = wi)
@@ -439,7 +439,7 @@ if (knitr::is_html_output()) {
     fs <- NULL
   }
   kableExtra::kbl(KPItab,
-    escape = F, caption = "Arithmetic and geometric mean of the non-normalized KPI for single best choice, ML choice, and optimal choice. The ML choice  is based on the predictions of the alpha-conditional quantile for alpha=0.25.",booktabs = TRUE, 
+    escape = F, caption = "Arithmetic and geometric mean of the non-normalized KPI for single best choice, ML choice, and optimal choice. The ML choice  is based on the predictions of the alpha-conditional quantile for alpha=0.25.",booktabs = TRUE,
     col.names = col_names
   ) %>%
     kableExtra::kable_styling(full_width = FALSE, position = "center", latex_options = "hold_position", font_size = fs) %>%
@@ -455,13 +455,13 @@ if (knitr::is_html_output()) {
 # # Compute model performance metrics for each explainer
 # mp_qrf <- lapply(explainers_qrf, DALEX::model_performance)
 # # Plot the performance metrics
-# do.call(plot, unname(mp_qrf))
+# do.call(plot, unname(mp_qrf)) + theme_bw(base_line_size = 0.5)
 
 
 ## ----DALEX1, echo = FALSE, tidy=TRUE, out.width = ifelse(knitr::is_latex_output(), "70%" , "100%"), fig.cap="Reversed empirical cumulative distribution function of the absolute residuals of the trained models.", fig.alt = "Reversed empirical cumulative distribution function of the absolute residuals of the trained model."----
 explainers_qrf <- ASexplainer(training, data = data$x.test, y = data$y.test, labels = lab_rules, verbose = FALSE)
 mp_qrf <- lapply(explainers_qrf, DALEX::model_performance)
-do.call(plot, unname(mp_qrf))
+do.call(plot, unname(mp_qrf)) + theme_bw(base_line_size = 0.5)
 
 
 ## ----ASML_DALEX2, echo = TRUE, tidy=TRUE, eval=FALSE--------------------------
@@ -472,7 +472,7 @@ do.call(plot, unname(mp_qrf))
 # # Compute PDP for the variable "degree" for each model
 # pdp_qrf <- lapply(explainers_qrf, DALEX::model_profile, variable = "degree", type = "partial")
 # # Plot the PDPs generated
-# do.call(plot, unname(pdp_qrf))
+# do.call(plot, unname(pdp_qrf)) + theme_bw(base_line_size = 0.5)
 
 
 ## ----AMSLtimes, echo = FALSE, tidy=TRUE, eval=TRUE----------------------------
@@ -666,7 +666,7 @@ if (knitr::is_html_output()) {
   results_table %>%
     kableExtra::kbl(
       escape = FALSE, caption = "Performance results of various models on the CPMP-2015 dataset. The last row represents the performance of the quantile random forest model based on instance-normalized KPI using the \\CRANpkg{ASML} package.
-                The preceding rows detail the results (all taken from original ASlib study) of the virtual best solver (vbs), single best solver (singleBest), and the considered regression methods (linear model, regression trees and regression random forest).", booktabs = TRUE, 
+                The preceding rows detail the results (all taken from original ASlib study) of the virtual best solver (vbs), single best solver (singleBest), and the considered regression methods (linear model, regression trees and regression random forest).", booktabs = TRUE,
       align = "lrrr"
     ) %>%
     kableExtra::kable_styling(full_width = FALSE, position = "center", latex_options = "hold_position", font_size = fs) %>%
