@@ -53,6 +53,7 @@ diffusion_gene <- expression(
 if (!file.exists("data/single_output_gene.RDS")) {
   set.seed(1614)
   single_output_gene <- sim_SDE(drift = drift_gene, diffusion = diffusion_gene, N = 1e6, M = 10, Dt = 0.1, x0 = c(0, 0, 1), keep_full = FALSE)
+  xfun::dir_create("data")
   saveRDS(single_output_gene, "data/single_output_gene.RDS")
 } else {
   single_output_gene <- readRDS("data/single_output_gene.RDS")
@@ -74,10 +75,10 @@ plot(single_output_gene_mcmc_thin)
 
 
 ## ----warning=FALSE------------------------------------------------------------
-l_single_gene_3d <- 
-  make_3d_single(single_output_gene2, 
-                 x = "delta_x", y = "a", 
-                 lims = c(-1.5, 1.5, 0, 1.5), 
+l_single_gene_3d <-
+  make_3d_single(single_output_gene2,
+                 x = "delta_x", y = "a",
+                 lims = c(-1.5, 1.5, 0, 1.5),
                  Umax = 8)
 
 
@@ -234,7 +235,7 @@ library(PanicModel)
 sim_fun_panic <- function(x0, par) {
 
   # Change several default parameters
-  pars <- pars_default 
+  pars <- pars_default
   # Increase the noise strength to improve sampling efficiency
   pars$N$lambda_N <- 200
   # Make S constant through the simulation
@@ -249,7 +250,7 @@ sim_fun_panic <- function(x0, par) {
   # Specify the value of S according to the format requirement by `batch_simulation()`.
   initial$S <- par$S
 
-  # Extract the simulation output from the result by simPanic(). Only keep the core variables. 
+  # Extract the simulation output from the result by simPanic(). Only keep the core variables.
   return(
     as.matrix(
       simPanic(1:5000, initial = initial, parameters = pars)$outmat[, c("A", "PT", "E")]
@@ -291,7 +292,7 @@ plot(single_output_panic)
 
 ## ----3dstaticpanic, fig.show="hold", out.width="50%", fig.cap="The 3D landscape (potential value as color) for the panic disorder model", fig.alt='A landscape plot with two basins.', echo=FALSE,message=FALSE,warning=FALSE----
 l_single_panic_3d <- make_3d_single(
-  single_output_panic |> window(start = 100), 
+  single_output_panic |> window(start = 100),
   x = "A", y = "PT", h = 0.005, lims = c(-1, 1.5, -0.5, 1.5))
 plot(l_single_panic_3d, 2)
 
