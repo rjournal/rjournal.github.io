@@ -141,8 +141,6 @@ summary(x)
 
 
 ## ----eval = FALSE, echo = TRUE------------------------------------------------
-#| echo: TRUE
-#| eval: FALSE
 # ## S3 method for class 'accept_reject'
 # plot(
 #   x,
@@ -268,9 +266,6 @@ accept_reject(
 
 ## ----echo = TRUE--------------------------------------------------------------
 #| label: modified_beta
-#| echo: TRUE
-#| eval: TRUE
-#|
 library(numDeriv)
 
 pdf <- function(x, G, ...){
