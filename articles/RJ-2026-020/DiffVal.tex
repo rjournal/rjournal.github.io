@@ -1,0 +1,653 @@
+% !TeX root = RJwrapper.tex
+\title{Clustering Binary Data Optimizing the Exclusiveness of Features}
+
+
+\author{by J. Orestes Cerdeira and Tiago Monteiro-Henriques}
+
+\maketitle
+
+\abstract{%
+A problem that has been studied for a long time in Vegetation Science consists in finding distinct groups among a collection of vegetation samples (relevés). Recently a criterion has been proposed to capture the patterns of differential species among the groups from any arbitrary M-cluster of relevés. The criterion optimization is quite complex (NP-hard) as it implies searching a huge set of possible combinations of relevés into M groups. In this paper we give an integer linear programming formulation to optimize the criterion for M=2, that can be used to solve moderately-sized data problems; we also describe a greedy randomized adaptive search procedure and a simulated annealing algorithm for arbitrary M. We combined these different approaches and prepared a collection of software functions, which are available in the open-source R package diffval. We illustrate the use of such functions using real-world data.
+}
+
+\section{Introduction}\label{intro}
+
+Vegetation classification is a complex problem that have occupied researchers during decades. This is traditionally done by manipulating matrices of vegetation samples (relevés), as described in detail by \citet{ME1974}. The main purpose of this manipulation is clustering, i.e., the researcher seeks to partition the collection of relevés in groups (subsets of relevés), which can be distinguished floristically (by subsets of the present taxa). Such manipulation is even more ambitious and seeks to find, simultaneously, an optimal number of clusters to partition the relevé set. This process is usually called tabulation, tabular classification, or table sorting. Manual tabulation is a particularly tedious process, being impractical for large data sets.
+
+With the advent of computers and software, several authors have proposed a plethora of different approaches to vegetation classification. In essence, all of them aim at clustering groups of relevés based on common taxa that are expected to differentiate those groups, ultimately pursuing a typical block-structured sorted table. The vast majority of such approaches does this heuristically, relying on numerical clustering methods based on pairwise (dis)similarity measures. Direct optimization, even if considered a natural way of approaching the issue, is hindered by the the huge number of possible combinations of relevé groups \citep{PR13}. However, there are some proposals trying to find directly the desired block-structured tables, e.g., Two-Way Indicator Species Analysis--TWINSPAN \citep{HMO1979}, analysis of concentration \citep{FO1979}, chi-squared optimization \citep{PF1991}, the ESPRESSO software \citep{BF1994}, the COCKTAIL algorithm \citep{BHelge2000}, and modified-TWINSPAN \citep{RTZC2009}. With the same objective \citet{MH2025} recently proposed an optimization approach to tabulation, devising a new index specifically for that purpose: the DiffVal index. In \citet{MH2025} comparisons to other clustering methods, using both synthetic data sets with known group structure, and real-world data are provided.
+
+In general, the approaches mentioned for classifying vegetation data fall within the clustering or partitioning \citep{KR1990} and biclustering \citep{CAM2024} frameworks. Within these broader disciplines, what are here called \emph{relevés} are usually referred to as \emph{objects} or \emph{samples}, and \emph{species} as \emph{features}, \emph{variables}, or \emph{attributes}.
+
+Given a vegetation table and a partition of the relevés, the DiffVal index quantifies the ability of a taxon in differentiating those groups, taking into account the following characteristics:
+
+C1) The greater the relative frequency in the group (or groups) where the taxon occurs, the highest is the corresponding DiffVal. This is a common sought feature among diagnostic taxa \citep[see, e.g., the IndVal index of][]{DL1997}, as frequent taxa in the group have great bioindicator and practical value in recognizing communities in the field.
+
+C2) The greater the exclusiveness of a taxon to a group (or groups) the best, i.e., the greater the full absence from other groups, the highest is the corresponding DiffVal. This relates to fidelity \citep[sensu][]{ME1974}.
+
+C3) Conversely, a taxon occurring in all groups should present a zero DiffVal, as it is useless in distinguishing the groups with its presence.
+
+Balancing those characteristics (C1 to C3) in a single index is challenging, however, the DiffVal index is able to incorporate them in a simple combinatorial way (i.e.~counting the presences, the absences and the group sizes).
+Eventually, having the DiffVals for all the taxa in a vegetation table, we can compute their sum, which is a natural criterion to portray the overall pattern of present differential taxa. Finding the desired block-structured table will be possible then, if we are able to find relevé partitions that maximize this sum.
+
+Mathematically, this contextualizes as follows. (For an ecological interpretation see \citet{MH2025}, where a worked example of DiffVal calculation with a small hypothetical vegetation table is provided.) The presence of taxa in relevés is described as a, \(m\times n\), matrix \(A=[a_{ij}]\), with 0/1 entries
+\begin{equation*}
+{a}_{ij}=\left\{\begin{array}{cl}
+1  &\mbox{if taxon $i$ occurs in relevé $j$} \\ \quad \\
+0  &\mbox{otherwise}     
+\end{array}\right.
+\end{equation*}
+
+In what follows we assume that \(\sum_{j=1}^n a_{ij}\geq 1\), i.e., any taxon occurs at least in one relevé.
+
+A solution \(S_M\) for the vegetation classification in \(M\) groups is an \(M\)-partition of the set of columns (relevés) \(C\): \(G_1,\dots,G_M\) such that \(\cup_{k=1}^M G_k=C\) and \(G_k\cap G_l=\emptyset\), with \(k\not= l=1,\dots,M\).
+
+The value of the DiffVal index for taxon \(i\) w.r.t. solution \(S_M\) is
+\begin{equation}
+\displaystyle{
+\mathrm{DiffVal}_i(S_M)= {\sum_{k=1}^M} \,\,
+\frac{\sum_{j=1}^n a_{ij} x_j^k}{\sum_{j=1}^n x_j^k}
+\,\,
+\frac{
+\sum_{l\not=k=1}^M\sum_{j=1}^n  x_j^l g_i^l}
+{\sum_{l\not=k=1}^M\sum_{j=1}^n  x_j^l}
+\,\,
+\frac{1}{M-\sum_{l=1}^M g_i^l}
+}
+\label{eq:DiffVal}
+\end{equation}
+where \(x_j^k=1\) (\(x_j^k=0\)), if column \(j\) is (not) in group \(G_k\) of solution \(S_M\) and \(g_i^k=1\) (\(g_i^k=0\)) if, in group \(G_k\) of \(S_M\), (not) all entries \(a_{ij}=0\).
+
+Thus, expressions \(\sum_{j=1}^n a_{ij} x_j^k\) and \(\sum_{j=1}x_j^k\) indicate the number of occurrences of taxon \(i\) in group \(G_k\) and the size of group \(G_k\), respectively, and, therefore \(\frac{\sum_{j=1}^n a_{ij} x_j^k}{\sum_{j=1}x_j^k}\) is the relative representation of taxon \(i\) in \(G_k\), incorporating the characteristic C1, referred above, in the DiffVal index.
+
+Expression \(\frac{\sum_{l\not=k=1}^M\sum_{j=1}^n  x_j^l g_i^l} {\sum_{l\not=k=1}^M\sum_{j=1}^n x_j^l}\) captures the absence of taxon \(i\) in all groups but \(G_k\). The numerator \(\sum_{l\not=k=1}^M\sum_{j=1}^n  x_j^l g_i^l\) sums the sizes of all empty groups, while \(\sum_{l\not=k=1}^M\sum_{j=1}^n  x_j^l\) is the sum of the sizes of all groups except \(G_k\). Thus, the ratio \(\frac{\sum_{l\not=k=1}^M\sum_{j=1}^n  x_j^l g_i^l} {\sum_{l\not=k=1}^M\sum_{j=1}^n x_j^l}\) is the proportion of emptiness of taxon \(i\) outside \(G_k\) group, incorporating characteristic C2 in the index. Note that if taxon \(i\) occurs in all groups, i.e., \(g_i^k=0\), for \(k=1,\dots,M\), then \(\mathrm{DiffVal}_i(S_M)=0\) fulfilling characteristic C3.
+
+Finally, \({M-\sum_{l=1}^M g_i^l}\) in the denominator of \eqref{eq:DiffVal} is used to make the index \(\mathrm{DiffVal}\leq 1\).
+
+Taking the sum of \(\mathrm{DiffVal}_i(S_M)\), for all taxon \(i\), we get
+\begin{equation}
+\mathrm{TotDiffVal}(S_M)= \sum_{i=1}^m \, \mathrm{DiffVal}_i(S_M)
+\label{eq:indiceK}
+\end{equation}
+that quantifies the extent to which solution \(S_M\) is based on differential taxa, that we aim to maximize. Dividing \(\sum_{i=1}^m \, \mathrm{DiffVal}_i(S_M)\) by \(m\) also ensures a value bounded between 0 and 1, yet this is unnecessary for the maximization, thus it is disregarded here.
+
+The following constraints ensure that variables \(x_j^k\) have the meaning gave above (i.e., \(x_j^k=1\) if column \(j\) is in group \(G_k\), and \(x_j^k=0\) otherwise) and that, in every solution that maximizes \eqref{eq:indiceK}, variables \(g_i^k\) also have the meaning above (i.e., \(g_i^k=1\) if taxon \(i\) is absent of all relevés of group \(G_k\), and \(g_i^k=0\), otherwise).
+
+\begin{equation}
+\sum_{k=1}^M x_j^k=1, \quad \quad j=1,\dots,n
+\label{eq:kpartition1}
+\end{equation}
+
+\begin{equation}
+\sum_{j=1}^n x_j^k\geq 1, \quad \quad k=1,\dots,M
+\label{eq:kpartition2}
+\end{equation}
+
+\begin{equation}
+x_j^k\in \{0,1\} \quad \quad j=1,\dots,n; k=1,\dots,M
+\label{eq:x01}
+\end{equation}
+
+\begin{equation}
+g_i^k\leq 1 - a_{ij}x_j^k, \quad \quad j=1,\dots,n; k=1,\dots,M; i=1,\dots,m
+\label{eq:g2}
+\end{equation}
+
+Constraints \eqref{eq:x01} define the range of variables \(x_j^k\). Equation \eqref{eq:kpartition1} assigns each column \(j\) to exactly one group, and inequality \eqref{eq:kpartition2} ensures that every group has at least one column. Hence, variables \(x_j^k\) define a \(M\)-partition of the set of columns of matrix \(A\).
+
+Inequalities \eqref{eq:g2} define upper bounds on variable \(g_i^k\): \(g_i^k\leq 0\) when taxon \(i\) is present in some relevé \(j\) of group \(G_k\) (i.e., \(a_{ij}x_j^k=1\)), and \(g_i^k\leq 1\) when taxon \(i\) is absent from group \(G_k\) (i.e., \(a_{ij}x_j^k=0\), for all \(j\)). Clearly, the upper bounds will be attained in every \(M\)-partition that maximizes the value of TotDiffVal \eqref{eq:indiceK}.
+
+Maximizing \eqref{eq:indiceK} subject to \eqref{eq:kpartition1}-\eqref{eq:g2} is an NP-hard problem \citep{GJ1979}, for any fixed number of groups \(M\geq 2\). We briefly sketch the proof. For the case \(M=2\), we reduce from the minimum graph bisection problem, which is known to be NP-hard \citep{GJS1976}. In that problem, the task is to divide the vertices of a graph into two equal parts while minimizing the number of edges crossing between them. This is closely related to our setting: a minimum bisection can be reformulated as finding a balanced 2-partition of the transposed incidence matrix of the graph that maximizes the TotDiffVal index. We then show that such balanced 2-partitions arise as optimal solutions of TotDiffVal maximization (for \(M=2\)) on a suitably constructed larger matrix, without explicitly enforcing the balancing constraint. The full reduction is presented in the \hyperref[appendix]{Appendix}. Intuitively, the problem is computationally intractable because the number of possible partitions grows exponentially with the size of the data, and the balancing requirement further constrains the search. By induction on \(M\), the NP-hardness extends to any fixed number of groups \(M\geq 2\) (see \hyperref[appendix]{Appendix}). Hence, unless \(P=NP\), no efficient algorithm exists to find an \(M\)-partition that maximizes TotDiffVal.
+
+The rest of this paper is organized as follows. In Section \hyperref[casemtwo]{2} we address the problem of maximizing TotDiffVal in the case where \(M=2\), and give two integer linear programming formulations. In Sections \hyperref[GRASP]{3} and \hyperref[SA]{4} we present a greedy randomized adaptive search procedure and a simulated annealing algorithm to maximize the criterion TotDiffVal for arbitrary \(M\), respectively. The approaches of Sections \hyperref[casemtwo]{2}, \hyperref[GRASP]{3} and \hyperref[SA]{4} are combined in a number of software functions included in the R package \CRANpkg{diffval} \citep{MHC2025} which we describe in Section \hyperref[implementation]{5}, illustrating their application on real-world data.
+
+\section{\texorpdfstring{Case \(M=2\)}{Case M=2}}\label{casemtwo}
+
+When \(M=2\) the value of \(x_j^1\) (\(x_j^2\)) determines the value of \(x_j^2\) (\(x_j^1\)). We may therefore replace variables \(x_j^1\) and \(x_j^2\) by a unique variable \(x_j\), where \(x_j=1\) indicates that column \(j\) is assigned to one of the two groups, say, e.g., group \(G_1\). Thus, \(x_j=0\) indicates that column \(j\) is assigned to group \(G_2\).
+
+Constraints \eqref{eq:kpartition1}-\eqref{eq:g2} may be rewritten as follows.
+\begin{equation}
+\sum_{j=1}^n x_j\geq 1
+\label{eq:twopart1x}
+\end{equation}
+
+\begin{equation}
+\sum_{j=1}^n x_j\leq \Bigl\lfloor\dfrac{n}{2}\Bigr\rfloor
+\label{eq:twopart2x}
+\end{equation}
+
+\begin{equation}
+x_j\in \{0,1\} \quad \quad j=1,\dots,n
+\label{eq:twox01}
+\end{equation}
+
+\begin{equation}
+g_i^1\leq 1 - a_{ij}x_j, \quad \quad j=1,\dots,n; i=1,\dots,m
+\label{eq:twog1}
+\end{equation}
+
+\begin{equation}
+g_i^2\leq 1 - a_{ij}\,(1-x_j), \quad \quad j=1,\dots,n; i=1,\dots,m
+\label{eq:twog2}
+\end{equation}
+
+Constraints \eqref{eq:twopart1x}-\eqref{eq:twox01} define a 2-partition of the set columns: \(x_j=1\) (\(x_j=0\)) if column \(j\) is assigned to group \(G_1\) (\(G_2\)), while ensuring that none of the two groups is the empty set.
+
+Inequalities \eqref{eq:twog1} and \eqref{eq:twog2} imply that \(g_i^k\leq 0\) when taxon \(i\) occurs in some relevé \(j\) of group \(G_k\), and that \(g_i^k\leq 1\) when taxon \(i\) is absent from group \(G_k\).
+
+Expression \eqref{eq:DiffVal}, for \(M=2\), reads
+\begin{equation*}
+\displaystyle{
+\frac{\sum_{j=1}^n a_{ij} x_j}{\sum_{j=1}^n x_j} \, g_i^2 
+\,+
+\frac{\sum_{j=1}^n a_{ij} (1-x_j)}{n-\sum_{j=1}^n x_j} \, g_i^1 
+}
+\end{equation*}
+
+Note that the term \((2-(g_i^1+g_i^2))^{-1}\) is not needed since (recall that we assumed \(\sum_{j=1}^n a_{ij} \geq 1\)) either \(g_i^1+g_i^2\leq 1\), case where for every optimal solution we will have \(g_i^1+g_i^2=1\) (i.e., taxon \(i\) occurs in exactly one of the two groups) and therefore \((2-(g_i^1+g_i^2))^{-1}=1\), or else \(g_i^1, g_i^2\leq 0\), case where for every optimal solution \(g_i^1=g_i^2= 0\) (i.e., taxon \(i\) occurs in the two groups) and therefore\(\frac{\sum_{j=1}^n a_{ij} x_j}{\sum_{j=1}^n x_j^1} \, g_i^2 \,+ \frac{\sum_{j=1}^n a_{ij} x_j}{n-\sum_{j=1}^n x_j} \, g_i^1 =0\).
+
+Taking into account that when \(g_i^2=1\) (\(g_i^1=1\)) we have \(\sum_{j=1}^n a_{ij} x_j= \sum_{j=1}^n a_{ij}\) (\(\sum_{j=1}^n a_{ij} (1-x_j)= \sum_{j=1}^n a_{ij}\)), if we let \(\alpha_i=\sum_{j=1}^n a_{ij} \geq 1\), the formula above can be written as
+\begin{equation*}
+\displaystyle{
+\frac{\alpha_{i}}{\sum_{j=1}^n x_j} \, g_i^2 
+\,+
+\frac{\alpha_{i}}{n-\sum_{j=1}^n x_j} \, g_i^1 
+}
+\label{eq:DiffVal2}
+\end{equation*}
+
+Hence, when \(M=2\) the problem of maximizing TotDiffVal \eqref{eq:indiceK} subject to \eqref{eq:kpartition1}-\eqref{eq:g2} converts to maximize
+\begin{equation}
+\displaystyle{
+\displaystyle{\sum_{i=1}^m}\,\,
+\left(\frac{\alpha_{i}}{\sum_{j=1}^n x_j} \, g_i^2
+\,+
+\frac{\alpha_{i}}{n-\sum_{j=1}^n x_j} \, g_i^1 \right)
+}
+\label{eq:TotDiffVal2}
+\end{equation}
+subject to the linear constraints \eqref{eq:twopart1x}-\eqref{eq:twog2}.
+
+This is a fractional 0/1 programming problem \citep{BGP2017} for which we now give two linearization approaches.
+
+\subsection{Model 1}\label{Model1}
+
+The linearization technique that we use here follows the procedure described in \citet{BGP2017}.
+If we let
+\[y_i^1= \frac{\alpha_{i}}{\sum_{j=1}^n x_j} \, g_i^2 ~~\mbox{and}~~y_i^2= \frac{\alpha_{i}}{n-\sum_{j=1}^n x_j} \, g_i^1\]
+expression \eqref{eq:TotDiffVal2} reads
+\begin{equation}
+\sum_{i=1}^m \, (y_i^1+y_i^2)
+\label{eq:y1plusy2}
+\end{equation}
+
+The two equations above may be written as
+\begin{equation}
+\sum_{j=1}^n\,   y_i^1 x_j = \alpha_{i} \, g_i^2 ~~\mbox{and}~~
+n y_i^2 - \sum_{j=1}^n \, y_i^2 x_j = \alpha_{i} \, g_i^1
+\label{eq:twoequations}
+\end{equation}
+that can be linearized by letting \(z_{ij}^1=y_i^1 x_j\) and \(z_{ij}^2=y_i^2 x_j\), writing equations \eqref{eq:twoequations} as
+
+\begin{equation}
+\sum_{j=1}^n\,   z_{ij}^1 = \alpha_{i} \, g_i^2, \quad \quad i=1,\dots, m   
+\label{eq:z1equation}
+\end{equation}
+
+\begin{equation}
+n y_i^2 - \sum_{j=1}^n\,   z_{ij}^2 = \alpha_{i} \, g_i^1, \quad \quad i=1,\dots, m 
+\label{eq:z2equation}
+\end{equation}
+and relating \(z_{ij}^k\) to \(y_i^k\), \(k=1,2\), and to \(x_j\) through the following inequalities
+
+\begin{equation}
+z_{ij}^1 \leq x_j, \quad \quad j=1,\dots,n; i=1,\dots, m
+\label{eq:z1unequality1}
+\end{equation}
+
+\begin{equation}
+z_{ij}^1 \leq y_i^1, \quad \quad j=1,\dots,n; i=1,\dots, m
+\label{eq:z1unequality2}
+\end{equation}
+
+\begin{equation}
+z_{ij}^1 \geq y_i^1+x_j-1, \quad \quad j=1,\dots,n; i=1,\dots, m
+\label{eq:z1unequality3}
+\end{equation}
+
+\begin{equation}
+z_{ij}^2 \leq x_j, \quad \quad j=1,\dots,n; i=1,\dots, m
+\label{eq:z2unequality1}
+\end{equation}
+
+\begin{equation}
+z_{ij}^2 \leq y_i^2, \quad \quad j=1,\dots,n; i=1,\dots, m
+\label{eq:zoom2unequality2}
+\end{equation}
+
+\begin{equation}
+z_{ij}^2 \geq y_i^2+x_j-1, \quad \quad j=1,\dots,n; i=1,\dots, m
+\label{eq:z2unequality3}
+\end{equation}
+
+\begin{equation}
+z_{ij}^1, z_{ij}^2 \geq 0, \quad \quad j=1,\dots,n; i=1,\dots, m
+\label{eq:z1z2greater0}
+\end{equation}
+
+Since \(x_j\) are 0/1 variables, inequalities \eqref{eq:z1unequality1}, \eqref{eq:z1z2greater0} and \eqref{eq:z1unequality2}, \eqref{eq:z1unequality3} imply that \(z_{ij}^1=y_i^1 x_j\), and \eqref{eq:z1equation} becomes equivalent to the left equation in \eqref{eq:twoequations}. A similar argument can be used to show that \(z_{ij}^2=y_i^2 x_j\) and \eqref{eq:z2equation} is equivalent to the right equation in \eqref{eq:twoequations}.
+
+Hence, the problem of maximizing \eqref{eq:TotDiffVal2} subject to \eqref{eq:twopart1x}-\eqref{eq:twog2} can be formulated as the mixed integer linear programming that consists in maximize \eqref{eq:y1plusy2} subject to \eqref{eq:twopart1x}-\eqref{eq:twog2}, \eqref{eq:z1equation}-\eqref{eq:z1z2greater0}. We call this Model 1.
+
+\subsection{Model 2}\label{Model2}
+
+We call Model 2 to the model that results from fixing the size of group \(G_1\), i.e., requiring that
+\begin{equation}
+\sum_{j=1}^n x_j=t
+\label{eq:T}
+\end{equation}
+and writing the objective function as follows.
+
+\begin{equation}
+M2(t) = \displaystyle{\sum_{i=1}^m}\,\,
+\left(\frac{\alpha_{i}}{t} \, g_i^2
+\,+
+\frac{\alpha_{i}}{n-t} \, g_i^1 \right)
+\label{eq:TotDiffVal2T}
+\end{equation}
+
+In that way, the problem consists of finding, for \(t=1,\dots, \lfloor\frac{n}{2}\rfloor\), the maximum of \(M2(t)\), subject to \eqref{eq:T}, \eqref{eq:twox01}-\eqref{eq:twog2}.
+
+In Section \hyperref[implementation]{5} we report some results on the computational performance of the two models.
+
+\section{A greedy randomized adaptive search procedure}\label{GRASP}
+
+The greedy algorithm for a combinatorial maximization problem starts with set \(S=\emptyset\), and at each step chooses an element to add to \(S\) that most increases the objective function and that will not turn \(S\) unfeasible. The algorithm stops when no more elements on these conditions exist.
+
+The greedy randomized adaptive search procedure \citep[GRASP, see][]{FR1995, FR2018} chooses the elements to add to current \(S\) with probabilities which are proportional to the values they add to the objective function.
+
+Our GRASP starts by uniformly selecting \(M\) columns of matrix \(A\) (relevés), and by assigning each column to exactly one of the \(M\) groups. If \(j_1,\dots, j_M\) are the indices of the selected columns, the incidence vector of the starting set \(S\) is \(x_{j_1}^1=\dots=x_{j_M}^M=1\) and \(x_j^k=0\), for every \(j\not=j_1,\dots, j_M\) and \(k=1,\dots,M\).
+
+At each step a column is chosen to be added to a certain group of current \(S\) in the following way. For every index \(j\) of a column not in \(S\), i.e., \(x_j^k=0\), \(k=1,\dots,M\), we define \(S_j^k\) to be the (partial) solution resulting from adding to group \(k\) of \(S\) the column of index \(j\), i.e., the incidence vector \(x\) of \(S_j^k\) is the same of \(S\), except that, for \(S_j^k\), \(x_j^k=1\). We then compute TotDiffVal\((S_j^k)=\sum_{i=1}^m\) DiffVal\(_i(S_j^k)\), where DiffVal\(_i(S_j^k)\) is given by expression \eqref{eq:DiffVal}, if \(M-\sum_{l=1}^M g_i^l\not= 0\) and DiffVal\(_i(S_j^k)=0\), if \(M-\sum_{l=1}^M g_i^l= 0\).
+The new current set \(S\) is randomly chosen with probabilities proportional to the values of TotDiffVal\((S_j^k)\), among the \(p\)\% sets \(S_j^k\) having the largest values of TotDiffVal\((S_j^k)\).
+
+The algorithm stops when current set \(S\) includes all columns of \(A\), i.e., when equation \eqref{eq:kpartition1} is satisfied.
+We call \(S\) the GRASP solution.
+
+\section{A simulated annealing algorithm}\label{SA}
+
+At each step, the simulated annealing (SA) algorithm \citep{KGV1983, AKL1997} randomly selects some \emph{neighbour} solution \(S'\) of the current feasible solution \(S\), and probabilistically decides whether to maintain \(S\) as current or to replace \(S\) by \(S'\).
+
+In our SA implementation the neighbourhood of a solution \(S\) is the set of all feasible solutions obtained by moving one column from on group to another group of \(S\).
+At iteration \(i\), a neighbour \(S'\) of current \(S\) is uniformly chosen and \(S'\) replaces the current solution \(S\) if \(\Delta_i= \mathrm{TotDiffVal}(S')- \mathrm{TotDiffVal}(S)\geq 0\) or, with probability \(exp(\Delta_i/T_i)\), if \(\Delta_i<0\), where \(T_i>0\) is the \emph{temperature} at iteration \(i\). We start with a given initial temperature \(T_1\leq 1\), and gradually decrease the current value by \(\alpha\)\% every \(nt\) iterations, so that in the last iteration the temperature reaches a given established value. The algorithm stops with the best solution found at any stage, after a given number \(nit\) of iterations.
+
+\section{Implementation in R}\label{implementation}
+
+The optimization models and the algorithms proposed in the previous sections were implemented in R language and included in the R package \CRANpkg{diffval}, specifically in three functions: \texttt{optim\_tdv\_gurobi\_k\_2()}, \texttt{partition\_tdv\_grasp()}, and \texttt{optim\_tdv\_simul\_anne()}. As mentioned in Section \hyperref[intro]{1}, dividing TotDiffVal by \(m\) ensures a value bounded between 0 and 1. In the implemented R functions we make use of that normalization, and we call TDV to \(\mathrm{TotDiffVal}/m\). Package \CRANpkg{diffval} contains a collection of functions to find, visualize and explore patterns of differential taxa in vegetation data (namely, in a phytosociological table) using the DiffVal and the TDV.
+
+We will illustrate the use of the implemented functions with a real-world data set of \emph{Taxus baccata} forests \citep[from][]{PEMCFGFN21}, which is also included in the package. The data set consists of a binary (presence/absence) phytosociological matrix (209 rows and 33 columns) containing relevés of \emph{T. baccata} forests, from the north-west of the Iberian Peninsula. Each column corresponds to a phytosociological relevé and each row corresponds to a taxon. In the matrix, presences are recorded as 1 and absences as 0. We start by loading the package and the data set:
+
+\begin{verbatim}
+library(diffval)
+data("taxus_bin", package = "diffval")
+\end{verbatim}
+
+Function \texttt{optim\_tdv\_gurobi\_k\_2()} implements the linear programming formulations (Model 1 and Model 2) given in Section \hyperref[casemtwo]{2}, calling Gurobi \citep{gurobi}, a well-known integer programming solver. Package \CRANpkg{prioritizr} \citep{HSM2022} contains a comprehensive vignette (\href{https://prioritizr.net/articles/gurobi_installation_guide.html}{\emph{Gurobi Installation Guide}}), which can guide the user through the process of obtaining a license, installing the Gurobi optimizer, activating the license and eventually installing the R package \pkg{gurobi}.
+
+In the R implementation, Models 1 and 2 are referred as \texttt{"t-independent"} and \texttt{"t-dependent"}, respectively. By default, a time limit of 5 seconds (\texttt{time\_limit\ =\ 5}) is set for each call of Gurobi, as computation time can become long for large matrices. Note that while in the \texttt{"t-independent"} formulation Gurobi is called only once, in the \texttt{"t-dependent"} formulation Gurobi is called \(\lfloor\frac{n}{2}\rfloor\) times.
+
+For the \texttt{"t-independent"} formulation the function returns the solution produced by Gurobi, which is an optimal 2-partition if the set time limit is not exceeded. If the time limit is exceeded, optimality is not ensured.
+
+For the \texttt{"t-dependent"} formulation, the function returns the best 2-partition among the \(\lfloor\frac{n}{2}\rfloor\) solutions produced by Gurobi. If the set time limit is not exceeded in all the Gurobi calls, the returned 2-partition is optimal. Otherwise, optimality is not ensured.
+
+After comparing the computational performances of the two models, we set Model 2 as the default formulation (\texttt{formulation\ =\ "t-dependent"}). This is illustrated in Table~\ref{tab:benchmark-latex}, using the \emph{T. baccata} forests data set. Running time and memory allocation were obtained with function \texttt{mark()} from package \CRANpkg{bench} \citep{HV2021}. In this comparison, we set a time limit of 80 seconds for the Gurobi call in Model~1 and 5 seconds for each of the 16 Gurobi calls in Model~2. Model~2 clearly outperformed Model~1, being faster and having a lower memory allocation burden. Notice that both models returned the same TDV yet Model~1 did not returned a final optimal status, indicating that the process was broken by the imposed time limit.
+
+\begin{table}
+\centering
+\caption{\label{tab:benchmark-latex}Running time, memory allocation and objective values for the two formulations, applied to the \emph{T. baccata} forests data set.}
+\centering
+\fontsize{7}{9}\selectfont
+\begin{tabular}[t]{l|l|l|r|l}
+\hline
+formulation & total time & memory allocation & TDV & Gurobi returned status\\
+\hline
+Model 1 & 1.69m & 9.57GB & 0.1513158 & "TIME\_LIMIT"\\
+\hline
+Model 2 & 5.02s & 118.02MB & 0.1513158 & "OPTIMAL" (in all calls)\\
+\hline
+\end{tabular}
+\end{table}
+
+For the \emph{T. baccata} forests data set, the function \texttt{optim\_tdv\_gurobi\_k\_2()} returns a 2-partition which isolates one relevé (\texttt{"LE01"}):
+
+\begin{verbatim}
+result <- optim_tdv_gurobi_k_2(taxus_bin)
+all(result$status.runs == "OPTIMAL")
+\end{verbatim}
+
+\begin{verbatim}
+#> [1] TRUE
+\end{verbatim}
+
+\begin{verbatim}
+result$par
+\end{verbatim}
+
+\begin{verbatim}
+#>  [1] 1 1 1 1 1 1 1 1 1 1 1 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+\end{verbatim}
+
+\begin{verbatim}
+result$objval
+\end{verbatim}
+
+\begin{verbatim}
+#> [1] 0.1513158
+\end{verbatim}
+
+The isolated relevé stands out for the high number of taxa (62, while the mean number of taxa is 29.7), from which 15 taxa are exclusive to it. Using function \texttt{tabulation()} from \CRANpkg{diffval}, it is possible to visualize the sorted phytosociological table, given the obtained partition of its columns:
+
+\begin{verbatim}
+tabul <- tabulation(
+ m_bin = taxus_bin,
+ p = result$par,
+ taxa_names = rownames(taxus_bin),
+ plot_im = "normal",
+ palette = "Zissou 1"
+)
+\end{verbatim}
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.6\linewidth,alt={Figure showing many species exclusive to the many relevés in group 1, and several species exclusive to the single relevé in group 2. Some species are occuring in both groups.}]{DiffVal_files/figure-latex/figgurobi-1} 
+
+}
+
+\caption{Image of the sorted phytosociological matrix showing the isolated relevé. Each coloured rectangle represents a presence in the matrix. Presences of taxa exclusive of group 1 are represented in blue, while those exclusive of group 2 are in red. Taxa shared by the two groups are represented in grey.}\label{fig:figgurobi}
+\end{figure}
+
+The \texttt{tabulation()} function reorders the columns of the original matrix by putting together the relevés belonging to the same group (as defined by the given partition). Additionally, it reorders the rows, by placing exclusive taxa towards the top of the table, while the taxa occurring in all groups of the partition are greyed out and placed towards the bottom of the matrix. Figure~\ref{fig:figgurobi} shows the image generated by the \texttt{tabulation()} function using as input the 2-partition previously obtained using Gurobi. It is possible to distinguish the isolated relevé, showing its exclusive taxa in red.
+
+For bigger matrices, where \texttt{optim\_tdv\_gurobi\_k\_2()} computation time might become prohibitive, heuristics such as \texttt{partition\_tdv\_grasp()} or \texttt{optim\_tdv\_simul\_anne()}, or a combination of both are recommended to find patterns of differential species.
+
+Function \texttt{partition\_tdv\_grasp()} creates partitions of the data set using the greedy randomized adaptive search procedure described in Section \hyperref[GRASP]{3}. The input parameter \texttt{thr} (from 0 to 1) defines the \(p\)\% sets defined in Section \hyperref[GRASP]{3}. For \texttt{thr\ =\ 1} the algorithm corresponds to the greedy algorithm. By default, \texttt{thr\ =\ 0.95}.
+Exemplifying with the \emph{T. baccata} forests data set (using \texttt{set.seed()} only to ensure the reproducibility of the outputs):
+
+\begin{verbatim}
+set.seed(1)
+partition_tdv_grasp(taxus_bin, 3)
+\end{verbatim}
+
+\begin{verbatim}
+#>  [1] 3 2 3 1 2 2 2 2 2 2 1 1 2 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 1 1
+\end{verbatim}
+
+\begin{verbatim}
+# [1] 3 2 3 1 2 2 2 2 2 2 1 1 2 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 1 1
+\end{verbatim}
+
+Function \texttt{optim\_tdv\_simul\_anne()} implements the simulated annealing algorithm as presented in Section \hyperref[SA]{4}, searching for a \texttt{k}-partition (\texttt{k}, defined by the user), optimizing the TDV, i.e., searching for a global maximum of TDV (by rearranging the relevés into \texttt{k} groups). As initial partition, the function can use any user-given partition (\texttt{p\_initial}), a uniformly generated partition (\texttt{p\_initial\ =\ "random"}) or (if \texttt{use\_grasp\ =\ TRUE}) a partition generated by the \texttt{partition\_tdv\_grasp()} function.
+
+The simulated annealing algorithm decreases the temperature according to a predefined cooling schedule, which can be controlled by the user by entering the following parameters: the initial temperature (\texttt{t\_inic}), the final temperature (\texttt{t\_final}), the fraction of temperature dropping (\texttt{alpha}) and the number of iterations \texttt{n\_iter}. Given these inputs, the cooling schedule is obtained calculating the number of times, say \texttt{nt}, that the temperature has to drop (by multiplying the current temperature by \texttt{1\ -\ alpha}) in order to approximate \texttt{t\_final} starting from \texttt{t\_inic}. The number of times that the temperature has to drop (\texttt{nt}) is calculated by the expression: \texttt{floor(log(t\_final\ /\ t\_inic)\ /\ log(1\ -\ alpha))}. Finally, these decreasing stages are scattered through the desired iterations \texttt{n\_iter} homogeneously, by calculating the indices of the iterations that will experience a decrease in temperature using \texttt{floor(n\textbackslash{}\_iter\ /\ nt\ *\ (1:nt))}.
+
+To illustrate the use of \texttt{optim\_tdv\_simul\_anne()} and in order to reproduce the example in the original article of \citet{PEMCFGFN21}, we start by removing taxa occurring in only one relevé:
+
+\begin{verbatim}
+taxus_bin_wmt <- taxus_bin[rowSums(taxus_bin) > 1, ]
+\end{verbatim}
+
+We then apply the simulated annealing algorithm to this new data, starting from a uniformly-generated initial partition and searching for three groups. We selected five runs keeping the progress of the optimization for all of them (by setting \texttt{n\_sol\ =\ 5} and \texttt{full\_output\ =\ TRUE}), so that we can inspect the convergence of the method. We use \texttt{set.seed()} only to ensure the repeatability of the outputs:
+
+\begin{verbatim}
+set.seed(1)
+result_sa <- optim_tdv_simul_anne(
+ m_bin = taxus_bin_wmt,
+ k = 3,
+ p_initial = "random",
+ n_runs = 5,
+ n_sol = 5,
+ use_grasp = FALSE,
+ full_output = TRUE
+ )
+\end{verbatim}
+
+The maximum TDV obtained in each run can be extracted from the output in the following way:
+
+\begin{verbatim}
+sapply(result_sa$SANN, function(x) x$tdv)
+\end{verbatim}
+
+\begin{verbatim}
+#> [1] 0.2005789 0.1958471 0.1879158 0.1749407 0.1583337
+\end{verbatim}
+
+The second highest TDV (0.1958471) corresponds to the partition in three groups (Estrela, Gerês and Galicia) from the original article of \citet{PEMCFGFN21}:
+
+\begin{verbatim}
+result_sa$SANN[[2]]$par
+\end{verbatim}
+
+\begin{verbatim}
+#>  [1] 3 3 3 1 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2
+\end{verbatim}
+
+The initial temperature defaults to \(0.3\) and the final temperature to \(10^{-6}\). Generally, convergence failure can be spotted when final TDV values are similar to the initial ones, specially when starting from random partitions. In such cases, as a rule of thumb, it is advisable to decrease \texttt{t\_final} by a factor of 10. Figure~\ref{fig:figsannconvergence} shows the plots of the TDV kept in each iteration, in each of the five runs, showing that the method is converging to higher values. Such plot can be obtained in following way:
+
+\begin{verbatim}
+plot(
+ result_sa$SANN[[1]]$current.tdv,
+ type = "l",
+ xlab = "Iteration number",
+ ylab = "TDV"
+ )
+for (run in 2:5) {
+ lines(result_sa$SANN[[run]]$current.tdv)
+ }
+\end{verbatim}
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.6\linewidth,alt={Plot with TDV in the vertical axis and iteration number in the horizontal axis. Five lines depict the variation in TDV for each run, showing an increase from arround 0.05 in iteration 1 to arround 0.17 to 0.20 in iteration 650 to 850, where they plateau until iteration 1000.}]{DiffVal_files/figure-latex/figsannconvergence-1} 
+
+}
+
+\caption{Plots of the TDV obtained in each of the five runs of the simulated annealing optimization.}\label{fig:figsannconvergence}
+\end{figure}
+
+We can plot the sorted phytosociological table (see Figure~\ref{fig:figsann}), using the same partition as the original work of \citet{PEMCFGFN21}:
+
+\begin{verbatim}
+tabul <- tabulation(
+ m_bin = taxus_bin_wmt,
+ p = result_sa$SANN[[2]]$par,
+ taxa_names = rownames(taxus_bin_wmt),
+ plot_im = "normal",
+ palette = "Zissou 1"
+ )
+\end{verbatim}
+
+\begin{figure}
+
+{\centering \includegraphics[width=0.6\linewidth,alt={Figure showing many species exclusive to the many relevés in group 1 and 2, and five species exclusive to the three relevés in group 3. Group 1 and 2 share also many species, while groups 1 and 3, and 2 and 3 share a few. Some few species are occuring in all groups.}]{DiffVal_files/figure-latex/figsann-1} 
+
+}
+
+\caption{Image of the sorted phytosociological matrix, showing the three groups obtained by the simulated annealing optimization.}\label{fig:figsann}
+\end{figure}
+
+Simulated annealing is often seen as an exploratory technique where the temperature settings are challenging and dependent on the problem. The formulation here implemented (see Section \hyperref[SA]{4}) aims at mitigating such challenge by restricting the temperature values in the interval \(]0, 1]\).
+
+This section concludes with a comparison of the computational performance of the GRASP and simulated annealing heuristics. Experiments are conducted on the \emph{T. baccata} forests data set. The number of groups is varied from \(k = 2\) to \(k = 5\) in both \texttt{partition\_tdv\_grasp()} and \texttt{optim\_tdv\_simul\_anne()} using default values for all optional parameters (except \texttt{p\_initial\ =\ "random"} and \texttt{use\_grasp\ =\ FALSE} for the simulating annealing).
+
+Table~\ref{tab:benchmark2-latex} reports the running time, memory usage, and objective value (TDV) for each method. Running time and memory allocation were obtained with function \texttt{mark()} from package \CRANpkg{bench} \citep{HV2021}.
+
+\begin{table}
+\centering
+\caption{\label{tab:benchmark2-latex}Computational performance of GRASP and simulated annealing (SA) for different numbers of groups $k$, applied to the \emph{T. baccata} forests data set.}
+\centering
+\fontsize{7}{9}\selectfont
+\begin{tabular}[t]{r|l|l|r|l|l|r}
+\hline
+$k$ & GRASP: total time & GRASP: memory allocation & GRASP: TDV & SA: total time & SA: memory allocation & SA: TDV\\
+\hline
+2 & 89.42ms & 37.66MB & 0.1188258 & 3.08s & 1.04GB & 0.1284921\\
+\hline
+3 & 166.9ms & 58.21MB & 0.1345673 & 3.58s & 1.31GB & 0.1956457\\
+\hline
+4 & 328.35ms & 78.19MB & 0.1991826 & 4.51s & 1.58GB & 0.2544701\\
+\hline
+5 & 508.1ms & 98.01MB & 0.2442543 & 5.1s & 1.85GB & 0.3183166\\
+\hline
+\end{tabular}
+\end{table}
+
+Simulated annealing consistently achieved higher TDV values for all \(k\), although it required higher memory and running times than those of GRASP. Overall, these results indicate a trade-off between solution quality and computational efficiency, with simulated annealing providing more accurate solutions at the expense of longer computation times.
+
+\section{Concluding remarks}\label{concluding-remarks}
+
+In this paper, we presented the mathematical approaches implemented in the R package \CRANpkg{diffval} for maximizing TotDiffVal, a recently proposed criterion for assessing the quality of partitions of the columns (samples or objects) of a binary (0/1) matrix by capturing the exclusiveness of species (features, variables, or attributes) \citep{MH2025}.
+
+We proved that finding a partition into \(M\) subsets that maximizes TotDiffVal is NP-hard for any fixed \(M\). For the case \(M=2\), we provided two alternative integer linear programming formulations, both implemented in \CRANpkg{diffval}, which allow optimal solutions to be obtained for moderately sized data sets. For larger instances and for \(M>2\), we developed two heuristic algorithms: a Greedy Randomized Adaptive Search Procedure (GRASP) and a Simulated Annealing approach. Good-quality partitions can often be achieved by running the Simulated Annealing algorithm initialized with solutions obtained from multiple runs of the GRASP. However, for very large instances, both heuristics may require excessive computation times. It should be noted that computing the TotDiffVal index \eqref{eq:indiceK} for a given \(M\)-partition requires a number of operations on the order of the matrix size (\(m\times n\)), and that re-evaluating the index after small modifications entails a similar computational burden. When the above procedures become computationally very expensive, an alternative is to use the function \texttt{partition\_tdv\_grdtp()}, which is also included in the \CRANpkg{diffval} package. This function implements a simplified version of the Greedy algorithm that operates in the following way: Firstly, \(M\) columns are selected randomly to work as seeds for each one of the desired \(M\) groups. Secondly, one of the remaining columns is selected randomly and added to the partition group which maximizes the upcoming TDV. This second step is repeated until all columns are placed in a group of the \(M\)-partition. This function performs faster than \texttt{partition\_tdv\_grasp()} and \texttt{optim\_tdv\_simul\_anne()}, but at the cost of the quality of the solutions produced.
+
+Alternative clustering and partitioning methods especially designed for vegetation data are available, see e.g., the \CRANpkg{vegclust} \citep{DC2025} package (where \(k\)-means and partition around the medoids are modified into fuzzy clustering approaches) and the \CRANpkg{vegan} \citep{Oetal2025} package (where several specific distance measures are implemented to use in agglomerative clustering). A methodological comparative analysis with 18 clustering/partitioning methods is provided in \citet{MH2025}. While most of these methods are not as computationally demanding as maximizing TDV, it should be emphasized that TDV optimization fundamentally differs from most clustering and partitioning approaches in three key aspects: i) it does not rely on hierarchical structures or geometric (distance-based) searches, ii) it treats species occurrences as not equally informative, and iii) it values a degree of exclusiveness among informative species. Encoding properties (i--iii) in a computational framework inevitably entails substantial computational costs, a challenge that the \CRANpkg{diffval} package addresses by providing a range of exact and heuristic procedures, allowing users to balance solution quality and computation time according to their specific datasets.
+
+\section{Appendix}\label{appendix}
+
+\subsection{Computational complexity of maximizing TotDiffVal}\label{computational-complexity-of-maximizing-totdiffval}
+
+We start by polynomially transforming the problem of finding a minimum bisection of a graph to the problem of maximizing the criterion TotDiffVal for \(M=2\).
+
+Let \(G=(V,E)\) be a graph with \(|V|\) even. A bisection of \(G\) is a partition of the vertex set \(V\) into two sets of equal sizes. The size of a bisection is the number of edges going across the two sets. A minimum bisection of \(G\) is a bisection of \(V\) with minimal size. The size of a minimum bisection, denoted by \(bw(G)\), is called the bisection width of graph \(G\). The problem of finding a minimum bisection is NP-hard \citep{GJS1976}.
+
+Let \(B=[b_{ij}]\) be the transpose of the incidence matrix of graph \(G=(V,E)\), i.e., \(b_{ij}=1 \, (0)\) if vertex \(v_j\in V\) and edge \(e_i\in E\) are (not) incident. Add to \(B\) two columns of zeros. Let \(0\) and \(n+1\) denote the two new columns and denote by \(B_0\) the resulting \(m \times (n+2)\) matrix, where \(m=|E|\) and \(n=|V|\) is even.
+
+Note that if \(S=(G_1,G_2)\) is an arbitrary 2-partition of the set of \(n+2\) columns of \(B_0\), with \(|G_1|=|G_2|=\frac{n+2}{2}\), and if \(i\) is an arbitrary row, then
+
+\begin{equation*}
+\mathrm{DiffVall}_{i}(S)=\left\{\begin{array}{cl}
+\frac{4}{n+2}  &\mbox{if  both vertices of edge $e_i$ belong to the same set of the 2-partition $S$} \\ \quad \\
+0  &\mbox{otherwise.}     
+\end{array}\right.
+\end{equation*}
+
+If columns \(0\) and \(n+1\) are in different sets of the 2-partition \(S\), \(\mathrm{TotDiffVal}(S)=\sum_{i=1}^m \mathrm{DiffVal}_{i}(S)=\frac{4}{n+2} \,(m-bw(S))\), where \(bw(S)\) is the size of the bisection of \(G\) corresponding to \(S\), i.e., \((G_1\setminus\{0,n+1\}, G_2\setminus\{0,n+1\})\). If \(P\) denotes the set of all 2-partitions of the set of columns of matrix \(B_0\) in two sets of equal size that have columns \(0\) and \(n+1\) in different sets, and if\\
+\(bw(G)\) denotes the bisection width of graph \(G\), we have
+\begin{equation}
+bw(G)= m-\frac{n+2}{4} \, \max_{S\in P}\mathrm{TotDiffVal}(S).
+\label{eq:minbis}
+\end{equation}
+
+Hence, we may find a minimum bisection of \(G\) by maximizing \(\mathrm{TotDiffVal}(S)\), for 2-partitions \(S\in P\).
+
+We now create a \(2n\times (n+2)\) matrix, \(B'\), with the same column indices as \(B_{0}\), and vertically append a number of copies of \(B'\) to \(B_0\) to obtain a matrix which is such that the 2-partitions of the set of columns that maximize \(\mathrm{TotDiffVal}\) are precisely the balanced partitions that have columns \(0\) and \(n+1\) belonging to different sets.
+
+Matrix \(B'=[b'_{ij}]\), as referred above, has the same column indices as \(B\); \(b'_{i 0}:=1, i=1,\dots,n\); \(b'_{i n+1}:=1, i=n+1,\dots,2n\); \(b'_{i i} = b'_{n+i i}:=1, i=1,\dots, n\) and all the remaining entries are equal to zero. In fact, \(B'\) is the transpose of the incidence matrix of the complete bipartite graph \(K_{2,n}\) with bipartite classes \(\{0,n+1\}\) and \(V.\)
+
+Let \(\bar{B}\) denote the \((m+ 2n \delta) \times (n+2)\) matrix obtained by vertically appending to \(B_0\) \(\delta\) copies of \(B'\).
+
+We will prove that, for \(\delta = n^3\),
+
+\emph{i)} If \(S = (G_1, G_2)\) is a 2-partition of the set of columns of \(\bar{B}\) that maximizes \(\mathrm{TotDiffVal}\), and that has columns \(0\) and \(n+1\) belonging to different sets, then \(S\) is balanced (i.e.~\(|G_1| = |G_2| = \frac{n+2}{2}\)).
+
+\emph{ii)} If \(S' = (G'_1, G'_2)\) is a 2-partition of the set of columns of \(\bar{B}\) that maximizes \(\mathrm{TotDiffVal}\), and that has columns \(0\) and \(n+1\) belonging to the same set, say \(0, n+1 \in G'_1\), then \(|G'_1| = n+1\) and \(|G'_2| = 1\).
+
+\emph{iii)} \(\mathrm{TotDiffVal}(S) > \mathrm{TotDiffVal}(S')\).
+
+From i), ii) and iii) we can conclude that, for \(\delta = n^3\), if \(S=(G_1,G_2)\) is a 2-partition of the set of columns of \(\bar{B}\) that maximizes \(\mathrm{TotDiffVal}\), then columns \(0\) and \(n+1\) belong to different sets, and the bisection of \(G\) corresponding to \(S\), i.e., \((G_1\setminus\{0,n+1\}, G_2\setminus\{0,n+1\})\) is a minimum bisection of graph \(G\). Since the size of matrix \(\bar{B}\) is polynomial on the size of graph \(G\) (\(\mathrm{size}(\bar{B}) = O(n^3)\)), we have the following result.
+
+\textbf{Proposition 1} \emph{Finding an \(M\)-partition that maximizes \(\mathrm{TotDiffVal}\) is NP-hard, for \(M = 2\). \(\Box\)}
+
+We now prove i), ii) and iii). \quad
+
+\textbf{Lemma 2} \emph{For \(\delta = n^3\), if \(S=(G_1,G_2)\) is a 2-partition of the set of columns of \(\bar{B}\) that maximizes \(\mathrm{TotDiffVal}\), and that has columns \(0\) and \(n+1\) belonging to different sets, then \(S\) is balanced (i.e.~\(|G_1|=|G_2|= \frac{n+2}{2}\)).} \quad
+
+\emph{Proof.} Let \(X=(X_1,X_2)\) be a 2-partition of the set of columns of \(\bar{B}\) with \(0\) and \(n+1\) belonging to different sets. Suppose \(|X_1|=t < \frac{n+2}{2}\).
+\begin{equation}
+\mathrm{TotDiffVal}(X)=  \frac{2 m_1}{t} +  \frac{2 m_2}{n+2-t} + 2 \delta \left( \frac{t-1}{t} + \frac{n+1-t}{n+2-t} \right),
+\label{eq:indXLemma2}
+\end{equation}
+where \(m_1\) (\(m_2\)) is the the number of edges of the subgraph of graph \(G\) induced by the vertices of \(X_1\setminus \{0,n+1\}\) (\(X_2\setminus \{0,n+1\}\)).
+
+Let \(X'\) be a 2-partition obtained by moving an arbitrary column \(j\not=0, n+1\), from \(X_2\) (the largest set) to \(X_1\). \[ \mathrm{TotDiffVal}(X')=  \frac{2 (m_1+ |E_j(G_1)|)}{t+1} +  \frac{2 (m_2-|E_j(G_2)|)}{n+1-t} + 2 \delta \left( \frac{t}{t+1} + \frac{n-t}{n+1-t} \right),\] where \(E_j(G1)\) (\(E_j(G2)\)) is the set of edges linking vertex \(j\) with vertices of \(G_1\) (\(G_2\)). We can therefore conclude that
+\begin{equation}
+\mathrm{TotDiffVal}(X')\geq  \frac{2 m_1}{t+1} +  \frac{2 (m_2-(n-t))}{n+1-t} + 2 \delta \left( \frac{t}{t+1} + \frac{n-t}{n+1-t} \right).
+\label{eq:indXlLemma2}
+\end{equation}
+
+From \eqref{eq:indXLemma2} and \eqref{eq:indXlLemma2} we have \[\mathrm{TotDiffVal}(X') - \mathrm{TotDiffVal}(X) \geq 2 \frac{-m_1 p  +(m_2 -  (n-t) (n+2-t) ) t (t+1)+ \delta (p -t(t+1))} {t(t+1) p},\] where \(p =(n+1-t)(n+2-t)\).
+
+From \(t<\frac{n}{2}\), we have \(p -t(t+1)> 2(t+1)\) and since \(m_1< \frac{t(t-1)}{2}\), we can conclude that \[\mathrm{TotDiffVal}(X') - \mathrm{TotDiffVal}(X) > 2 \frac{ - t(t-1) p/2  +(m_2 -p) t (t+1) +2\delta (t+1)} {t(t+1) p}.\] For \(\delta=n^3\) the right hand side of the previous inequality is positive and the result follows. \(\Box\)
+
+\textbf{Lemma 3} \emph{For \(\delta = n^3\), if \(S'=(G'_1,G'_2)\) is a 2-partition of the set of columns of \(\bar{B}\) that maximizes \(\mathrm{TotDiffVal}\), and that has columns \(0\) and \(n+1\) belonging to the same set, say \(0, n+1\in G'_1\), then \(|G'_1|= n+1\) and \(|G'_2|= 1\).}
+
+\emph{Proof.} Let \(X=(X_1,X_2)\) be a 2-partition of the set of columns of \(\bar{B}\) with \(0\) and \(n+1\) belonging to the same set. Suppose \(0, n+1\in X_1\) and \(|X_1|=t < n-1\).
+\begin{equation}
+\mathrm{TotDiffVal}(X)=  \frac{2 m_1}{t} +  \frac{2 m_2}{n+2-t} + 4 \delta\,  \frac{t-2}{t},
+\label{eq:indXLemma3}
+\end{equation}
+where \(m_1\) (\(m_2\)) is the the number of edges of the subgraph of graph \(G\) induced by the vertices of \(X_1\setminus \{0,n+1\}\) (\(X_2\)).
+
+Let \(X'\) be a 2-partition obtained by moving an arbitrary column \(j\) from \(X_2\) to \(X_1\). \[\mathrm{TotDiffVal}(X')=  \frac{2 (m_1+ |E_j(G'_1)|)}{t+1} +  \frac{2 (m_2- |E_j(G'_2)|)}{n+1-t} + 4 \delta\,  \frac{t-1}{t+1},\] where \(E_j(G'_1)\) (\(E_j(G'_2)\)) is the set of edges linking vertex \(j\) with vertices of \(G'_1\) (\(G'_2\)).
+We can therefore conclude that
+\begin{equation}
+\mathrm{TotDiffVal}(X')\geq  \frac{2 m_1}{t+1} +  \frac{2 (m_2-(n+1-t))}{n+1-t} + 4 \delta\,  \frac{t-1}{t+1}.
+\label{eq:indXlLemma3}
+\end{equation}
+
+From \eqref{eq:indXLemma3} and \eqref{eq:indXlLemma3} we have \[ \mathrm{TotDiffVal}(X') - \mathrm{TotDiffVal}(X) \geq 2 \frac{-m_1 p  + m_2 t (t+1) - p t (t+1) + 4 \delta p} {t(t+1) p},\] where \(p =(n+1-t)(n+2-t)\).
+
+Since \(m_1\leq \frac{(t-2)(t-3)}{2}\) and \(t<n-1\), for \(\delta=n^3\), the right hand side of the previous inequality is positive and the result follows. \(\Box\)
+
+\textbf{Lemma 4} \emph{For \(\delta = n^3\), if \(S=(G_1,G_2)\) and \(S'=(G'_1,G'_2)\) are as in Lemma 2 and Lemma 3, respectively, then \(\mathrm{TotDiffVal}(S) > \mathrm{TotDiffVal} (S')\).}
+
+\emph{Proof.} From \eqref{eq:minbis} we have \[ \mathrm{TotDiffVal}(S)= \frac{4}{n+2} (m-bw(G)) +  4 \delta \frac{n}{n+2},\] where \(bw(G)\) is the bisection width of graph \(G\).
+
+We now use the upper bound on \(bw(G)\leq  \frac{m n}{2 (n-1)}\) \cite[p. 3]{Ts2017} to write \[\mathrm{TotDiffVal}(S)\geq  \frac{4 m}{n+2} \left(1 -\frac{n}{2(n-1)}\right) +  4 \delta \frac{n}{n+2}.\]
+
+For the 2-partition \(S'\) the following upper bound holds
+\[ \mathrm{TotDiffVal}(S')\leq   \frac{2 m}{n+1} +  4 \delta \frac{n-1}{n+1}.\]
+
+From the two previous expressions we have
+\[\mathrm{TotDiffVal}(S)-\mathrm{TotDiffVal}(S')\geq  \frac{-4mn + 8 \delta (n-1)}{(n+2)(n+1)(n-1)}. \]
+Since \(m\leq \frac{n(n-1)}{2}\),
+for \(\delta=n^3\), the right hand side of the previous inequality is positive and the result follows. \(\Box\)
+
+We now extend Proposition 1 to an arbitrary number of groups.
+
+\textbf{Proposition 5} \emph{Finding an \(M\)-partition that maximizes \(\mathrm{TotDiffVal}\) is NP-hard, for any fixed number of groups \(M\geq 2\).}
+
+\emph{Proof.} We use induction on \(M\). We show that maximizing the criterion \(\mathrm{TotDiffVal}\), for arbitrary \(M\geq 2\), polynomially transforms to the problem of maximizing \(\mathrm{TotDiffVal}\), for \(M+1\) groups.
+
+Suppose, for a given 0/1 matrix \(A\), \(m\times n\), we want to maximize \(\mathrm{TotDiffVal}\), for \(M\) groups.
+Add to \(A\) \(3m\) zero rows (rows \(m+1, \dots, m+3m\)), and append to the resulting matrix an all one column as the rightmost column (column \(n+1\)). Let \(\bar{A}\) be the \(4m\times (n+1)\) matrix thus obtained. Let \(S\) and \(S'\) be arbitrary \((M+1)\)-partitions of \(\bar{A}\) such that, in partition \(S\), column \(n+1\) is the unique column in a group, while in partition \(S'\), column \(n+1\) belongs to a group of size \(t>1\). Clearly, \(\mathrm{TotDiffVal}(S)\geq 3m\) and \(\mathrm{TotDiffVal}(S')\leq m+ \frac{3}{t} m\), which implies that, for \(t>1\), \(\mathrm{TotDiffVal}(S) > \mathrm{TotDiffVal}(S')\). Hence, column \(n+1\) is isolated in a group in every optimal \((M+1)\)-partition of \(\bar{A}\). Consequently, the set of the other \(M\) groups of columns, which form an optimal \(M\)-partition of the first \(n\) columns of \(\bar{A}\), is also an optimal \(M\)-partition of matrix \(A\).
+
+The fact that, for \(M=2\), the result holds (Proposition 1), completes the proof. \(\Box\)
+
+\section*{Acknowledgments}\label{acknowledgments}
+\addcontentsline{toc}{section}{Acknowledgments}
+
+JOC is funded by national funds through FCT -- Fundação para a Ciência e a Tecnologia, I.P.,
+under the scope of the projects UID/00297/2025 (\url{https://doi.org/10.54499/UID/00297/2025}) and UID/PRR/00297/2025 (\url{https://doi.org/10.54499/UID/PRR/00297/2025}) (Center for Mathematics and Applications -- NOVA Math). TMH was partially funded by the European Social Fund (POCH and NORTE 2020) and National Funds (MCTES) through Fundação para a Ciência e a Tecnologia, I.P., postdoctoral fellowship (SFRH/BPD/115057/2016), and by National Funds through the FCT - Fundação para a Ciência e a Tecnologia, I.P., under the project UIDB/04033/2020.
+
+% \section*{References}
+
+\bibliography{RJreferences.bib}
+
+\address{%
+J. Orestes Cerdeira\\
+Center for Mathematics and Applications (NOVA Math)\\%
+NOVA School of Science and Technology (NOVA FCT), Universidade NOVA de Lisboa\\ 2829-516 Caparica, Portugal\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-3814-7660}{0000-0002-3814-7660}}\\%
+\href{mailto:jo.cerdeira@fct.unl.pt}{\nolinkurl{jo.cerdeira@fct.unl.pt}}%
+}
+
+\address{%
+Tiago Monteiro-Henriques\\
+Global Change and Conservation Lab (GCC)\\%
+Faculty of Biological and Environmental Sciences, University of Helsinki\\ Viikinkaari 1, P.O. Box 65, 00014 University of Helsinki, Finland\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-4206-0699}{0000-0002-4206-0699}}\\%
+\href{mailto:tmh.dev@icloud.com}{\nolinkurl{tmh.dev@icloud.com}}%
+}

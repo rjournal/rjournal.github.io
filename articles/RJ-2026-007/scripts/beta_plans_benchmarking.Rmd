@@ -1,0 +1,141 @@
+---
+title: "AccSamplingDesign - Benchmarking Beta-based Sampling Plan Optimization"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = TRUE, warning = FALSE)
+library(kableExtra)
+library(dplyr)
+library(AccSamplingDesign)
+library(bench)
+```
+
+This benchmark reproduces the results reported in **Section 7: Computational Performance and Benchmarking**. We compare the grid search method `beta_plan_grid_search()` (adapted from Govindaraju and Kissling, 2015) with the `optPlan()` function from the `AccSamplingDesign` package. 
+
+**Please allow over 1 minute for the grid search to complete.**
+
+```{r grid-search-func, echo=FALSE, message=FALSE}
+#-------------------------------------------------------------------------------
+# This function describes the grid search method for the Beta optimal plan 
+# Code from Govindaraju and Kissling (2015)
+#-------------------------------------------------------------------------------
+beta_plan_grid_search <- function(LSL, theta, p1, p2, alpha, beta, nsim = 3000) {
+  mulimit <- function(p, LSL, theta) {
+    f <- function(mu) pbeta(LSL, theta * mu, theta * (1 - mu)) - p
+    uniroot(f, interval = c(0, 1), tol = 1e-9)$root
+  }
+  Pa_est <- function(nsim, mu, theta, k, m, LSL) {
+    shape1 <- m * mu * theta
+    shape2 <- m * (1 - mu) * theta
+    ym <- rbeta(nsim, shape1, shape2)
+    acc_crit <- ym - k * sqrt(ym * (1 - ym) / theta)
+    mean(acc_crit > LSL)
+  }
+
+  if (!requireNamespace("AcceptanceSampling", quietly = TRUE)) {
+    stop("Package 'AcceptanceSampling' is required but not installed.")
+  }
+
+  muU <- mulimit(p1, LSL, theta)
+  muL <- mulimit(p2, LSL, theta)
+
+  vplan <- AcceptanceSampling::find.plan(
+    c(p1, 1 - alpha), c(p2, beta),
+    type = "normal", s.type = "known"
+  )
+
+  kvalues <- seq(0.5 * vplan$k, 2 * vplan$k, by = 0.01)
+  mvalues <- seq(0.5 * vplan$n, 2 * vplan$n, by = 0.15)
+  grid <- expand.grid(k = kvalues, m = mvalues)
+
+  CR <- mapply(Pa_est, nsim = nsim, mu = muL, theta = theta,
+               k = grid$k, m = grid$m, LSL = LSL)
+  PR <- 1 - mapply(Pa_est, nsim = nsim, mu = muU, theta = theta,
+                   k = grid$k, m = grid$m, LSL = LSL)
+
+  feasible <- subset(cbind(grid, CR, PR), CR < beta & PR < alpha)
+  feasible <- feasible[order(feasible$m, feasible$k), ]
+
+  if (nrow(feasible) == 0) stop("No feasible plan found.")
+
+  opt <- feasible[1, ]
+  opt$m <- round(opt$m, 4) 
+  opt$k <- round(opt$k, 4)
+
+  return(list(n = opt$m, k = opt$k))
+}
+```
+
+### Define Parameters (from Example 6.3 of 'Vitamin-A sampling')
+
+```{r define-params}
+LSL    <- 5.65e-6
+theta  <- 6.6e+08
+p1     <- 0.025
+p2     <- 0.10
+alpha  <- 0.05
+beta   <- 0.10
+```
+
+```{r run-methods, echo=FALSE, message=FALSE}
+#-------------------------------------------------------------------------------
+# Benchmark performance (please allow about 1+ minute for grid_search to run)
+#-------------------------------------------------------------------------------
+
+set.seed(123)
+
+cat("Running Grid Search (may take 1+ minute)...\n")
+res_grid <- beta_plan_grid_search(LSL, theta, p1, p2, alpha, beta)
+
+cat("Running AccSamplingDesign NLP method...\n")
+res_opt <- AccSamplingDesign::optPlan(
+  PRQ = p1, CRQ = p2, alpha = alpha, beta = beta,
+  distribution = "beta", theta_type = "known",
+  theta = theta, LSL = LSL
+)
+```
+
+### Benchmark Runtime and Memory Usage
+
+```{r benchmark, echo=FALSE, message=FALSE}
+bm <- bench::mark(
+  Govindaraju_and_Kissling_2015_GridSearch = beta_plan_grid_search(LSL, theta, p1, p2, alpha, beta),
+  AccSamplingDesign_NLP = AccSamplingDesign::optPlan(
+    PRQ = p1, CRQ = p2, alpha = alpha, beta = beta,
+    distribution = "beta", theta_type = "known",
+    theta = theta, LSL = LSL
+  ),
+  iterations = 1,
+  check = FALSE
+)
+```
+
+```{r summary-table, echo=FALSE, message=FALSE, results='asis'}
+#-------------------------------------------------------------------------------
+# Display final table of benchmark results
+#-------------------------------------------------------------------------------
+
+summary_tbl <- tibble(
+  Method = c("`beta_plan_grid_search()`", "`AccSamplingDesign::optPlan()`"),
+  n = c(res_grid$n, res_opt$n),
+  k = c(res_grid$k, res_opt$k),
+  `Median Time (s)` = round(as.numeric(bm$median), 3),
+  `Memory Used` = format(bm$mem_alloc, units = "auto")
+)
+
+kable(summary_tbl, caption = "Benchmarking AccSamplingDesign performance: Grid Search vs. NLP for Beta-based sampling plan optimization.") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r speedup, echo=FALSE, message=FALSE, results='asis'}
+#-------------------------------------------------------------------------------
+# Print speed-up factor
+#-------------------------------------------------------------------------------
+
+time_grid <- as.numeric(bm$median[1])
+time_nlp  <- as.numeric(bm$median[2])
+speedup   <- round(time_grid / time_nlp, 1)
+
+cat(sprintf("\n>> `AccSamplingDesign::optPlan()` (NLP method) is approximately **%.1f× faster** than the Grid Search method for finding optimal Beta-based sampling plans.\n", speedup))
+```

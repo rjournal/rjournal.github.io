@@ -1,0 +1,577 @@
+% !TeX root = RJwrapper.tex
+\title{SurvDNN: Survival Deep Learning Models for Tabular Data}
+
+
+\author{by Imad El Badisy}
+
+\maketitle
+
+\abstract{%
+Deep learning is increasingly applied in survival analysis for high-dimensional data with complex effects. However, most implementations in R rely on Python backends, limiting accessibility and integration with R workflows. We present survdnn, a fully native R package for deep neural survival modeling, built on the torch library. The package offers a formula interface consistent with R conventions, supports multiple loss functions (Cox, Cox with L2 penalty, Accelerated Failure Time, Cox-Time), and provides utilities for prediction, model evaluation, cross-validation, and hyperparameter tuning. Benchmarks on real data show that survdnn performs competitively against classical models such as Cox regression and Random Survival Forests. This package extends the scope of survival analysis to deep learning within the R ecosystem.
+}
+
+\section{Introduction}\label{introduction}
+
+\subsection{Background and motivation}\label{background-and-motivation}
+
+Survival analysis is a foundational methodology in biomedical and clinical research, constituting the methodological groundwork for applications such as oncology prognosis, cardiovascular risk stratification, and reliability engineering \citep{wiegrebe2024deep}. Classical statistical models, most notably the Cox proportional hazards (PH) model, have long been favored for their interpretability and solid theoretical foundation \citep{cox1972regression}. However, these models impose restrictive assumptions, including linear covariate effects and PH, which are frequently violated in real-world applications \citep{heagerty2005survival, batson2016review}.
+
+To address these limitations, machine learning algorithms have been increasingly adopted as flexible modeling approaches that relax restrictive assumptions and often yield improved predictive accuracy. Among these methods, deep learning has emerged as a particularly powerful paradigm, capable of capturing complex non-linear relationships and high-dimensional feature interactions that are difficult to capture with classical approaches \citep{wiegrebe2024deep, bengio2021deep}.
+
+\subsection{Advances in deep survival models}\label{advances-in-deep-survival-models}
+
+The evolution of deep survival models began with early efforts such as that of Faraggi and Simon \citep{faraggi1995neural}, who replaced the linear component of Cox regression with a shallow neural network. However, these early models failed to consistently outperform classical models in terms of discrimination \citep{xiang2000comparison, sargent2001comparison}. A significant advancement came with \texttt{DeepSurv} \citep{katzman2018deepsurv}, which introduced modern neural optimization techniques to improve predictive accuracy under the PH setting.
+
+Recent deep learning methods have achieved state-of-the-art performance in survival analysis, particularly through models such as \texttt{DeepSurv}, \texttt{DeepHit} \citep{lee2018deephit}, and \texttt{Cox-Time} \citep{kvamme2019time}, which have been successfully applied to real-world clinical datasets. These methods are summarized in recent reviews \citep{wiegrebe2024deep}.
+
+To model non-PH and flexible survival distributions, \texttt{DeepHit} \citep{lee2018deephit} introduced a discrete-time neural approach with time-varying, non-linear effects. The \texttt{pycox} library unified \texttt{DeepSurv}, \texttt{DeepHit}, and \texttt{Cox-Time} using \texttt{PyTorch} \citep{paszke2019pytorch}, while \texttt{TorchSurv} \citep{monod2024torchsurv} more recently offered a lower-level API for neural Cox and AFT models with customizable losses.
+
+\subsection{Statement of need}\label{statement-of-need}
+
+Despite the growing adoption of deep learning methods for survival analysis, the R ecosystem lacks native tools for training and deploying deep survival models. Existing solutions, such as the \CRANpkg{survivalmodels} package \citep{survivalmodels2020}, rely on Python backends accessed via \CRANpkg{reticulate} \citep{reticulate2017}, which introduces installation complexity and versioning issues. This dependency has limited the accessibility of deep survival modeling for biostatisticians and clinical researchers who rely primarily on R.
+
+\subsection{Contribution}\label{contribution}
+
+To address this gap, we developed \CRANpkg{survdnn}, a fully native R package for deep neural network-based survival analysis. Built on the \CRANpkg{torch} backend \citep{falbel2024torch}, \CRANpkg{survdnn} provides a high-level formula interface, supports multiple loss functions including Cox, Cox-L2, AFT, and Cox-Time, and integrates seamlessly with modern R workflows. The package includes training and prediction utilities, built-in evaluation metrics such as the concordance index (C-index), time-dependent Brier score, and Integrated Brier Score (IBS), as well as functions for cross-validation, hyperparameter tuning, and regularization mechanisms including dropout, batch normalization, and early-stopping callbacks. \CRANpkg{survdnn} complements the rich foundational survival modeling tools in R by extending them into the deep learning era without leaving the R ecosystem.
+
+\section{Implementation}\label{implementation}
+
+\subsection{Package overview}\label{package-overview}
+
+At its core, \CRANpkg{survdnn} is built around the \texttt{survdnn()} function, which fits a deep neural network for right-censored survival data using R's formula interface. Users specify the network architecture through an integer vector of hidden layer sizes and select the activation function from a set of supported options, including \texttt{"relu"}, \texttt{"leaky\_relu"}, \texttt{"tanh"}, \texttt{"sigmoid"}, \texttt{"gelu"}, \texttt{"elu"}, and \texttt{"softplus"}. The training objective is defined via the \texttt{loss} argument, with support for \texttt{"cox"}, \texttt{"cox\_l2"}, \texttt{"aft"}, and \texttt{"coxtime"}, while core hyperparameters such as the learning rate and number of epochs remain fully user-configurable. The training pipeline further incorporates regularization and optimization mechanisms such as dropout, batch normalization, and user-defined callbacks (including early stopping based on training loss dynamics) to improve stability and generalization.
+
+Model predictions are computed using \texttt{predict.survdnn()}, which supports three output types: the raw linear predictor (\texttt{"lp"}), survival probabilities at specified time points (\texttt{"survival"}), and cumulative risk at a given time (\texttt{"risk"}). Predictions can be returned either as numeric vectors or as data frames with one column per evaluation time.
+
+The package includes built-in utilities for evaluation and resampling. The \texttt{evaluate\_survdnn()} function computes common and built-in performance metrics. The \texttt{cv\_survdnn()} function performs stratified k-fold cross-validation to preserve event censoring balance across folds, with results summarized using \texttt{summarize\_cv\_survdnn()}.
+
+Hyperparameter tuning is supported through two complementary functions. The \texttt{tune\_survdnn()} function performs k-fold cross-validation over a user-defined hyperparameter grid and selects the best configuration according to a chosen evaluation metric (the first metric is used for selection), optionally refitting the final model on the full dataset. In contrast, \texttt{gridsearch\_survdnn()} evaluates the same type of hyperparameter grid under a fixed training-validation split: each candidate model is fitted on the training set and assessed on a user-supplied validation set, without internal resampling or automatic refitting.
+
+Missing data are handled explicitly through a user-controlled policy (\texttt{na\_action\ =\ "omit"} or \texttt{"fail"}), with informative reporting of excluded observations when applicable.
+
+Finally, \texttt{plot.survdnn()} provides a visualization method for predicted survival curves using \texttt{ggplot2} style \citep{wickham2026ggplot2}, with options to group curves by a categorical variable and to display either individual or averaged curves.
+
+\subsection{Model architecture}\label{model-architecture}
+
+The model architecture in \CRANpkg{survdnn} is defined as a sequence of \(k\) transformation layers applied to the input features \(\mathbf{x}\):
+
+\[
+f_\theta(\mathbf{x}) = L_k \circ \phi_{k-1} \circ \cdots \circ \phi_1 \circ L_1(\mathbf{x})
+\]
+
+Each stage consists of a linear transformation followed by non-linear activation and regularization components. The linear transformation at layer \(k\) is expressed as:
+
+\[
+L_k(\cdot) = W_k \mathbf{h}^{(k-1)} + b_k
+\]
+
+where \(W_k\) is the weight matrix and \(b_k\) the bias vector. The transformed output is then passed through a composition of non-linear operations. Specifically, each layer includes an activation function \(\phi\), batch normalization to stabilize learning, and dropout to prevent overfitting. Together, a hidden layer is computed as:
+
+\[
+\mathbf{h}^{(k)} = \text{Dropout} \left( \phi \left( \text{BatchNorm} \left( W_k \mathbf{h}^{(k-1)} + b_k \right) \right) \right)
+\]
+
+The final layer outputs a scalar prediction \(f_\theta(\mathbf{x})\), interpreted based on the selected loss function: as log-risk under Cox-based losses, log-event time under the AFT loss, or time-dependent log-risk under the Cox-Time loss.
+
+Before training, a model matrix is created from the user-specified formula interface. This step expands factor variables into dummy indicators and extracts the design matrix.
+
+\subsection{Loss functions}\label{loss-functions}
+
+In survival machine learning, the loss function defines the model's training objective and dictates how it handles censoring, time-to-event outcomes, and individual risk dynamics \citep{wiegrebe2024deep}. This choice critically influences convergence, calibration, and generalization \citep{katzman2018deepsurv}.
+
+The \CRANpkg{survdnn} package implements four core loss functions tailored for right-censored survival data, covering both PH and non-PH settings:
+
+\textbf{Cox Partial Likelihood Loss (\texttt{"cox"})}: The standard Cox loss implements the partial likelihood from the Cox PH model \citep{cox1972regression}. It is the basis of classical methods and modern neural-based implementations like \texttt{DeepSurv} \citep{katzman2018deepsurv} and \texttt{pycox} \citep{kvamme2019time}.
+
+The model assumes a multiplicative hazard function:
+
+\[
+\lambda(t \mid \mathbf{x}) = \lambda_0(t) \cdot \exp(f_\theta(\mathbf{x})) = \lambda_0(t) \cdot e^\eta
+\]
+
+where \(f_\theta(\mathbf{x}) = \eta\) is a learned log-risk score and \(\lambda_0(t)\) is an unspecified baseline hazard.
+
+To avoid estimating \(\lambda_0(t)\), Cox proposed the partial likelihood:
+
+\[
+\mathcal{L}_{\text{cox}}(\theta) = \prod_{i:\delta_i = 1} \frac{e^{\eta_i}}{\sum_{j \in \mathcal{R}(t_i)} e^{\eta_j}}
+\]
+
+The negative log of this expression is minimized during training. In \CRANpkg{survdnn}, this is implemented using \texttt{torch\_logcumsumexp()} to ensure numerical stability and efficient batch-wise computation.
+
+The Cox loss learns relative risks, not calibrated survival probabilities. However, post-processing via Breslow estimation is performed to obtain full survival curve estimates \citep{breslow1972contribution}.
+
+\textbf{L2-Regularized Cox Loss (\texttt{"cox\_l2"})}: This variant augments the Cox loss with an L2 penalty applied directly to the predicted log-risk scores:
+
+\[
+\mathcal{L}_{\text{cox-l2}}(\theta)
+=
+\mathcal{L}_{\text{cox}}(\theta)
++
+\lambda \cdot \frac{1}{n} \sum_{i=1}^n \eta_i^2
+\]
+
+This ridge-type regularization stabilizes optimization and reduces overfitting, particularly in small-sample or high-dimensional settings \citep{friedman2010regularization}.
+
+Unlike classical weight decay, the penalty acts on model outputs rather than internal parameters, preserving architectural flexibility while directly constraining extreme risk predictions.
+
+\textbf{Accelerated Failure Time Loss (\texttt{"aft"})}: The AFT option in \CRANpkg{survdnn} implements a log-normal AFT model with right-censoring, trained by minimizing the censored negative log-likelihood:
+
+\[
+\log(T_i) = \mu_i + \sigma Z_i,\qquad Z_i \sim \mathcal{N}(0,1)
+\]
+
+where \(\mu_i = f_\theta(\mathbf{x}_i) + \mathrm{aft\_loc}\) is a subject-specific location parameter predicted by the neural network, \(\sigma > 0\) is a global scale parameter, and \texttt{aft\_loc} is an optional centering constant used to improve numerical stability.
+
+For an observed time \(t_i\) and event indicator \(\delta_i\), the contribution to the negative log-likelihood is:
+
+\[
+\ell_i(\theta) =
+\begin{cases}
+\log t_i + \log \sigma + \tfrac{1}{2} z_i^2 & \delta_i = 1 \\
+-\log S(z_i) & \delta_i = 0
+\end{cases}
+\]
+
+where
+
+\[
+z_i = \frac{\log t_i - \mathrm{aft\_loc} - f_\theta(\mathbf{x}_i)}{\sigma},
+\quad
+S(z) = 1 - \Phi(z)
+\]
+
+and \(\Phi(\cdot)\) denotes the standard normal cumulative distribution function.
+
+The overall loss minimized during training is the average censored negative log-likelihood:
+
+\[
+\mathcal{L}_{\text{aft}}(\theta) = \frac{1}{n} \sum_{i=1}^n \ell_i(\theta)
+\]
+
+In \CRANpkg{survdnn}, the scale parameter \(\sigma\) can either be fixed or learned jointly with network parameters through a differentiable reparameterization (\(\sigma = \exp(\log\sigma)\)). This formulation enables the AFT model to fully use both event and censored observations while preserving the direct time-scale interpretation of AFT models.
+
+\textbf{Cox-Time Loss (\texttt{"coxtime"})}: The Cox-Time model extends the Cox framework by allowing covariate effects to vary with time \citep{kvamme2019time}. The log-relative hazard is modeled as:
+
+\[
+g_\theta(t,\mathbf{x})
+=
+\log\!\left(\frac{h(t \mid \mathbf{x})}{h_0(t)}\right)
+\]
+
+yielding the hazard:
+
+\[
+h(t\mid\mathbf{x}) = h_0(t)\exp(g_\theta(t,\mathbf{x}))
+\]
+
+The corresponding loss is the time-dependent Cox partial likelihood:
+
+\[
+\mathcal{L}_{\text{coxtime}}(\theta)
+= - \sum_{i:\,\delta_i = 1}
+\left[
+g_\theta(t_i, \mathbf{x}_i)
+-
+\log \sum_{j \in \mathcal{R}(t_i)}
+\exp\!\bigl(g_\theta(t_i, \mathbf{x}_j)\bigr)
+\right]
+\]
+
+In \CRANpkg{survdnn}, this loss is implemented using batched evaluation over event times and risk sets. While Cox-Time offers the greatest modeling flexibility among the available losses, it is also the most computationally demanding due to repeated evaluation of risk sets across time.
+
+\subsection{Prediction interface}\label{prediction-interface}
+
+Once a \CRANpkg{survdnn} model has been trained, predictions can be obtained using the generic \texttt{predict()} method. This function supports multiple output types to serve different goals in survival analysis:
+
+\begin{itemize}
+\item
+  \emph{Linear predictors} (\texttt{type\ =\ "lp"}): returns the log-risk score \(\eta = f_\theta(\mathbf{x})\), used for risk ranking and concordance index evaluation.
+\item
+  \emph{Survival probabilities} (\texttt{type\ =\ "survival"}): returns \(\hat{S}(t \mid \mathbf{x})\), the estimated survival function evaluated at user-specified time points.
+\item
+  \emph{Cumulative risk} (\texttt{type\ =\ "risk"}): returns the cumulative incidence \(\hat{F}(t) = 1 - \hat{S}(t)\), the probability of experiencing the event by time \(t\).
+\end{itemize}
+
+Predictions are returned either as numeric vectors for single time points or as data frames with one column per evaluation time.
+
+The underlying computation depends on the loss function used during training. For models trained with \texttt{"cox"} and \texttt{"cox\_l2"}, the baseline cumulative hazard \(\hat{H}_0(t)\) is estimated using the Breslow estimator.
+
+Survival probabilities are then computed as:
+
+\[
+\hat{S}(t \mid \mathbf{x})
+=
+\exp\!\left(-\hat{H}_0(t)\exp(\eta)\right)
+\]
+
+For \texttt{"aft"}, predictions are based on the fitted log-normal accelerated failure time model, using the estimated scale parameter \(\hat{\sigma}\):
+
+\[
+\hat{S}(t \mid \mathbf{x})
+= 1 - \Phi\!\left(
+\frac{\log t - f_\theta(\mathbf{x})}{\hat{\sigma}}
+\right)
+\]
+
+where \(\Phi\) denotes the standard normal cumulative distribution function.
+
+For \texttt{"coxtime"}, predictions follow the approach proposed by \citep{kvamme2019time}, using a time-dependent neural log-risk function \(g(t,\mathbf{x})\). Survival probabilities are obtained by accumulating predicted hazards over a discrete time grid:
+
+\[
+\hat{S}(t \mid \mathbf{x})
+= \prod_{s \le t}
+\exp\!\left(-\hat{\lambda}(s \mid \mathbf{x})\right)
+\]
+
+Survival prediction under Cox-Time requires numerical integration of the time-dependent hazard over a user-defined time grid. While training relies only on observed event times, prediction involves evaluating the neural risk function across grid points for each individual, which can become computationally expensive for large datasets or fine time grids.
+
+\subsection{Training workflow}\label{training-workflow}
+
+The \texttt{survdnn()} function implements a complete training workflow for deep neural networks on right-censored survival data. It relies on R's formula interface to construct design matrices, applies Z-score standardization for numerical stability, and converts inputs into \texttt{torch\_tensor()} objects for efficient automatic differentiation using the \CRANpkg{torch} backend \citep{keydana2023deep}.
+
+Model architectures are defined via \texttt{build\_dnn()}, which constructs a fully connected multilayer perceptron with user-configurable depth and width. Each hidden layer may optionally include batch normalization and dropout, enabling regularization and improved optimization stability. Non-linear activations are applied uniformly across layers and selected from a predefined set of commonly used functions.
+
+The training objective is specified via the \texttt{loss} argument (\texttt{"cox"}, \texttt{"cox\_l2"}, \texttt{"aft"}, or \texttt{"coxtime"}), each implemented as a differentiable loss function compatible with backpropagation. Optimization is performed using full-batch gradient descent with a choice of optimizers, including Adam, AdamW, SGD, RMSprop, and Adagrad, all exposed through a unified interface.
+
+The empirical risk minimized during training is given by:
+
+\[
+\mathcal{L}(\theta)
+= \frac{1}{n}
+\sum_{i=1}^n
+\ell\!\left(f_\theta(\tilde{\mathbf{x}}_i), t_i, \delta_i\right)
+\]
+
+where \(\ell(\cdot)\) denotes the selected survival loss and \(\tilde{\mathbf{x}}_i\) are standardized covariates.
+
+To improve training robustness and prevent overfitting, \CRANpkg{survdnn} supports user-defined callback functions, including early stopping based on the training loss trajectory. Callbacks are evaluated at each epoch and may interrupt training once predefined criteria are met. Reproducibility is ensured by a unified \texttt{.seed} argument that synchronizes R and \CRANpkg{torch} random number generators.
+
+The fitted model is returned as an S3 object of class \texttt{"survdnn"}, containing the trained neural network, preprocessing metadata, optimizer configuration, and the full loss history. This object integrates seamlessly with the \texttt{predict()} method to compute predictions.
+
+\subsection{Evaluation metrics}\label{evaluation-metrics}
+
+\CRANpkg{survdnn} supports standard survival metrics for assessing both discrimination and calibration at user-defined evaluation time points. Discrimination is evaluated using the C-index \citep{harrell1982evaluating}, which measures the model's ability to correctly rank individuals by risk and is maximized during evaluation and hyperparameter tuning.
+
+Calibration is assessed using the time-dependent Brier score \citep{graf1999assessment} and the IBS, both computed with inverse probability of censoring weighting to account for right-censoring \citep{zhou2023survmetrics}. These metrics quantify the accuracy of predicted survival probabilities and are minimized during evaluation and hyperparameter tuning.
+
+\subsection{Cross-validation}\label{cross-validation}
+
+Cross-validation is performed using the \texttt{cv\_survdnn()} function, which implements stratified \(k\)-fold partitioning based on the event indicator to preserve the proportion of observed events and censored observations across folds. Time-to-event values are not stratified, in accordance with standard practice in survival resampling.
+
+Within each fold, models are trained using \texttt{survdnn()} on the training split and evaluated on the held-out data using \texttt{evaluate\_survdnn()} at user-specified time points and metrics. Results are returned in a tidy tabular format, enabling transparent benchmarking, hyperparameter selection, and performance comparison while reducing optimistic bias \citep{varma2006bias}.
+
+\subsection{Tuning}\label{tuning}
+
+Hyperparameter tuning is crucial in deep survival modeling, where censoring can destabilize optimization and introduce noisy gradients, and small datasets with few events further increase overfitting risk \citep{gensheimer2019scalable}.
+
+\CRANpkg{survdnn} provides \texttt{tune\_survdnn()} to perform grid-based \(k\)-fold cross-validation across key hyperparameters, including:
+
+\begin{itemize}
+\item
+  \textbf{Architecture}: hidden layer sizes (\texttt{hidden})
+\item
+  \textbf{Activation}: \texttt{"relu"}, \texttt{"leaky\_relu"}, \texttt{"tanh"}, \texttt{"sigmoid"}, \texttt{"gelu"}, \texttt{"elu"}, \texttt{"softplus"}
+\item
+  \textbf{Optimization}: learning rate (\texttt{lr}), number of epochs (\texttt{epochs})
+\item
+  \textbf{Loss function}: \texttt{"cox"}, \texttt{"cox\_l2"}, \texttt{"aft"}, \texttt{"coxtime"}
+\end{itemize}
+
+This design follows best practices in regularized learning \citep{friedman2010regularization} and deep neural optimization \citep{bengio2012practical}. An optional \texttt{refit\ =\ TRUE} automatically retrains the best configuration and fits the model on the full dataset in an AutoML style.
+
+\subsection{Sensitivity to censoring}\label{sensitivity-to-censoring}
+
+Because censoring directly affects the effective sample size and the information available for risk estimation, we investigated the sensitivity of \CRANpkg{survdnn} models to increasing levels of right censoring. Using a controlled simulation design, we evaluated predictive discrimination (C-index) and calibration (IBS) across censoring rates ranging from 10\% to 90\%.
+
+\begin{figure}[htbp]
+
+{\centering \includegraphics[width=1\linewidth]{figures/plot_censoring_sensitivity} 
+
+}
+
+\caption{Censoring sensitivity analysis. C-index and IBS of survdn models across increasing right-censoring rates (10-90\%) for the four implemented loss functions.}\label{fig:fig-censoring}
+\end{figure}
+
+Across losses, discrimination (C-index) decreases only moderately with increasing censoring, whereas calibration (IBS) is most affected at extreme censoring (Figure \ref{fig:fig-censoring}). Cox-based losses (\texttt{"cox"} and \texttt{"cox\_l2"}) show stable C-index up to \(\approx 50\%\) censoring, followed by a gradual decline, while IBS remains low up to \(\approx 70\%\) but increases sharply at 90\% censoring. The AFT loss exhibits comparatively stable performance across censoring levels for both C-index and IBS, and yields the lowest IBS under very high censoring (90\%). In contrast, the Cox-Time loss shows poor discrimination at low censoring but improves markedly up to \(\approx 70\%\), while maintaining higher IBS than the other losses and deteriorating strongly at 90\% censoring, consistent with increased variance under limited effective sample size.
+
+These results suggest that, in practice, Cox-based losses are preferable under low to moderate censoring, offering a favorable balance between discrimination and calibration. The AFT loss demonstrates robust calibration across censoring levels, including under very high censoring, but yields comparatively lower discrimination, indicating that its use should be guided by the relative importance of ranking versus probability accuracy. Highly flexible models such as Cox-Time require larger effective sample sizes and careful calibration assessment, as their apparent gains in discrimination at moderate censoring are offset by substantially poorer calibration under extreme censoring.
+
+\subsection{Computation backend}\label{computation-backend}
+
+Since \CRANpkg{survdnn} is built on the \CRANpkg{torch} backend, it supports both CPU and GPU execution. The computation device can be selected via \texttt{.device\ =\ c("auto",\ "cpu",\ "cuda")}, where \texttt{"auto"} uses CUDA when available and otherwise falls back to CPU. On CPU, performance benefits from multithreaded linear algebra provided by the underlying BLAS/LAPACK implementation.
+
+\begin{figure}[htbp]
+
+{\centering \includegraphics[width=1\linewidth]{figures/plot_bench_threads_speedup} 
+
+}
+
+\caption{CPU multithreading speedup across loss functions. Relative training-time speedup comparing multi-threaded and single-thread CPU execution as a function of sample size for Cox, Cox-L2, AFT, and Cox-Time losses.}\label{fig:fig-speedup}
+\end{figure}
+
+To characterize computational behavior, we evaluated training time across increasing sample sizes and compared single-thread and multi-thread CPU execution for different loss functions (Figure \ref{fig:fig-speedup}). Multithreading benefits vary markedly across losses and depend strongly on sample size. Cox-based losses exhibit little to no speedup, with performance remaining close to single-thread execution even at large sample sizes, reflecting the dominance of global, sequential risk-set operations. The AFT loss shows moderate speedup already at small to moderate sample sizes, but scaling gains diminish as sample size increases, consistent with dense likelihood computations that limit parallel efficiency. In contrast, the Cox-Time loss demonstrates substantial and increasing speedup with sample size, achieving the largest gains under multithreading, indicating favorable parallelization of its time-dependent risk evaluations despite higher overhead at small sample sizes.
+
+\subsection{Reproducibility}\label{reproducibility}
+
+Reproducibility in \CRANpkg{survdnn} requires controlling both R-level and \CRANpkg{torch}-level sources of randomness. While \texttt{set.seed()} controls randomness in R, neural network training relies on \CRANpkg{torch}, which maintains its own random number generator for operations such as weight initialization and dropout.
+
+To simplify reproducible workflows, \CRANpkg{survdnn} exposes a \texttt{.seed} argument in its main fitting and resampling functions (including \texttt{survdnn()}, \texttt{cv\_survdnn()}, and \texttt{tune\_survdnn()}). When provided, this argument internally synchronizes both R and \CRANpkg{torch} random number generators to ensure fully reproducible model training and evaluation.
+
+\section{Usage examples}\label{usage-examples}
+
+We illustrate the use of \CRANpkg{survdnn} through two case studies: a complete modeling pipeline on the veteran's lung cancer dataset and a benchmark on the real-world METABRIC breast cancer dataset.
+
+\subsection{Example 1: API demonstration}\label{example-1-api-demonstration}
+
+This example uses the Veteran's lung cancer dataset from the \CRANpkg{survival} package \citep{survival-book} to illustrate a typical \CRANpkg{survdnn} workflow: fit a model, inspect the training configuration, compute survival predictions at user‑defined time points, evaluate with standard metrics (C‑index, IBS, Brier), perform cross‑validation, tune hyperparameters, and visualize training dynamics and survival curves.
+
+First, we fit a Cox‑loss model with a modest multilayer architecture:
+
+\begin{verbatim}
+pacman::p_load(survdnn, survival, dplyr, ggplot2, tibble, randomForestSRC, partykit, party, pec, rsample, purrr)
+
+veteran <- survival::veteran
+
+mod <- survdnn(
+  Surv(time, status) ~ age + karno + celltype,
+  data = veteran,
+  hidden = c(32, 16),
+  epochs = 300,
+  loss = "cox",
+  verbose = TRUE,
+  .seed  = 123
+  )
+\end{verbatim}
+
+We can summarise the model to inspect the architecture, preprocessing, and training setup:
+
+\begin{verbatim}
+summary(mod)
+\end{verbatim}
+
+\begin{verbatim}
+#> 
+#> Formula:
+#>   Surv(time, status) ~ age + karno + celltype
+#> <environment: 0x12c451688>
+#> 
+#> Model architecture:
+#>   Hidden layers:  32 : 16 
+#>   Activation:  relu 
+#>   Dropout:  0.3 
+#>   Batch norm:  TRUE 
+#>   Final loss:  3.807069 
+#> 
+#> Training summary:
+#>   Epochs:  300 
+#>   Learning rate:  1e-04 
+#>   Loss function:  cox 
+#>   Optimizer:  adam 
+#>   Device:  cpu 
+#>   CPU threads:  default 
+#>   NA action:  omit 
+#> 
+#> Data summary:
+#>   Observations (used/total): 137 / 137
+#>   Predictors (5): age, karno, celltypesmallcell, celltypeadeno, celltypelarge
+#>   Time range: [ 1, 999 ]
+#>   Events / censored:  128  /  9 
+#>   Event rate:  93.4% 
+#>   Predictors standardized:  yes
+\end{verbatim}
+
+Next, we can obtain survival probabilities at clinically meaningful horizons (30, 90, 180 days):
+
+\begin{verbatim}
+times_eval <- c(30, 90, 180)
+pred_surv <- predict(mod, newdata = veteran, type = "survival", times = times_eval)
+head(pred_surv)
+\end{verbatim}
+
+\begin{verbatim}
+#>        t=30      t=90     t=180
+#> 1 0.8500302 0.6484401 0.3320256
+#> 2 0.8908180 0.7347438 0.4563409
+#> 3 0.8837167 0.7192320 0.4322185
+#> 4 0.8764465 0.7035649 0.4086570
+#> 5 0.8869654 0.7263027 0.4431155
+#> 6 0.7840706 0.5228146 0.1919284
+\end{verbatim}
+
+Model performance can be assessed via the C-index and the IBS:
+
+\begin{verbatim}
+eval_res <- evaluate_survdnn(mod, metrics = c("cindex", "ibs"), times = times_eval)
+print(eval_res)
+\end{verbatim}
+
+\begin{verbatim}
+#> # A tibble: 2 x 2
+#>   metric value
+#>   <chr>  <dbl>
+#> 1 cindex 0.745
+#> 2 ibs    0.169
+\end{verbatim}
+
+The Brier score can also be computed at specific time points (or over a grid, if desired):
+
+\begin{verbatim}
+times_eval <- seq(min(veteran$time), max(veteran$time), 10)
+eval_res <- evaluate_survdnn(mod, metrics = "brier", times = times_eval)
+print(eval_res)
+\end{verbatim}
+
+\begin{verbatim}
+#> # A tibble: 100 x 3
+#>    metric  time    value
+#>    <chr>  <dbl>    <dbl>
+#>  1 brier      1 0.000073
+#>  2 brier     11 0.0880  
+#>  3 brier     21 0.150   
+#>  4 brier     31 0.181   
+#>  5 brier     41 0.192   
+#>  6 brier     51 0.194   
+#>  7 brier     61 0.199   
+#>  8 brier     71 0.198   
+#>  9 brier     81 0.193   
+#> 10 brier     91 0.188   
+#> # i 90 more rows
+\end{verbatim}
+
+To assess stability, we can run \(k\)‑fold cross‑validation with predefined metrics and time points:
+
+\begin{verbatim}
+cv_results <- cv_survdnn(
+  Surv(time, status) ~ age + karno + celltype, data = veteran,
+  times = c(30, 90, 180),
+  metrics = c("ibs"),
+  folds = 3,
+  hidden = c(16, 8),
+  loss = "cox",
+  epochs = 100,
+  .seed  = 123
+  )
+print(cv_results)
+\end{verbatim}
+
+\begin{verbatim}
+#> # A tibble: 3 x 3
+#>    fold metric value
+#>   <int> <chr>  <dbl>
+#> 1     1 ibs    0.230
+#> 2     2 ibs    0.226
+#> 3     3 ibs    0.230
+\end{verbatim}
+
+Hyperparameter tuning can be automated over a small grid. Below we vary architecture, optimiser settings, and loss:
+
+\begin{verbatim}
+grid <- list(
+  hidden     = list(c(16, 32, 64, 16)),
+  lr         = c(1e-3),
+  activation = c("relu", "softplus"),
+  epochs     = c(100),
+  loss       = c("cox_l2", "aft")
+)
+
+tune_res <- tune_survdnn(
+  Surv(time, status) ~ age + karno + celltype,
+  data = veteran,
+  times = c(30, 90, 180),
+  metrics = "cindex",
+  param_grid = grid,
+  folds = 3,
+  refit = FALSE,
+  return = "all"
+  )
+
+benchmark_results <- summarize_tune_survdnn(tune_res, by_time = TRUE)
+
+tuning_results_clean <- benchmark_results %>%
+  mutate(
+    hidden = sapply(hidden, function(x) paste(x, collapse = "-")),
+    across(where(is.numeric), ~ round(.x, 3))
+  )
+
+tuning_results_clean
+\end{verbatim}
+
+\begin{verbatim}
+#> # A tibble: 4 x 8
+#>   hidden         lr activation epochs loss   metric  mean    sd
+#>   <chr>       <dbl> <chr>       <dbl> <chr>  <chr>  <dbl> <dbl>
+#> 1 16-32-64-16 0.001 softplus      100 aft    cindex 0.737 0.072
+#> 2 16-32-64-16 0.001 softplus      100 cox_l2 cindex 0.736 0.074
+#> 3 16-32-64-16 0.001 relu          100 aft    cindex 0.723 0.079
+#> 4 16-32-64-16 0.001 relu          100 cox_l2 cindex 0.715 0.06
+\end{verbatim}
+
+Training dynamics can be visualised using the built-in \texttt{plot\_loss()} helper:
+
+\begin{verbatim}
+plot_loss(mod, smooth = TRUE)
+\end{verbatim}
+
+\pandocbounded{\includegraphics[keepaspectratio]{RJ-2026-008_files/RJ-2026-008_files/figure-latex/unnamed-chunk-8-1.pdf}}
+
+Finally, we visualise survival curves by cancer cell type, showing both individual and mean summaries:
+
+\begin{verbatim}
+plot(mod, group_by = "celltype", times = 1:900) +
+  ggtitle("Survival Curves by Celltype")
+\end{verbatim}
+
+\pandocbounded{\includegraphics[keepaspectratio]{RJ-2026-008_files/RJ-2026-008_files/figure-latex/unnamed-chunk-9-1.pdf}}
+
+\begin{verbatim}
+plot(mod, group_by = "celltype", times = 1:300, plot_mean_only = TRUE) +
+  ggtitle("Mean Survival Curves by Celltype")
+\end{verbatim}
+
+\pandocbounded{\includegraphics[keepaspectratio]{RJ-2026-008_files/RJ-2026-008_files/figure-latex/unnamed-chunk-10-1.pdf}}
+
+\subsection{Example 2: METABRIC benchmark}\label{example-2-metabric-benchmark}
+
+Here we benchmark \CRANpkg{survdnn} against Cox PH, Random Survival Forests (RSF), and Conditional Inference Forests (CForest) using five‑fold cross‑validation on the METABRIC breast cancer dataset \citep{mukherjee2018associations}. All models are trained on identical splits and evaluated with the C‑index at predefined time points.
+
+\begin{verbatim}
+#> # A tibble: 4 x 3
+#>   model   mean_cindex sd_cindex
+#>   <chr>         <dbl>     <dbl>
+#> 1 SurvDNN       0.611     0.029
+#> 2 CoxPH         0.604     0.029
+#> 3 RSF           0.554     0.033
+#> 4 CForest       0.52      0.044
+\end{verbatim}
+
+\section{Discussion}\label{discussion}
+
+The \CRANpkg{survdnn} package fills an important gap in the R ecosystem by providing a fully native, \CRANpkg{torch}-based framework for deep survival modeling \citep{falbel2024torch}, without relying on Python backends. This design choice improves installation reliability and facilitates seamless integration with established R workflows for statistical modeling and reproducible research.
+
+Across multiple benchmarks and sensitivity analyses, \CRANpkg{survdnn} demonstrates competitive predictive performance relative to established survival models, including Cox PH models \citep{cox1972regression}, RSF \citep{ishwaran2008random}, and CForest \citep{hothorn2006survival}. The availability of multiple likelihood-based loss functions enables analysts to adapt modeling assumptions to PH, non-PH, non-linear covariate effects, and time-varying effects within a unified deep learning framework. All implemented losses explicitly account for right-censoring through either partial likelihoods (Cox, L2-penalised Cox, Cox-Time) or fully specified censored likelihoods (AFT).
+
+Additional investigations highlight practical trade-offs in both statistical robustness and computational behavior. Sensitivity analyses across increasing censoring levels (Figure \ref{fig:fig-censoring}) show that discrimination and calibration degrade as expected with reduced effective sample size, with differences across loss functions. Complementary runtime experiments (Figure \ref{fig:fig-speedup}) demonstrate that computational behavior varies substantially by loss function: Cox-based losses exhibit low computational overhead but derive little benefit from multithreaded execution, Cox-Time incurs higher per-iteration cost due to repeated evaluation of time-dependent risk scores yet scales efficiently with parallel execution at larger sample sizes, and AFT likelihoods involve dense computations that benefit from parallelism at moderate sizes but show limited scalability as sample size increases.
+
+The current scope of \CRANpkg{survdnn} is intentionally focused on tabular data, using multilayer perceptron architectures \citep{bengio2021deep} that are well aligned with the structure of most survival analysis applications. This design choice prioritizes stability and compatibility with classical survival modeling workflows. Training is performed using full-batch optimization, which favors reproducibility and stable convergence but may limit scalability to very large datasets.
+
+Ongoing work maps \CRANpkg{survdnn} to the \texttt{mlr3} ecosystem \citep{mlr3} via a dedicated survival learner, providing users with additional access to standardized benchmarking, resampling, and tuning workflows.
+
+Planned developments include expanded support for time-dependent evaluation metrics \citep{uno2007evaluating, blanche2013estimating} and the incorporation of additional survival loss functions. These directions aim to broaden the applicability of \CRANpkg{survdnn} while preserving its core emphasis on transparent and statistically principled modeling.
+
+Overall, \CRANpkg{survdnn} provides a practical and extensible foundation for deep survival modeling in R, combining modern deep learning methodology with the transparency and reproducibility expected in statistical computing environments.
+
+\section{Acknowledgements}\label{acknowledgements}
+
+The author thanks the anonymous referees for their valuable comments and suggestions, which substantially improved the quality and clarity of this manuscript.
+
+\bibliography{bibliography.bib}
+
+\address{%
+Imad El Badisy\\
+AI and Data Science Service, Mohammed VI Center for Research and Innovation (CM6RI)\\%
+Rabat, Morocco\\
+%
+%
+\textit{ORCiD: \href{https://orcid.org/0000-0003-4848-4895}{0000-0003-4848-4895}}\\%
+\href{mailto:elbadisyimad@gmail.com}{\nolinkurl{elbadisyimad@gmail.com}}%
+}
