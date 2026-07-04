@@ -62,8 +62,8 @@ grid_thin <- thin_points(sim_data, method = "grid", raster_obj = rast_obj, seed 
 prec_thin <- thin_points(sim_data, method = "precision", precision = 1, seed = 5674)
 
 
-## ----thinmethods, out.width = "100%", fig.cap = "Spatial thinning examples using the three methods implemented in GeoThinneR: (A) distance-based thinning with a thinning distance of 10 km, (B) grid-based thinning with a grid resolution of 0.1 degrees and retaining one point per grid cell, and (C) precision-based thinning with coordinates rounded to one decimal place. Blue points indicate retained points and red points those removed during the thinning process.", fig.alt = "Three subplots comparing distance-based, grid-based, and precision-based thinning. Each plot shows retained points in blue and removed points in red across a unit square."----
-knitr::include_graphics("figures/Figure_1_thin_methods.pdf")
+## ----thinmethods, out.width = "100%", fig.cap = "Spatial thinning examples using the three methods implemented in GeoThinneR: (A) distance-based thinning with a thinning distance of 10 km, (B) grid-based thinning with a grid resolution of 0.1 degrees and retaining one point per grid cell, and (C) precision-based thinning with coordinates rounded to one decimal place. Blue points indicate retained points, and red points indicate removed points.", fig.alt = "Three subplots comparing distance-based, grid-based, and precision-based thinning. Each plot shows retained points in blue and removed points in red across a unit square."----
+knitr::include_graphics("figures/Figure_1_thin_methods.png")
 
 
 ## ----echo=TRUE, eval=TRUE-----------------------------------------------------
@@ -89,16 +89,16 @@ priority_thin <- thin_points(sim_data,
 )
 
 
-## ----addfeat, out.width = "100%", fig.cap = "Additional spatial thinning functionalities available in GeoThinneR: (A) group-wise thinning applied independently for each species (B) retaining a fixed number of points (20 points in this example) while ensuring spatial separation, and (C) prioritizing points based on larger variable values within each grid cell. Retained points are shown in blue, and removed points are in red.", fig.alt = "Three subplots showing additional functionalities of GeoThinneR: group-wise thinning, retaining a fixed number of points, and pioritizing points based on larger variable values within each grid cell."----
-knitr::include_graphics("figures/Figure_2_add_feat.pdf")
+## ----addfeat, out.width = "100%", fig.cap = "Additional spatial thinning functionalities available in GeoThinneR: (A) group-wise thinning applied independently for each species, (B) retaining a fixed number of points (20 points in this example) while ensuring spatial separation, and (C) prioritizing points based on larger variable values within each grid cell. Retained points are shown in blue, and removed points are in red.", fig.alt = "Three subplots showing additional functionalities of GeoThinneR: group-wise thinning, retaining a fixed number of points, and pioritizing points based on larger variable values within each grid cell."----
+knitr::include_graphics("figures/Figure_2_add_feat.png")
 
 
-## ----distthinalg, out.width = "100%", fig.cap = "Diagram illustrating the four nearest neighbor search strategies implemented in GeoThinneR for distance-based thinning. The methods include brute-force, standard kd-trees, local kd-trees, and restricted kd-trees using estimated k-max. Each approach computes neighboring points within a thinning distance before proceeding with point removal.", fig.alt="Flowchart with four main branches representing the different search types for the distance-based thinning method implemented in GeoThinneR: local kd-trees, brute-force, standard kd-tree, and restricted kd-tree. Each path shows decision nodes, grids, and kd-tree icons ending in a shared loop for checking and removing neighbors."----
-knitr::include_graphics("figures/Figure_3_distance_thinning_algorithm.pdf")
+## ----distthinalg, out.width = "100%", fig.cap = "Diagram illustrating the four nearest neighbour search strategies implemented in GeoThinneR for distance-based thinning. The methods include brute-force, standard *kd*-trees, local *kd*-trees, and restricted *kd*-trees using estimated $k_{max}$. Each approach computes neighbouring points within a thinning distance before proceeding with point removal.", fig.alt="Flowchart with four main branches representing the different search types for the distance-based thinning method implemented in GeoThinneR: local *kd*-trees, brute-force, standard *kd*-tree, and restricted kd-tree. Each path shows decision nodes, grids, and *kd*-tree icons ending in a shared loop for checking and removing neighbours."----
+knitr::include_graphics("figures/Figure_3_distance_thinning_algorithm.png")
 
 
-## ----benchmarksearchtype, out.width = "100%", fig.cap = "Performance benchmark for neighbor searches implemented in GeoThinneR distance-based thinning. (A) Peak RAM usage (MB) and (B) execution time (seconds) across three spatial data types (CSR, clustered, and mixed spatial pattern) for dataset sizes ranging from 1,000 to 50,000 points. (C) Performance comparison of local kd-trees with parallelization for 50,000 randomly distributed points using two thinning distances (0.5 km and 1 km). The optimized algorithms (local kd-trees and k-estimation) scale better and provide superior computational efficiency than brute-force and standard kd-tree, especially for large datasets.", fig.alt= "Lineplots showing the benchmark results of neighbor search strategies in GeoThinneR. The plots compare execution time and memory usage across data types and methods."----
-knitr::include_graphics("figures/Figure_4_benchmark_search_type.pdf")
+## ----benchmarksearchtype, out.width = "100%", fig.cap = "Performance benchmark for neighbour searches implemented in GeoThinneR distance-based thinning. (A) Peak RAM usage (MB) and (B) execution time (seconds) across three spatial data types (CSR, clustered, and mixed spatial pattern) for dataset sizes ranging from 1,000 to 50,000 points. (C) Performance comparison of local *kd*-trees with parallelization for 50,000 randomly distributed points using two thinning distances (0.5 km and 1 km). The optimized algorithms (local *kd*-trees and *k*-estimation) scale better and provide superior computational efficiency than brute-force and standard *kd*-tree, especially for large datasets.", fig.alt= "Lineplots showing the benchmark results of neighbour search strategies in GeoThinneR. The plots compare execution time and memory usage across data types and methods."----
+knitr::include_graphics("figures/Figure_4_benchmark_search_type.png")
 
 
 ## ----echo=TRUE, eval=FALSE----------------------------------------------------
@@ -128,8 +128,8 @@ knitr::include_graphics("figures/Figure_4_benchmark_search_type.pdf")
 # )
 
 
-## ----benchmarkthinning, out.width = "100%", fig.cap = "Performance benchmark for distance-based thinning across GeoThinneR, spThin, and enmSdmX. (A) Peak RAM usage (MB) and (B) execution time (seconds) across three spatial data types for varying dataset sizes. The enmSdmX method was only evaluated up to 20,000 points due to its high computational cost on larger datasets. The optimized methods of GeoThinneR (local kd-trees and k-estimation) offer better memory and runtime performance across all settings.", fig.alt = "Two panels showing line plots for peak RAM usage and execution time for three spatial thinning packages (GeoThinneR, spThin, enmSdmX) across three types of spatial point patterns and increasing dataset sizes. The enmSdmX curves stop earlier due to computational limits."----
-knitr::include_graphics("figures/Figure_5_benchmark_thinning.pdf")
+## ----benchmarkthinning, out.width = "100%", fig.cap = "Performance benchmark for distance-based thinning across GeoThinneR, spThin, and enmSdmX. (A) Peak RAM usage (MB) and (B) execution time (seconds) across three spatial data types for varying dataset sizes. The enmSdmX method was only evaluated up to 20,000 points due to its high computational cost on larger datasets. The optimized methods of GeoThinneR (local *kd*-trees and *k*-estimation) offer better memory and runtime performance across all settings.", fig.alt = "Two panels showing line plots for peak RAM usage and execution time for three spatial thinning packages (GeoThinneR, spThin, enmSdmX) across three types of spatial point patterns and increasing dataset sizes. The enmSdmX curves stop earlier due to computational limits."----
+knitr::include_graphics("figures/Figure_5_benchmark_thinning.png")
 
 
 ## ----echo=TRUE, eval=FALSE----------------------------------------------------
