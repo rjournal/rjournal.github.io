@@ -385,7 +385,7 @@ p1 + p2 & coord_equal()
 
 ## ----fig-caption-comet-plots, include=FALSE-----------------------------------
 caption_comet_plots <- if (knitr::is_latex_output()) {
-  "Stream plots can be faded by mapping the computed \\$l\\$ aesthetic to \\texttt{alpha}, which can be manipulated to accentuate the movement effect."
+  "Stream plots can be faded by mapping the computed $l$ aesthetic to \\texttt{alpha}, which can be manipulated to accentuate the movement effect."
 } else {
   "Stream plots can be faded by mapping the computed `l` aesthetic to `alpha`, which can be manipulated to accentuate the movement effect."
 }
@@ -527,7 +527,6 @@ caption_normal_log_likelihood <- if (knitr::is_latex_output()) {
 #| fig.pos: "ht!"
 set.seed(1234)
 library("scales")
-
 
 # set parameters
 mu <- 20.5; si <- 8.3
