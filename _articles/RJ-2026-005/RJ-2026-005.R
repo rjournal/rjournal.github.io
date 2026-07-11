@@ -75,7 +75,7 @@ ggplot(dat, aes(x = .data$Type, y = .data$Metric, fill = .data$Support)) +
 
 
 ## ----workflow, out.width = "100%", out.height = ifelse(knitr::is_html_output(), "500px", "45%"), fig.cap = "StepReg workflow overview", fig.alt="StepReg workflow overview"----
-knitr::include_graphics("figures/workflow.pdf")
+knitr::include_graphics("figures/workflow.png")
 
 
 ## ----echo = FALSE-------------------------------------------------------------
