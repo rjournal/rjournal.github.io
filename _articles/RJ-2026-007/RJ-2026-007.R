@@ -132,7 +132,7 @@ plt_plan_compare <- ggplot(oc_df, aes(x = pd, y = paccept, color = Plan)) +
   theme_minimal(base_size = 12) + theme(legend.position = "bottom")
 
 
-## ----fig-vitA-compare-plans, echo=FALSE, out.width="100%", fig.width=6, fig.height=4, layout="l-body", fig.align = 'center', fig.cap = "OC curves for Vitamin A Beta-based acceptance sampling. The optimal plan is compared with two evaluated plans: one with increased sample size (n + 10) and another with a higher acceptability constant (k + 0.1). The plot illustrates how changes in n or k affect the shape and slope of the curve, thereby influencing the producer’s and consumer’s risks.", fig.alt = "Line plot of OC curves showing probability of acceptance versus proportion nonconforming. The optimal plan is compared with plans using n + 10 and k + 0.1. The plot highlights how changes in n or k affect the slope and shape of the curve, impacting producer’s and consumer’s risks."----
+## ----fig-vitA-compare-plans, echo=FALSE, out.width="100%", fig.width=6, fig.height=5, layout="l-body", fig.align = 'center', fig.cap = "OC curves for Vitamin A Beta-based acceptance sampling. The optimal plan is compared with two evaluated plans: one with increased sample size (n + 10) and another with a higher acceptability constant (k + 0.1). The plot illustrates how changes in n or k affect the shape and slope of the curve, thereby influencing the producer’s and consumer’s risks.", fig.alt = "Line plot of OC curves showing probability of acceptance versus proportion nonconforming. The optimal plan is compared with plans using n + 10 and k + 0.1. The plot highlights how changes in n or k affect the slope and shape of the curve, impacting producer’s and consumer’s risks."----
 
 # Output: static for PDF, interactive for HTML
 if (knitr::is_html_output()) ggplotly(plt_plan_compare) else plt_plan_compare
@@ -266,7 +266,7 @@ plt_pkg_compare <- ggplot(plot_data, aes(x = `CRQ - PRQ`, y = `Time (ms)`, color
 plt_pkg_compare
 
 
-## ----compare-pkg-plot-html, message=FALSE, results='asis', eval=knitr::is_html_output(), out.width="100%", layout="l-body", fig.align='center', fig.cap = fig_cap_comp, fig.alt = fig_alt_comp----
+## ----compare-pkg-plot-html, message=FALSE, results='asis', eval=knitr::is_html_output(), out.width="100%", layout="l-body", fig.align='center', fig.cap = fig_cap_comp, fig.alt = fig_alt_comp, fig.height = 8----
 # # interactive for HTML
 # ggplotly(plt_pkg_compare)
 
