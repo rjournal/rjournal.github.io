@@ -64,7 +64,7 @@ plot(result.LRA, type = "RMP", students = 1:4, nc = 2, nr = 2)
 result.Ranklustering <- Biclustering(J35S515, nfld = 5, ncls = 6, method = "R")
 
 
-## ----BiclusteringArray_plot, echo=TRUE, fig.cap='Array plot comparing original response patterns (left) and reorganized patterns after ranklustering (right). Black cells indicate correct responses and white cells indicate incorrect responses.'----
+## ----BiclusteringArray-plot, echo=TRUE, fig.cap='Array plot comparing original response patterns (left) and reorganized patterns after ranklustering (right). Black cells indicate correct responses and white cells indicate incorrect responses.'----
 plot(result.Ranklustering, type = "Array")
 
 
