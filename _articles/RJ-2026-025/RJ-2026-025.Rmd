@@ -1,0 +1,1460 @@
+---
+title: '\pkg{deseats}: An R Package for Data-Driven Trend and Seasonality Estimation
+  in Time Series'
+date: '2026-07-16'
+abstract: |
+  The R package deseats is introduced that allows for the application of a data-driven locally-weighted-regression algorithm for estimating the trend and the seasonality in univariate, equidistant time series with short-memory errors. A corresponding data-driven semiparametric model with autoregressive moving-average errors and point as well as interval forecasting approaches are established and the main functions of the deseats package are described. deseats is applied under consideration of real-world time series and the seasonal component identification is compared to that of STL, TRAMO-SEATS and X13-ARIMA. Finally, the quality of the bandwidth selection algorithm and the consistency of the automated component estimators are highlighted through a simulation study, while the quality of seasonality estimation is compared to that of well-established and widely-used methods, including aforementioned methods and others, in a second simulation study. The new algorithm captures the error-autocorrelation well and often produces seasonality estimates with mean squared error smaller than or at least similar to other methods, if the number of observations is sufficiently large. This finding also holds in simulated scenarios, where the underlying model assumption of the determinism of trend and seasonal components is violated.
+draft: no
+author:
+- name: Dominik Schulz
+  affiliation: Paderborn University
+  address:
+  - Department Economics
+  - Faculty of Business Administration and Economics
+  - Warburger Straße 100, 33098 Paderborn, Germany
+  email: dominik.schulz@uni-paderborn.de
+type: package
+output:
+  rjtools::rjournal_pdf_article:
+    extra_dependencies: float
+    toc: no
+    keep_md: yes
+    includes:
+      in_header: further-files/schulz-preamble.tex
+  rjtools::rjournal_web_article:
+    self_contained: yes
+    toc: no
+bibliography: schulz.bib
+date_received: '2025-12-30'
+volume: 18
+issue: 2
+slug: RJ-2026-025
+
+---
+
+
+```{r setup, include=FALSE, purl = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, comment = "  #>", fig.align = 'center', fig.width = 5.8, fig.height = 3.5)
+local({
+  hook_old <- knitr::knit_hooks$get("source")
+  knitr::knit_hooks$set("source" = function(x, options) {
+
+    x <- xfun::split_lines(x)
+    w <- grepl("##Hide##", x, fixed = TRUE)
+    x <- paste0("  ", x[!w])
+    w2 <- x != "  "
+    x <- x[w2]
+
+    hook_old(x, options)
+  })
+})
+
+# Further functions under PDF / HTML
+
+# Drop indentation
+noindent_f <- function() {
+  if(knitr::is_latex_output()) {
+    return(knitr::asis_output("\\noindent"))
+  }
+  return(invisible(""))
+}
+
+# Go to new page in PDF
+newpage_f <- function() {
+  if(knitr::is_latex_output()) {
+    return(knitr::asis_output("\\newpage"))
+  }
+  return(invisible(""))
+}
+```
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+### R Script for Article "deseats: An R Package for Data-Driven Trend and
+###                       Seasonality Estimation in Time Series"
+```
+
+```{r setup2, include=FALSE, purl = TRUE}
+
+##### Setup and definition of helper functions for table formatting etc.
+
+library(kableExtra)
+library(magrittr)
+library(purrr)
+
+# Make landscape orientation for table in PDF
+landscape_tab <- function(tab) {
+  if(knitr::is_latex_output()) {
+    return(kableExtra::landscape(tab))
+  } else {
+    return(tab)
+  }
+}
+
+# Reduce vertical space in PDF
+reduce_vspace <- function(space = "-0.9cm") {
+  if(knitr::is_latex_output()) {
+    return(knitr::asis_output(paste0("\\vspace{", space, "}")))
+  }
+  return(invisible(""))
+}
+
+# Change from bold in PDF to bold in HTML for table entries
+adjust_bold_html <- function(df, cols = 3:20) {
+
+  df[, cols] <- df[, cols] %>%
+    purrr::map_dfc(
+      function(.x) {
+        w <- which(grepl("\\bftab", .x, fixed = TRUE))
+        .x_sub <- gsub("\\bftab ", replacement = "",
+                       x = .x[w], fixed = TRUE)
+        .x[w] <- paste0(
+          "<strong>", 
+          .x_sub, 
+          "</strong>"
+        )
+        .x
+      }
+    )
+  df
+}
+
+adjust_html_tab_size <- function(x) {
+  `%>%` <- magrittr::`%>%`
+  if (knitr::is_html_output()) {
+    x <- x %>% 
+      kableExtra::kable_styling(full_width = FALSE) %>%
+      kableExtra::scroll_box(width = "100%")
+  }
+  x
+}
+```
+
+```{css, echo=FALSE, eval=knitr::is_html_output(), purl = FALSE}
+.math.display {
+  overflow-x: auto !important;
+  max-width: 100% !important;
+  display: block !important;
+}
+pre, pre code {
+  white-space: pre !important;
+  overflow-x: auto !important;
+  word-wrap: normal !important;
+  display: block !important;
+}
+```
+
+```{r, eval = knitr::is_latex_output(), echo = FALSE, include = TRUE, results='asis', purl = FALSE}
+cat(paste0("\\newcommand{\\bftab}{\\fontseries{b}\\selectfont}"))
+```
+
+# Introduction
+
+The decomposition of time series is an important element in the analysis of time series, as it allows a series to be split into various components. Such a distinction between different components is also often desired, for example in economics, because it permits trend-obscuring seasonal effects to be identified and removed to generate a seasonally adjusted series, which achieves a simplified interpretability of observed time series "without a significant loss of information" [@bell1984issues]. Commonly, a univariate time series is split into a trend, a seasonal and a remainder term. To achieve a suitable decomposition regarding this basic model, various methods have been established [see also Chapter 1.5 in @brockwell2016time, for an overview of basic approaches] such as moving averages. @hillmer_tiao_1982 introduced a seasonal adjustment approach based on ARIMA models, whereas @pierce_1978 studied models with a mixture of deterministic and stochastic seasonality. Furthermore, the federal statistical offices of many industrial nations have introduced their own procedures for decomposing macroeconomic time series throughout the last decades such as the *Berlin Procedure 4.1* [BV4.1, @cieplik2006bv41;@speth2004komponentenzerlegung] in Germany, for which the foundations were laid out by @heiler1970theoretische, the method *Time Series Regression with ARIMA Noise, Missing Values and Outliers* with *Signal Extraction in ARIMA Time Series* [TRAMO-SEATS, @gomez1996programs] by the bank of Spain, the X12-ARIMA procedure [@david1998x12arima], or lately the extension to X13-ARIMA, included in the X-13ARIMA-SEATS program [@uscensus2017x13], in the USA. Note that the abbreviation X13 will be used throughout to refer to the X13-ARIMA method. Overall guidelines in the European Union to ensure comparability of seasonal adjustments were published by @eurostat2015 and @eurostat2024. A detailed overview of the history of seasonal adjustment and selected methods is provided in @mazzi2018handbook.
+
+In this paper, we introduce an improved version of the algorithm called *DeSeaTS* [deseasonalize time series, @feng2013seasonal], whose original idea was proposed by @feng1999kernel, for decomposing a univariate time series that is, like BV4.1, based on the assumption that the trend can be approximated locally by polynomials and that the seasonal component can be locally approximated by trigonometric polynomials. Nonetheless, instead of using fixed filters regardless of the time series under consideration as in BV4.1, we propose a data-driven iterative plug-in [IPI, @gasser1991ipi] algorithm to estimate a globally optimal bandwidth that is afterwards used in the locally weighted regressions. In comparison to the original version of DeSeaTS by @feng2013seasonal and to its closely related robust alternative by @heiler2004robust, the updated version of the algorithm presented here does not rely on the strong assumption of independent and identically distributed (iid) errors but instead allows for short-memory errors, while it still maintains favorable characteristics of the original algorithm, such as the convergence rate of the bandwidth estimator. Alongside the algorithm, we also introduce a new package for the statistical programming language R [@rcore2022rlang] called \CRANpkg{deseats} [@feng2023deseats, version 1.1.2], which is readily available for download on CRAN (Comprehensive R Archive Network), that allows its users to implement the approaches discussed hereinafter.
+
+Current extensions for R let users implement a wide range of decomposition approaches. The package \CRANpkg{neverhpfilter} [@shea2021hamilton] can be used to obtain stationary residuals from a time series with trend and seasonality following the idea by @hamilton2018you. Its drawback is that the built-in time series filter requires the manual setting of hyperparameters, for which @hamilton2018you proposes default settings for various scenarios. By combining \CRANpkg{x13binary} [@eddelbuettel2022x13], \CRANpkg{seasonal} [@sax2018seasonal] and \CRANpkg{seasonalview} [@sax2017seasonalview], an R interface to the X-13ARIMA-SEATS program by the US Census Bureau is provided. Similar functionality is also given through the packages \CRANpkg{x12} [@kowarik2014x12] and \CRANpkg{RJDemetra} [@quartier2024rjdemetra]. Classical decomposition is achieved with `decompose()` of the package \CRANpkg{stats} [@rcore2022rlang] and regression-based decomposition is implemented in \CRANpkg{stR} [@dokumentov2022stR]. Furthermore, \CRANpkg{stlplus} [@hafen2016stlplus] provides access to enhanced seasonal-trend decomposition using LOESS [STL,@cleveland1990stl] and both TBATS [trigonometric seasonality, Box-Cox transformation, ARMA errors, trend and seasonal components, @de_livera2011forecasting] and an automated STL approach are incorporated in the package \CRANpkg{forecast} [@hyndman2008forecast] via the functions `tbats()` and `mstl()`, respectively.
+
+The paper is structured as follows. In Section 2, theoretical information on the DeSeaTS algorithm, the underlying model and corresponding forecasting techniques is given, whereas an overview of the `deseats` package is provided in Section 3. Applications of the `deseats` package to real-world data are given in Section 4. In the same section, two simulation studies are conducted: one on the DeSeaTS bandwidth selection algorithm and another to compare the seasonal component estimation quality of DeSeaTS and other methods under various settings. Section 5 concludes.
+
+# Theoretical foundations of DeSeaTS {#sec:theory}
+
+In the first subsection, the basic time series model considered in DeSeaTS, the idea of locally weighted regression and the asymptotically optimal bandwidth in this context are presented. The second subsection gives details on how the important variance factor accounting for the short-range dependency structure in the errors is estimated. In the third subsection, the proposed IPI-algorithm is explained. Furthermore, the basic forecasting approach for our seasonal semiparametric model is shown in the fourth subsection.
+
+## Locally weighted regression {#sec:lwr}
+
+Following @feng2013seasonal, denote by $\{Y_t\}$, $t = 1,\dots,n$, a time series with discrete and equidistant time index, whose realization is $\{y_t\}, t=1,\dots,n$. Consider an additive component model for time series with a nonparametric trend and seasonality
+\begin{equation}
+Y_t = g(x_t) + s(x_t) + \xi_t,
+(\#eq:addModel)
+\end{equation}
+where $g$ is a smooth and slowly changing nonparametric trend function and where $s$ is a slowly changing seasonal component with seasonal period $p_s$. $x_t = t/n$ is the time rescaled to the interval $[0,1]$ and $\xi_t$ is a stationary rest with $E(\xi_t)=0$, short-range dependence and spectral density at frequency zero $c_f=f(0)=(2\pi)^{-1}\sum_{\tau=-\infty}^{\infty}\gamma(\tau)<\infty$, where $\gamma(\tau)$ are the autocovariances in $\xi_t$ at lag $\tau\in\mathbb{Z}$. For the purpose of estimating $c_f$ using the methodology described in the next subsection, the summability of cumulants of $\xi_t$ up to order 8, among other assumptions, is required [@buhlmann1996locally], which is fulfilled if $\xi_t$ are governed by a stationary autoregressive moving-average (ARMA) process with $E\left(\xi_t^{8+\delta}\right)<\infty$ with $\delta>0$ [@feng2020datadriven]. In the context of this model, both $g$ and $s$ are deterministic components that affect the time-mean in ${Y_t}$ so that $E\left( Y_t \right) = m(x_t) = g(x_t)+s(x_t)$ is the deterministic trend-seasonal component, whereas $\xi_t$ is stochastic.
+
+In the literature, other model assumptions on the components are sometimes imposed. For example, a seasonal integrated ARMA (SARIMA) assumes both a stochastic trend and stochastic seasonality, which are hence also the assumptions in the related TRAMO-SEATS program. Different assumptions lead, however, to inherently different implications for contrasting methods and have been discussed for a long period [@pierce_1978;@dejong_et_al_1992]. If an observed time series violates model assumptions clearly, robustness of a method is not always guaranteed, and thus decomposition quality of a particular decomposition method may strongly depend on the observed series at hand.
+
+Model \@ref(eq:addModel) is an extension of the additive component model with a nonparametric trend but without seasonality proposed by @feng2020datadriven and @feng2022smoots. Moreover, it is equivalent to the base model proposed in the procedure BV4.1 formerly used by the German Federal Statistical Office with one major distinction: as described by @speth2004komponentenzerlegung, the variables of the error process $\{\xi_t\}$ in the BV4.1 base model are assumed to be iid.
+
+The basis for the DeSeaTS algorithm is locally weighted regression [@cleveland1979robust]. Local polynomial regression as a special case is discussed in detail by @fan1996local. Following their ideas, the following assumptions in alignment with @feng2013seasonal have to be imposed, where $h$ is the bandwidth and $k=r+1$, $r\in\{1,3,5,\dots\}$:
+
+```{r, eval = knitr::is_latex_output(), echo = FALSE, include = TRUE, purl = FALSE}
+knitr::asis_output(paste0(
+  "\\begin{enumerate}",
+  "  \\item[(A1)] $h\\rightarrow 0$ and $nh\\rightarrow 0$ for $n\\rightarrow \\infty$;\n",
+  "  \\item[(A2)] $g$ is at least $k$-times continuously differentiable;\n",
+  "  \\item[(A3)] $s$ is exactly periodic with period $p_s$.\n",
+  "\\end{enumerate}"
+))
+```
+
+```{r, eval = knitr::is_html_output(), echo = FALSE, include = TRUE, purl = FALSE}
+knitr::asis_output(paste0(
+  '(A1) $h\\rightarrow 0$ and $nh\\rightarrow 0$ for $n\\rightarrow \\infty$;<br>\n',
+  '(A2) $g$ is at least $k$-times continuously differentiable;<br>\n',
+  '(A3) $s$ is exactly periodic with period $p_s$.'
+))
+```
+
+`r noindent_f()`
+The assumption (A3) is relevant theoretically so that the (asymptotic) bias in $\hat s$ as an estimator of $s$ does not need to be considered [@feng2013seasonal]. While (A3) is restrictive and, as will be shown in Section 4, unrealistic, because seasonal patterns usually seem to change over time in observed time series, it is shown by the simulations in Section 4 that the algorithm provides suitable results even in instances where (A3) is being violated. The implications that follow Assumptions (A1) and (A2), on the other hand, are well-known assumptions in nonparametric regression in the context of the estimation of only $g$.
+
+Based on (A1) to (A3), the following locally weighted regression approach can be considered for the trend and the seasonality in time series as for example explained by @heiler2000datadriven. $g$ can be approximated locally in the proximity of a rescaled time point $x_0\in\{x_1,x_2,\dots,x_n\}$ by a polynomial of order $r$:
+\begin{equation}
+g(x_t) \approx \tilde{g}(x_t) = \sum_{j=0}^{r}\beta_j(x_0)(x_t - x_0)^{j},
+(\#eq:trend)
+\end{equation}
+where $\beta_j(x_0)$, $j=0,\dots, r$, are real-valued coefficients in the approximation of $g(x_t)$ in the proximity of $x_0$. Moreover, $s$ can be represented locally by a trigonometric polynomial
+\begin{equation}
+s(x_t) \approx \tilde{s}(x_t) = \sum_{i=1}^{q}\left\{ \alpha_{1,i}(x_0)\cos \left[\lambda_i n(x_t-x_0)\right] + \alpha_{2,i}(x_0)\sin\left[\lambda_i n(x_t-x_0)\right] \right\},
+(\#eq:season)
+\end{equation}
+where $q=[p_s/2]$ with $[\cdot]$ denoting the integer part and where $\lambda_1=2\pi/p_s$ is the seasonal frequency and $\lambda_i=i\lambda_1$ for $i=2,\dots,q$. Note that for even $p_s$, $\alpha_{2,q}(x_0)\sin\left[\lambda_q n(x_t-x_0)\right]$ has to be omitted throughout [@feng2013seasonal]. Furthermore, $\alpha_{1,i}(x_0)$ and $\alpha_{2,i}(x_0)$, $i=1,\dots, q$, are real-valued coefficients when approximating $s(x_t)$ around $x_0$.  
+
+Consequently, this leads to
+\begin{equation}
+Q(x_0) = \sum_{t=1}^{n}\left\{Y_t - \tilde{g}(x_t) - \tilde{s}(x_t) \right\}^2 W\left(\frac{x_t-x_0}{h}\right)
+(\#eq:SumSq)
+\end{equation}
+as the locally weighted sum of squares that should be minimized, where $W$ is a weighting function, in more detail a density, with compact support $[-1,1]$ and where $h$ is the bandwidth. For the purpose of this paper, we only consider weighting functions of the type
+\begin{equation}
+W_{\mu}(u) = C_\mu \left( 1 - u^2 \right)^\mu \mathbb{I}_{[-1,1]}(u)
+(\#eq:secondKernel)
+\end{equation}
+with $C_\mu$ being a constant that can be omitted, as it cancels out when solving \@ref(eq:SumSq), and with $\mathbb{I}_{[-1,1]}(u)$ being equal to one for $u \in [-1,1]$ and zero otherwise. Furthermore, $\mu=0,1,\dots$ is a constant that affects the smoothness of $W_\mu$. Nonetheless, for simplicity, in the proposed algorithm only $\mu=0,1,2,3$ will be considered.
+
+Following @feng2013seasonal, define
+\begin{equation}
+\mathbf{X}_1 = 
+\begin{pmatrix}
+1 & x_1 - x_0 & \dots & (x_1-x_0)^r\\
+\vdots & \vdots & \ddots & \vdots\\
+1 & x_n - x_0 & \dots & (x_n-x_0)^r
+\end{pmatrix}
+(\#eq:xmat1)
+\end{equation}
+and
+\begin{equation}
+\mathbf{X}_2 = 
+\begin{pmatrix}
+\cos[\lambda_1(1-t_0)] & \sin[\lambda_1(1-t_0)] & \dots & \cos[\lambda_q(1-t_0)] & \left\{\sin[\lambda_q(1-t_0)]\right\} \\
+\vdots & \vdots & \ddots & \vdots & \left\{\vdots\right\}\\
+\cos[\lambda_1(n-t_0)] & \sin[\lambda_1(n-t_0)] & \dots & \cos[\lambda_q(n-t_0)] & \left\{\sin[\lambda_q(n-t_0)]\right\}
+\end{pmatrix},
+(\#eq:xmat2)
+\end{equation}
+where entries marked by $\{\cdot\}$ are omitted for even $p_s$. Then $\mathbf{X}=\big(\mathbf{X}_1 \ \vdots \ \mathbf{X}_2\big)$. Furthermore, let $\mathbf{y}=\left(y_1,y_2,\dots,y_n\right)^{'}$ be a vector containing the observations of $\{Y_t\}$ and define $w_{t}(x_0)=W\left((x_t - x_0)/h\right)$ and then $\mathbf{w}=(w_1(x_0),w_2(x_0),\dots,w_n(x_0))^{'}$, so that $\mathbf{W}=\text{diag}(\mathbf{w})$ [@feng2013seasonal]. Moreover, let $\mathbf{i}_{g,j}$ be a $(r+1)\times 1$ vector with zeros everywhere except for the $j$-th entry, which equals one, and define $\mathbf{i}_s$ to be an $(p_s - 1)\times 1$ vector with zeros in the even entries and ones in the odd entries. The solution to \@ref(eq:SumSq) can now be expressed as
+\begin{align}
+\hat g(x_0) &= \left(\mathbf{i}_{g,1}^{'},\mathbf{0}^{'}\right)\left(\mathbf{X}^{'}\mathbf{W}\mathbf{X}\right)^{-1}\mathbf{X}^{'}\mathbf{W}\mathbf{y}(\#eq:sol1)\\
+\hat s(x_0) &= \left(\mathbf{0}^{'},\mathbf{i}_{s}^{'}\right)\left(\mathbf{X}^{'}\mathbf{W}\mathbf{X}\right)^{-1}\mathbf{X}^{'}\mathbf{W}\mathbf{y} \hspace{4mm}\text{and}(\#eq:sol2)\\
+\hat m(x_0) &= \left(\mathbf{i}_{g,1}^{'},\mathbf{i}_{s}^{'}\right)\left(\mathbf{X}^{'}\mathbf{W}\mathbf{X}\right)^{-1}\mathbf{X}^{'}\mathbf{W}\mathbf{y},(\#eq:sol3)
+\end{align}
+where $\mathbf{0}$ is a column vector with only zeros of adequate size. The solutions following \@ref(eq:sol1), \@ref(eq:sol2) and \@ref(eq:sol3) are consequently $\hat g(x_0) = \hat\beta_0(x_0)$, $\hat s(x_0)=\sum_{i=1}^{q}\hat \alpha_{1,i}(x_0)$ and $\hat m(x_0)=\hat\beta_0(x_0) + \sum_{i=1}^{q}\hat \alpha_{1,i}(x_0)$, where $\hat\beta_0(x_0),\hat \alpha_{1,1}(x_0),\dots,\hat \alpha_{1,q}(x_0)$ are the estimates of the corresponding coefficients in \@ref(eq:SumSq). In order to estimate $g^{(k)}(x_0)$, the $k$-th derivative of $g$ at the rescaled time point $x_0$,
+$\mathbf{i}_{g,1}$ has to be replaced by $\mathbf{i}_{g,k+1}$ in \@ref(eq:sol1), leading to $\hat g^{(k)}(x_0)=k!\hat \beta_{k}(x_0)$. Note that the estimation of $\hat g^{(k)}(x_0)$ requires further assumptions similar to (A1) and (A2) [see ($\text{A1}^{'}$) and ($\text{A2}^{'}$) in @feng2013seasonal].
+
+$k$, as defined previously, is the order of the asymptotically equivalent kernel $K_{r,\mu}$ for estimating $g$. As shown by @feng2013seasonal, the asymptotic mean integrated squared error (AMISE) under iid errors $\xi_t$ can be expressed as a sum of two fractions, i.e. of a (squared) bias and a variance component. It is assumed, in analogy to the bandwidth selection for local polynomial regression [@BeranFeng2002], that the AMISE under autocorrelated errors is the same as that in @feng2013seasonal with the adjustment that $\sigma^2$ therein in the variance part needs to be replaced by $2\pi c_f$, so that the AMISE under short-memory errors is then given by
+\begin{equation}
+\text{AMISE}(h) =  h^{2k}\frac{ I\left[ g^{(k)}  \right] b^2_{(k)}}{(k!)^2} + \frac{2\pi c_f \left(d_b - c_b \right) \left\{ R(K_{r,\mu}) + (p_s - 1)R(W_{\mu}) \right\}}{nh}
+(\#eq:AMISE)
+\end{equation}
+with $I\left[ g^{(k)} \right]=\int_{c_b}^{d_b} \left[ g^{(k)}(x) \right]^2\text{d}x$, $b_{(k)} = \int_{-1}^{1} u^k K_{r,\mu}(u) \text{d}u$ and $R(K) = \int_{-1}^{1} K^2 (u)\text{d}u$. $0 \leq c_b < d_b \leq 1$ are two constants introduced to reduce the effect of boundary points on the bandwidth. Proof of formula \@ref(eq:AMISE) is not given here in detail; however, a rough sketch of the proof can be stated as follows: the (squared) asymptotic bias (at an interior point) of $\hat m(x_0)$ and the asymptotic variance of $\hat g(x_0)$ (at an interior point) are unaffected by the autocorrelation and are hence the same as for iid data as in @feng2013seasonal. On the other hand, the asymptotic variance of $\hat g(x_0)$ (at an interior point) is that as shown in the proof of Theorem 1 in @BeranFeng2002 under $\delta = 0$, whereas the asymptotic variance of $\hat s (x_t)$ (at an interior point) can be obtained following the same proof under consideration of the asymptotically equivalent kernel $K_s(u) = Q_s(t)W_\mu(u)$ instead for estimating $\hat s(x_0)$ [see Equation (4.21) in @feng1999kernel], with $Q_s(t)=s-1$ for $(t \text{ mod } p_s) = 0$ and $Q_s(t) = -1$ for $(t \text{ mod } p_s) \neq 0$ (both for $t\in T_0:=\{t_0-b, t_0-b+1,\dots,t_0+b-1,t_0+b\}$ with $b$ being the equivalent positive integer-valued bandwidth for the relative bandwidth $h$ and $t_0=nx_0$). Thus, $(nh)\text{var}[\hat s (x_0)]=V_n(h)[1+o(1)]$ with $V_n(h) = (nh)2\pi c_f \sum_{i=t_0-b}^{t_0+b}w_{s,i}^2 + o(1)$, where $w_{s,i}$ are the weights defined through $\left(\mathbf{0}^{'},\mathbf{i}_{s}^{'}\right)\left(\mathbf{X}^{'}\mathbf{W}\mathbf{X}\right)^{-1}\mathbf{X}^{'}\mathbf{W}$ in \@ref(eq:sol2). Following the proof of Corollary 4.6 in @feng1999kernel adjusted for our setting with autocorrelated data, so that the constant that is multiplied with the sum of the squared weights is no longer only $\sigma^2$ but $2\pi c_f$ as shown for $V_n(h)$ here, we conclude $\text{var}[\hat s(x_0)]=(nh)^{-1}2\pi c_f (p_s-1)R(W_\mu)\{1+O[(nh)^{-1}]\}$. Since also the third result of Corollary 4.6 in @feng1999kernel holds, i.e. that $\hat g(x_0)$ and $\hat s (x_0)$ are asymptotically uncorrelated, as that part of the proof does not change under short-memory errors, we thus have
+\begin{equation}
+\text{var}[\hat m (x_0)]=(nh)^{-1}2\pi c_f \left\{R(K_{r,\mu})+(p_s - 1)R(W_\mu)\right\}\{1+O[(nh)^{-1}]\}
+\end{equation}
+and formula \@ref(eq:AMISE) follows. Calculating the first derivative of the AMISE \@ref(eq:AMISE) with respect to $h$ and then solving for $h$ yields the asymptotically optimal bandwidth
+\begin{equation}
+h_A = n^{-\frac{1}{2k+1}} \cdot \left( \frac{(k!)^2}{2k} \frac{2\pi c_f (d_b - c_b) \left\{ R\left(K_{r,\mu}\right) + (p_s - 1)R(W_{\mu}) \right\}}{I\left[ g^{(k)} \right] b_{(k)}^2} \right)^{\frac{1}{2k+1}}.
+(\#eq:hA)
+\end{equation}
+This result still holds (for interior points), if assumption (A3) is relaxed in such a way that the changes in the seasonal component follow exactly a simple linear function, because then the local constant seasonality estimator implied by our approach would still be unbiased, as changes in the seasonal component to the left and to the right of the estimation time point $x_0$ would cancel each other out exactly. However, we presume that $h_A$ is at least a rough approximation to the true asymptotically optimal bandwidth under even stronger violations of (A3), since we assume that deviations in $s$ from $\tilde s$ may approximately cancel each other out locally.
+
+Ultimately, since no model assumptions are imposed on $\xi_t$ in the bandwidth selection algorithm proposed within this paper, our overall model is completed by assuming a simple ARMA model
+\begin{equation}
+\phi(B)\xi_t = \theta(B)\varepsilon_t,
+(\#eq:ARMA)
+\end{equation}
+where $\phi(B) = 1-\sum_{i=1}^{\iota}\phi_iB^i$ and $\theta(B) = 1+\sum_{j=1}^{v}\theta_jB^j$, with $B$ as the backshift operator, are the characteristic AR and MA polynomials without common roots, for the errors after the trend and seasonality adjustment. $\phi_i$, $i=1,\dots,\iota$, and $\theta_j$, $j=1,\dots,v$, are real-valued coefficients and $\varepsilon_t$ are iid random variables with $E(\varepsilon_t)=0$ and $\text{var}(\varepsilon_t)=\sigma^2_\varepsilon < \infty$. \@ref(eq:addModel) together with \@ref(eq:ARMA) will be called an S-Semi-ARMA (seasonal semiparametric ARMA) model.
+
+## The methodology for estimating $c_f$ {#sec:cf}
+
+$c_f$ is the spectral density at frequency zero of the process governing the short-memory errors $\xi_t$ in \@ref(eq:addModel). This implies that $2\pi c_f$ in the asymptotically optimal bandwidth \@ref(eq:hA) is the sum of autocovariances of the process driving $\xi_t$, which is the main improvement over the asymptotically optimal bandwidth in @feng2013seasonal. Therein, the factor $\sigma_{\xi}^2=\text{var}(\xi_t)$ is considered instead of $2\pi c_f$ due to iid $\xi_t$. Note that for iid $\xi_t$, our suggestion reduces correctly to the special case with $2\pi c_f = \sigma_\xi^2$. Analogously to @feng2020datadriven, an estimate of $c_f$ can be obtained in a nonparametric way from trend- and seasonality-adjusted observations $\tilde{\xi}_t$. Therefore, we copy the adjusted Bühlmann algorithm [@buhlmann1996locally] proposed by @feng2020datadriven. In contrast to @feng2020datadriven, we do not consider a bandwidth correction factor, because we find that such a correction factor, adjusted for the scenario with trend and seasonality, sometimes leads to overestimation of the bandwidth in the bandwidth selection algorithm proposed here.
+
+The algorithm can be summarized briefly as follows, given an initial window width $L_0=[n/2]$ with $[\cdot]$ denoting the integer part. We begin with the global step of the procedure at $j=0$. 
+
+i) Increase $j$ by one. Follow @buhlmann1996locally to obtain estimates of $\int \left( f^2(\lambda)\right)\text{d}\lambda$ and $\int f^{(1)}(\lambda)\text{d}\lambda$, which is the first generalized derivative of $f(\lambda)$, using an adjusted window width $L^{*}_j=[L_{j-1}/n^{2/21}]$.
+
+i) $L_j$ is then obtained from Equation (5) in @buhlmann1996locally.
+
+i) Repeat i) and ii) until either convergence or a maximum number of iterations is reached. The final $L_j$ is denoted by $L_G$ as the selected global window width.
+
+`r noindent_f()`
+Afterwards, a local window width is obtained for the frequency of interest $\lambda=0$.
+
+iv) The local formula in Equation (5) in @buhlmann1996locally is considered for $\lambda=0$, where $\int f^{(1)}(\lambda)\text{d}\lambda$ is estimated beforehand using $L^{*}=[L_G / n^{2/21}]$. The result of this local step is the final estimated window width $L$.
+
+`r noindent_f()`
+Ultimately, as illustrated by @feng2020datadriven, we consider the lag-window estimator
+\begin{equation}
+\hat c_{f,L}=(2\pi)^{-1}\sum_{l=-L}^{L} w_l \hat\gamma(l),
+(\#eq:lagwindow)
+\end{equation}
+where $L$ is exactly the window width selected through the described algorithm. Furthermore, $\hat\gamma(l)$ are the sample autocovariances of $\tilde{\xi}_t$ and $w_l$ are Bartlett-window weights following the window width $L$ with the lag $l=0$ at the center.
+
+For further, more detailed information on this particular part of the algorithm, we refer the reader to @buhlmann1996locally, @feng2020datadriven and @feng2022smoots.
+
+## The proposed IPI-algorithm {#sec:IPI}
+
+In \@ref(eq:hA), fixed estimates for all iterations of the IPI-algorithm can be obtained for all quantities with the exception of $c_f$ and $I\left[m^{(k)} \right]$. Therefore, the proposed algorithm reads almost identically as proposed by @feng2020datadriven. Consider a variable $j=0,1, \dots,J$ that indicates the current iteration of the algorithm, where $J$ is an arbitrary maximum number of iterations, for example $J = 20$. Moreover, denote by $\hat c_f$ and $I\left[\hat g^{(k)} \right]$ estimates of $c_f$ and $I\left[g^{(k)} \right]$, respectively.
+
+i) For iteration $j=0$, set an arbitrary starting bandwidth $h_0$, for example $h_0 = 0.1$.
+
+i) Increase $j$ by one. Obtain $\hat c_f$ and $I\left[ \hat g^{(k)} \right]$ and compute\begin{equation*}\hat h_j = n^{-\frac{1}{2k+1}} \cdot \left( \frac{(k!)^2}{2k} \frac{2\pi \hat c_f (d_b - c_b) \left\{ R\left(K_{r,\mu}\right) + (p_s - 1)R(W_{\mu}) \right\}}{I\left[\hat g^{(k)} \right] b_{(k)}^2} \right)^{\frac{1}{2k+1}}.\end{equation*}
+
+i) Conduct ii) either until convergence or until a total of $J$ iterations is reached. The estimated optimal bandwidth is then the bandwidth reached through convergence or $\hat h_{J}$.
+
+`r noindent_f()`
+In analogy to @feng2020datadriven and their IPI-algorithm for identifying nonparametric trends, we also propose to estimate $c_f$ from residuals $\tilde{\xi}_{j,t}=y_t-\tilde{m}_j(x_t)$ in each iteration as described in the previous subsection, where $\tilde{m}_j(x_t)$ is the mean function estimated via locally weighted regression in iteration $j$ of the algorithm. Moreover, analogously to @feng2020datadriven, we propose to estimate $g^{(k)}$ needed for $I\left[\hat g^{(k)} \right]$ in each iteration by means of locally weighted regression using a bandwidth $\hat h_{j-1}^{\nu}$, where $\nu$ is a suitable constant to inflate the bandwidth, for example $\nu = 5/7$ (optimal factor) or $\nu = 5 / 9$ (naive factor) for $r = 1$ and $\nu = 9/11$ (optimal factor) or $\nu = 9/13$ (naive factor) for $r = 3$, so that either $I\left[\hat g^{(k)} \right]$ or $\hat g^{(k)}$ reach their optimal rates of convergence, because under regularity conditions an asymptotically MSE-optimal bandwidth for estimating $I\left[\hat g^{(k)} \right]$ should be $h_{d,A}=O(n^{-1/(2k+3)})$, whereas the optimal bandwidth for estimating $\hat g^{(k)}$ directly should be $h_{d,A}=O(n^{-1/(2k+5)})$, if for simplicity $\hat g^{(k)}$ is obtained using a polynomial order $r_d = k+1$ together with kernel-order $k_d=k+2$. This result is the same as in @feng2013seasonal, because the optimal order of $h_{d,A}$, which is dominated by the squared bias, is unaffected by the presence of autocorrelated short-memory errors.
+
+In addition, the estimator $\hat c_f$ as considered here has rate of convergence $O_p(n^{-1/3})$ [@buhlmann1996locally;@feng2020datadriven]. Since $I\left[\hat g^{(k)}\right]$ has the same asymptotic bias and variance as for independent errors [see Equations (18) and (19) in @feng2013seasonal], we conclude that the error in $\hat c_f$ is asymptotically negligible compared to that of $\hat I$, so that the bandwidth estimator $\hat h$ following the proposed IPI-algorithm has the convergence rate
+\begin{equation}
+\frac{\hat h - h_A}{h_A}=\begin{cases}
+O_p(n^{-2/(2k+3)}),& \hspace{4mm} \text{ for optimal inflation factors,}\\
+O_p(n^{-2/(2k+5)}),& \hspace{4mm} \text{ for naive inflation factors.}
+\end{cases}
+(\#eq:hconvergence)
+\end{equation}
+These are the same common rates as those under iid errors [@feng2013seasonal] and in the context of automated local polynomial regression [@franciscofernandez2004plugin;@feng2020datadriven].
+
+## Forecasting technique for S-Semi-ARMA models {#sec:forecasting}
+
+Consider an S-Semi-ARMA model \@ref(eq:addModel) with \@ref(eq:ARMA). After the decomposition using locally weighted regression with a bandwidth selected by the bandwidth selection algorithm described in the previous subsection, we have trend estimates $\hat g(x_t)$, seasonality estimates $\hat s(x_t)$ and trend- as well as seasonally-adjusted values $\tilde \xi_t = y_t - \hat g(x_t) - \hat s(x_t)=y_t-\hat m(x_t)$, $t=1,\dots, n$. Following the post-decomposition assumption \@ref(eq:ARMA), an ARMA model can be fitted to the series $\{\tilde \xi_t\}$ in a separate step using quasi-maximum-likelihood estimation (QMLE), for example using the function `arima()` of the `stats` package, where the optimal orders could be identified through common criteria like the Bayesian information criterion [BIC,@schwarz1978bic] or the Akaike information criterion [AIC, @Akaike1974]. As the first simulation study in Section 4 will show, $\hat m(x_t)$ as an estimator of $m(x_t)$ can usually be considered to be consistent, thus implying $\tilde \xi_t \overset{p}{\rightarrow}\xi_t$ and consequently leading to the QMLE based on $\{\tilde\xi_t\}$ being consistent with respect to the true set of ARMA parameters $(\phi_1,\dots,\phi_{\iota},\theta_1,\dots,\theta_{v})^{'}$ of $\{\xi_t\}$. The result of the automated decomposition in the first step together with the ARMA fitting in the second step is a fitted S-Semi-ARMA model that can be used for forecasting. Denote by $\kappa \in \mathbb{N}$ the forecasting horizon. As for example illustrated by @beran1999semifar, forecasts based on $\hat g$ received via locally weighted regression are often obtained by extrapolating $\hat g$ linearly. In context of a fitted trend, whose values $\hat g(x_{n-1})$ and $\hat g(x_{n})$ are known, a simple sample-based linear extrapolation would be:
+\begin{equation}
+\hat g(x_{n+\kappa}) = \hat g(x_{n}) + \kappa \cdot \left[ \hat g(x_{n}) - \hat g(x_{n - 1}) \right].
+(\#eq:mfc)
+\end{equation}
+For $r=1$ and given that $\hat g$ behaves locally approximately like a linear function in the proximity of $x_n$, $\hat g(x_{n+\kappa})$ as presented in \@ref(eq:mfc) provides a reasonable forecast, as the point $\hat g(x_n)$ together with the increment $\hat g(x_{n}) - \hat g(x_{n - 1})$ define fully how the locally linear $\hat g$ will evolve in the future for small $\kappa$. For $r=3$, however, the increment in \@ref(eq:mfc) may provide a too simplistic forecast in some cases, if $\hat g$ possesses too much curvature at the right boundary. Further study on this is left for elsewhere. Analogously to the extrapolation of $\hat g$, given the assumption (A3), we extrapolate $\hat s$ constantly under consideration of $\delta = [\kappa / p_s]$, where $[\cdot]$ denotes once again the integer part:
+\begin{equation}
+\hat s(x_{n+\kappa}) = \hat s(x_{n + \kappa - p_s(\delta + 1)}).
+(\#eq:sfc)
+\end{equation}
+The effect of $\hat g$ and $\hat s$ is assumed to be negligible on the forecasts for $\{\xi_t\}$ based on $\{\tilde \xi_t\}$. Thus, common approaches, for example the method by @boxjen2008, can be used to obtain forecasts for $\{\xi_t\}$ using the ARMA model fitted to $\{\tilde \xi_t\}$. After all forecasts have been obtained, the total point forecast is
+\begin{equation}
+\hat y_{n+\kappa} = \hat g(x_{n+\kappa}) + \hat s(x_{n+\kappa}) + \hat \xi_{n+\kappa}.
+(\#eq:yfc)
+\end{equation}
+Furthermore, in analogy to @schulz2023smoots2, the effect of the uncertainty in $\hat g_{n+\kappa} + \hat s_{n+\kappa}$ is omitted, which allows the forecasting intervals to be derived solely from the ARMA part of the S-Semi-ARMA model. Similar assumptions are made for example in Chapter 10.3 in @hyndman2021forecasting in the context of regression models with ARMA errors. Let $\hat a_j$, $j=0,1,2,\dots$, be the coefficients of the MA($\infty$) representation of the ARMA part of a fitted S-Semi-ARMA model and denote the estimated innovation variance by $\hat \sigma^2_{\varepsilon}$. The variance of the prediction error at time point $n+\kappa$ is then estimated approximately through $\widehat{\text{var}}\left(Y_{n+\kappa}\right)\equiv\widehat{\text{var}}\left(Y_{n+\kappa}|Y_n,\dots, Y_1\right)=\hat \sigma_\varepsilon^2\sum_{j=0}^{\kappa-1}\hat a_j^2$, which can be considered to construct suitable forecasting intervals under normality of the innovation process $\{\varepsilon_t\}$. For easier notation, denote $\hat m (x_{n+\kappa})=\hat g(x_{n+\kappa})+\hat s(x_{n+\kappa})$. At confidence level $\alpha$, commonly $\alpha=0.95,0.99$, define $\alpha^{*}=(1-\alpha)/2$ and let $\Phi_x$ be the $x$-quantile of a standard normal distribution. Then under normality of $\{\varepsilon_t\}$ and by ignoring the uncertainty stemming from $\hat m(x_{n+\kappa})$, the forecasting interval for $Y_{n+\kappa}$ at level $100\alpha\%$ is
+\begin{equation}
+\left[\hat m(x_{n+\kappa})-\Phi_{1-\alpha^{*}}\sqrt{\widehat{\text{var}}\left(Y_{n+\kappa}\right)}, \hspace{2mm} \hat m(x_{n+\kappa})+\Phi_{1-\alpha^{*}}\sqrt{\widehat{\text{var}}\left(Y_{n+\kappa}\right)} \right].
+(\#eq:fcintnorm)
+\end{equation}
+
+Alternatively, for independent innovations, a simple bootstrap can be employed for a large enough number of observations, where $\hat m_{n+\kappa}$ is kept throughout and is added to bootstrapped future paths according to the fitted ARMA part. Assume that $\{\hat \varepsilon_t\}$, $t=1,\dots,n$, are the ARMA residuals from the QMLE applied to $\{\tilde\xi_t\}$. For each $j\in\{1,\dots,J^{*}\}$ with large enough $J^{*}$, for example $J^{*}=1000$, and given a forecasting horizon $\kappa$, draw a random sample $\{\tilde \varepsilon_{j,t}\}$, $t=n+1,\dots,n+\kappa$, (with replacement) from $\{\hat \varepsilon_t\}$, $t=1,\dots,n$. Let $\tilde\xi_{j,t}=\tilde\xi_t$ and $\hat\varepsilon_{j,t}=\hat\varepsilon_t$ for $t=1,\dots,n$. Then, for each $j\in\{1,\dots,J^{*}\}$, compute
+\begin{equation}
+\tilde\xi_{j,n+c}=\sum_{i=1}^{\iota}\hat\phi_i \tilde\xi_{j,n+c-i} + \sum_{l=1}^{v}\hat\theta_{l}\hat\varepsilon_{j,n+c-l}+\hat\varepsilon_{j,n+c}
+(\#eq:fcintbootalgo)
+\end{equation}
+recursively starting at $c=1$ and ending at $c=\kappa$, where $\hat\phi_1,\dots,\hat\phi_\iota$ and $\hat\theta_1,\dots,\hat\theta_v$ are the estimates of $\phi_1,\dots,\phi_\iota$ and $\theta_1,\dots,\theta_v$, respectively, and where unavailable future $\hat\varepsilon_{j,t}$ for $t=n+1,\dots,n+\kappa$ are replaced by the drawn $\tilde\varepsilon_{j,t}$ for the corresponding $j$. Considering for each $j$ only $\tilde\xi_{j,n+\kappa}$, this results in the collection of values $\{\tilde\xi_{j,n+\kappa}\}$, $j=1,\dots,J^{*}$. Define $Q_{x,n+\kappa}$ to be the sample $x$-quantile of the collection $\{\tilde\xi_{j,n+\kappa}\}$. Then the bootstrapped forecasting interval for $Y_{n+\kappa}$, ignoring uncertainty from $\hat m(x_{n+\kappa})$, at level $100\alpha\%$ are given through
+\begin{equation}
+\left[\hat m(x_{n+\kappa})+Q_{\alpha^{*},n+\kappa},\hspace{2mm}\hat m(x_{n+\kappa})+Q_{1-\alpha^{*},n+\kappa}\right].
+(\#eq:fcintboot)
+\end{equation}
+Note that these bootstrapped forecasting intervals additionally also omit uncertainty in the estimated ARMA coefficients. To increase the computation speed, the collections of future bootstrap ARMA observations $\{\tilde\xi_{j,n+\kappa}\}$ are obtained in parallel in `deseats` using the \CRANpkg{future} package [@bengtson2021future] to ensure the same results under the same initial seed regardless of the number of cores being used in the parallel computation.
+
+Note that both approaches for constructing forecasting intervals following an S-Semi-ARMA are implemented in the `predict` method of the `deseats` package. If instead an S-Semi-ARMA is fitted to log-data and suitable mean point forecasts on the retransformed scale are needed, the option `expo = TRUE` in the `predict` method can be employed. Bounds of forecasting intervals are then simply exponentiated. By default, the option `adjust.bias = TRUE` is implemented to adjust for biases in the retransformed point forecasts. For `method = "norm"`, the original-scale point forecasts are then computed as $\exp\left(\hat y_{n+\kappa}\right)\exp\left[\widehat{\text{var}}\left(Y_{n+\kappa}\right) / 2\right]$ following the relationship between a normal distribution (for the log-data forecasts) and a log-normal distribution (for the original-scale forecasts). For `method = "boot"`, we obtain $\left(J^{*}\right)^{-1}\sum_{j=1}^{J^{*}}\exp\left[\hat m_{n+\kappa}+\tilde{\xi}_{j,n+\kappa}\right]$ for a given $\kappa$ as the bootstrapped original-scale point forecast. For `adjust.bias = FALSE`, the log-data point forecasts are simply exponentiated.
+
+# Implementation in the `deseats` package {#sec:deseatspkg}
+
+The `deseats` package in R comes with various functions for decomposing time series and various methods for plotting and forecasting. In particular, the package is designed to make the previously described automated semiparametric estimation and forecasting approaches available to a wide audience without presuming a deep understanding of the theory behind the methods. A common workflow using the package is planned to make use of a few select functions in a particular order and, due to the automated nature of the underlying DeSeaTS algorithm, without the need for numerous and complex adjustments in the function calls for most observed time series. Therefore here, the main functions relevant for a decomposition according to the DeSeaTS algorithm are briefly discussed. For information on the functions for decomposing time series using ordinary least squares, moving averages or even the BV4.1 base model, among other approaches, we refer the reader to the official documentation of the `deseats` package. To decompose a time series using automated locally weighted regression, the function `set_options` has to be called in order to define the general settings for the data-driven decomposition. It contains the following arguments.
+
+* `order_poly` is the order of local polynomials for the trend. The default is a local cubic trend with `order_poly = 3`.
+* `season` is the seasonal period of the observed time series. Using the default `season = NA_real_` leads to the seasonal period being detected automatically from the input time series of class `"ts"`.
+* `kernel_fun` specifies the second-order kernel function to use as the weighting function. Available are the uniform (`"uniform"`), the epanechnikov (`"epanechnikov"`), the bisquare (`"bisquare"`), and the triweight (`"triweight"`) kernel. The default is `epanechnikov`.
+* `bwidth` is the (relative) bandwidth to consider for the locally weighted regression. The default `bwidth = NA_real_` triggers the automatic bandwidth selection when calling `deseats()`.
+* `boundary_method` clarifies which bandwidth method to use at boundary points. When setting `boundary_method` to `"extend"`, the same number of observations will be used for smoothing throughout even at boundary points, where the window of observations with non-zero weight is extended to the interior at boundary points. For `boundary_method = "shorten"`, the default, the number of observations considered stays the same at interior points but steadily decreases at boundary points when approaching the first or last observation time point.
+
+`r noindent_f()` An S4 class object is returned by this function that contains the stated information required for locally weighted regression.
+
+After the general settings have been defined using `set_options`, the main function `deseats` can be called for identifying the trend and the seasonality in a univariate time series via locally weighted regression, which makes use of the following arguments. 
+
+* `y` is a time series object, preferably of class `"ts"`.
+* `smoothing_options` should receive the output of `set_options`.
+* `bwidth_start` controls the starting bandwidth for the algorithm. For local linear trends, the default is `bwidth_start = 0.1`, whereas it is `bwidth_start = 0.2` for local cubic trends.
+* `inflation_rate` controls the inflation rate for the bandwidth selection algorithm. By default, for local linear trends the optimal (`"optimal"`) rate is used, while the naive one (`"naive"`) is considered for local cubic trends, which is fine for most applications (see also Section 4).
+* `correction_factor` defines whether or not to use a bandwidth correction factor similar to the one considered in @feng2020datadriven for estimating $c_f$. The default setting is `FALSE`, because we found a frequent overestimation of the bandwidth in the setting with seasonality in simulations.
+* `autocor` is an argument that can be used to switch between different assumptions for the error process. By default, `autocor = TRUE` assumes autocorrelated errors, whereas setting it to `FALSE` runs the bandwidth selection under consideration of iid errors.
+* `drop` tells the function what part of the observations to omit at each boundary in the bandwidth selection process. The default for local linear trends is `0.05`, while it is `0.1` for local cubic trends.
+* `error_model` can be used to either set no further model assumptions on the errors (`error_model = "free"`), which is the default, or to already assume ARMA errors in the bandwidth selection (`error_model = "ARMA"`). This is only relevant when `autocor = TRUE`.
+* `nar_lim`, `nma_lim` and `arma_mean` are only relevant for `error_model = "ARMA"`, because they allow to set further options on the ARMA selection and specification.
+* `inf_criterion` controls the information criterion for the ARMA model selection for `error_model = "ARMA"`. Available are `"bic"` (the default) and `"aic"`, which correspond to the BIC and the AIC.
+
+To improve the computation speed of the data-driven algorithm, it is fully implemented in the programming language C++ for a speed increase using the packages \CRANpkg{Rcpp} [@eddelbuettel2011rcpp] and \CRANpkg{RcppArmadillo} [@eddelbuettel2014armadillo]. An extension of `deseats()` is provided by `s_semiarma()`, which allows one to apply `deseats()` to a time series object and then immediately afterwards fit an ARMA model \@ref(eq:ARMA) to the residuals. To specify the ARMA orders $\iota$ and $v$, the novel argument `arma_options` can be used. Alternatively, the aforementioned arguments `nar_lim`, `nma_lim`, `inf_criterion` and additionally `arma_mean` can be considered in `s_semiarma()` to adjust the automated ARMA selection process for the residuals. Both `deseats()` and `s_semiarma()` return S4 class objects with predefined `print()` and `plot()` methods that allow users to visualize the results easily from a vast selection of default options. For objects returned by `s_semiarma()`, a `predict()` method is built in to make multi-step point and interval forecasts as explained in the last subsection of Section 2.
+
+The package makes use of an S4-class system throughout to benefit from the stricter and more robust control over objects and method dispatch compared to other object systems. As a consequence, all decomposition functions in the `deseats` package return consistently structured output objects and dispatch methods can be reused easily internally, thus keeping the structure of the package simple to maintain. Furthermore, the S4-object validation in `deseats` helps users to catch errors early in setting up the automated decomposition via `set_options()`. Furthermore, the package's main functions are built to work well with objects of class `"ts"`, so that information such as the seasonal period can be read directly from the input object. In addition, this feature also simplifies the formatting of the x-axis in plots created through the package's plotting methods.
+
+The `deseats` package also provides an animation function based on the \CRANpkg{animation} [@xie2013animation] package that can be applied to objects returned by the function `deseats()` to visualize decomposition results, locally fitted values and the realized weights applied to $\{y_1,\dots,y_n\}$ implied by \@ref(eq:sol3) at each estimation time point. Moreover, the package also provides an interactive \CRANpkg{shiny} [@chang2021shiny] app for manual decomposition of time series that can be called with the function `run_decomposition()`. Therefore, the package can also provide support in the teaching of locally weighted regression for decomposition of seasonal time series.
+
+A disadvantage of the DeSeaTS algorithm and therefore of the `deseats` package is the inherent nature of locally weighted regression: at each observation time point, a separate weighted regression has to be conducted. Given the bandwidth selection algorithm presented in this article, regressions have to be run at each time point multiple times, until the bandwidth is found. Therefore, for common seasonal time series of multiple hundreds of observations, the `deseats()` function finishes within a few seconds. For extremely long time series with ten thousands of observations, the DeSeaTS algorithm may, however, take notably longer, because each single additional observation leads to multiple additional weighted regressions being conducted internally. Moreover, the bandwidth selection algorithm uses the asymptotically optimal bandwidth \@ref(eq:hA); therefore, reliable bandwidth estimates and consequently decomposition results via DeSeaTS cannot be expected for a small number of observations. In particular, for settings with a large number of local regressors, for example for $r=3$ and $p_s=12$, the algorithm can easily run into near-singular regressor matrices, if $n$ is too small. From our experience, users should hence consider the DeSeaTS algorithm for time series with $n\geq 10p_s$ as the bare minimum, preferably with even larger $n$ for the asymptotic approximation to hold.
+
+# Application {#sec:application}
+
+In the following, the DeSeaTS algorithm is at first applied via the `deseats` package to decompose seasonal real-world data, to conduct seasonal adjustments and to produce suitable point and interval forecasts of these series. Since STL [@cleveland1990stl] is a popular alternative for seasonal adjustment that also works for any positive integer-valued seasonal period, we employ `mstl()` of the `forecast` package [@hyndman2008forecast] as a benchmark. Benchmark point forecasts are generated by the corresponding `forecast()` method for the output of `mstl()` with the option `method = "arima"`, so that the total point forecasts are generated as the point forecasts from an automatically selected ARIMA model for the seasonally adjusted series plus the estimated seasonal component by STL from the last year or week, respectively. Possible retransformations are applied afterwards and bias adjustments of retransformed point forecasts are implemented. Thereinafter, two simulation studies follow. The first study is done to show that the DeSeaTS bandwidth selection algorithm works as intended. The second one compares the quality of seasonal component estimation among various popular methods, such as DeSeaTS, STL, X13 and TRAMO-SEATS, under different setups.
+
+## Application to real-world data {#sec:applicationreal}
+
+The `deseats` package is applied to three different observed time series in order to conduct a seasonal adjustment. The series are the quarterly real log-GDP of the US (GDP in billions of USD) from the first quarter of 1947 to the fourth quarter in 2019 (LGDP) with $p_s = 4$, the monthly number of US persons that are not part of the US labor force (in millions of persons) from January 1990 to December 2019 (NLF) with $p_s = 12$, and the daily log-transformed confirmed COVID-19 cases in Germany (in thousands of cases) from Tuesday of calendar week 22 of year 2021 to Tuesday of week 48 of year 2021 (LCO) with $p_s = 7$. The sources are the online databank of the Federal Reserve Bank of St. Louis (FRED) for the series LGDP and NLF, and the COVID-19 Data Hub for LCO. Calendar effects, which are still present in the series, are ignored for simplicity, because the effects are assumed to be negligible for the selected series. The examples are selected from different countries, research areas and are with various seasonal periods. They are displayed via grey solid lines in Figure \@ref(fig:plotdec). The series without log-transformation for LGDP and LCO are shown in Figure \@ref(fig:plotdeseas). All three series are, on their original scale, available in the `deseats` package and already formatted as time series objects of class `"ts"`.
+
+For the purpose of comparison, automated STL via `mstl()` of the `forecast` package is employed in addition to the DeSeaTS algorithm, because STL is applicable also when $p_s$ is different from 4 and 12. For DeSeaTS, the default settings are considered, so that local cubic trends are used throughout, with the exception of the LGDP series, where a local linear trend will be considered, as it leads to a slightly improved seasonal adjustment in this case. We find that a local cubic trend is often favorable due to one particular reason: the algorithm with this setting is found to usually return better decomposition results for combinations of smaller sample sizes with complex trends and is thus often the safer choice. Nonetheless, please note that the DeSeaTS algorithm usually also works well for $r=1$, especially for large $n$, as will be shown in the simulation studies in Section 4. Application code will only be given for DeSeaTS; codes regarding STL as well as the code for the addition of STL's results to the figures below is moved to the accompanying R script, so that the focus within this article stays on the application of the `deseats` package. Requirement for running the codes is a one-time installation of the `deseats` package via `install.packages("deseats")`.
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### DeSeaTS decomposition with deseats
+```
+
+```{r, echo = TRUE, eval = TRUE, include = TRUE, purl = TRUE}
+library(deseats)      # Attach the deseats-package
+LGDP <- log(GDP)      # Get data
+NLF <- NOLABORFORCE
+LCO <- log(COVID)
+sm_options3 <- set_options()                # Local cubic trend
+sm_options1 <- set_options(order_poly = 1)  # Local linear trend
+LGDP_deseats <- deseats(LGDP, sm_options1)  # Run DeSeaTS
+NLF_deseats <- deseats(NLF, sm_options3)
+LCO_deseats <- deseats(LCO, sm_options3)
+```
+
+The previous code shows the individual-level application of `deseats()` to the example data. At first, we obtain the time series objects from the `deseats` package and conduct log-transformations on the objects `GDP` and `COVID`, so that the log-transformed series have a roughly constant variation around their trends (see also Figure \@ref(fig:plotdec)). Now LGDP, NLF and LCO are each assumed to follow (at least approximately) an additive component model as specified in Equation \@ref(eq:addModel). Note that the objects `GDP`, `NOLABORFORCE` and `COVID` in the `deseats` package are already formatted as time series objects of class `"ts"` with correctly specified observation frequency, so that the frequency settings align with the corresponding $p_s$ for each series. This simplifies the application of the `deseats` package notably, as its functions automatically read $p_s$ from the input `"ts"` object. After setting up the input objects, we specify the smoothing options for the bandwidth selection algorithm with `set_options()`. The default uses a local cubic trend, which can be adjusted to a local linear trend with the setting `order_poly = 1`. By default, an epanechnikov kernel ($\mu = 1$ in the weighting function \@ref(eq:secondKernel)) is implemented (`kernel_fun = "epanechnikov"`), but can be set to a few other options as well. Afterwards, we call the function `deseats()` and pass the input time series as well as the objects `sm_options1` and `sm_options3` with the smoothing settings to the function. `deseats()` now automatically estimates the bandwidth for locally weighted regression from the input data and immediately applies the selected bandwidth to decompose the input series. Key features, such as the estimated bandwidth, the estimated trend, the estimated seasonal component, the residuals and the seasonally adjusted series, can be accessed from the output of `deseats()` by applying the methods `bwidth()`, `trend()`, `season()`, `residuals()` and `deseasonalize()`, respectively.
+
+A decomposition plot and other selectable plots of the estimation objects can be created using a designated `plot`-method. In the following, a figure of the estimated trend and seasonal components following DeSeaTS for the three example series is generated. An analogous `autoplot`-method is provided by the `deseats` package for the framework of \CRANpkg{ggplot2} [@wickham2016ggplot2book]. The option `which = 5`, selects a plot that shows the input data together with the estimated trend and the estimated seasonal component. All available plotting options can be seen in the package manual or in the R console by calling the `plot`-method without setting the argument `which`. As a further aspect, note that by default the estimated seasonal component is centered around zero in the plot; however, using the argument `s_around`, the estimated seasonal component can be shifted so that all elements in the plot are clearly visible.
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Plotting of results
+```
+
+```{r plotdec, fig.cap = "The estimated trend and seasonal components for the LGDP, NLF and LCO data following DeSeaTS. The estimated seasonal components are shifted for better visibility.", fig.height = 4.5, fig.width = 5.6, echo = TRUE, fig.pos = 'h'}
+par_old <- par(no.readonly = TRUE)  ##Hide##
+par(fig = c(0, 0.5, 0.5, 1), cex = 0.5)        ##Hide##
+plot(LGDP_deseats, which = 5, s_around = 3.9, main = "(a) LGDP", xlab = "Year")
+par(fig = c(0.5, 1, 0.5, 1), new = TRUE)  ##Hide##
+plot(NLF_deseats, which = 5, s_around = 55, main = "(b) NLF", xlab = "Year")
+par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)  ##Hide##
+plot(LCO_deseats, which = 5, s_around = -2.2, main = "(c) LCO", 
+     xlab = "Calendar week of year 2021")
+par(par_old)  ##Hide##
+```
+
+`r noindent_f()`
+
+The plots containing the observed series, the estimated trends and the estimated seasonal components are displayed in Figure \@ref(fig:plotdec). At least for the given examples, `deseats` seems to provide trend estimates that smoothly follow along the levels of the series, and slowly changing seasonality estimates. For the LGDP series, the trend smooths over the small drop at around year 2008. Note, however, that the three series LGDP, NLF and LCO do not show any extreme jumps or structural breaks, they do not have highly complex trends and the seasonal pattern does not change very quickly over time; those are, nonetheless, characteristics often observed in real data and `deseats` may struggle to provide good decomposition results in such cases. However, robustifying the DeSeaTS procedure for more complex scenarios is left for future research.
+
+The seasonally adjusted series are obtained in the following using the aforementioned method `deseasonalize()`. In case of the LGDP and LCO data, exponentiating leads back to the original scale of the time series objects `GDP` and `COVID` within `deseats`.
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Benchmark method
+```
+
+```{r, echo = FALSE, eval = TRUE, include=TRUE, warning = FALSE, message = FALSE}
+library(forecast)
+stl_GDP <- mstl(log(GDP))
+stl_NLF <- mstl(NLF)
+stl_COVID <- mstl(log(COVID)) 
+adj_stl_GDP <- as.numeric(exp(stl_GDP[, 1] - stl_GDP[, 3]))
+adj_stl_NLF <- as.numeric(stl_NLF[, 1] - stl_NLF[, 3]) 
+adj_stl_COVID <- as.numeric(exp(stl_COVID[, 1] - stl_COVID[, 3]))
+t1 <- as.numeric(time(stl_GDP))
+t2 <- as.numeric(time(stl_NLF))
+t3 <- as.numeric(time(stl_COVID))
+
+fc_GDP_stl <- forecast(stl_GDP, method = "arima", h = 4, lambda = 0, biasadj = TRUE)$mean
+fc_NLF_stl <- forecast(stl_NLF, method = "arima", h = 12, lambda = NULL)$mean
+fc_COVID_stl <- forecast(stl_COVID, method = "arima", h = 7, lambda = 0, biasadj = TRUE)$mean
+t1_fc <- as.numeric(time(fc_GDP_stl))
+t2_fc <- as.numeric(time(fc_NLF_stl))
+t3_fc <- as.numeric(time(fc_COVID_stl))
+fc_GDP_stl <- as.numeric(fc_GDP_stl)
+fc_NLF_stl <- as.numeric(fc_NLF_stl)
+fc_COVID_stl <- as.numeric(fc_COVID_stl)
+```
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Plots of seasonally adjusted series
+```
+
+```{r plotdeseas, fig.cap = "The original example series (grey and solid) together with the seasonally adjusted series following DeSeaTS (blue and solid). The seasonally adjusted series following automated STL decompositions (red and dashed) are displayed as a benchmark.", fig.height = 4.5, fig.width = 5.6, echo = TRUE, fig.pos = "h"}
+GDP_sa <- exp(deseasonalize(LGDP_deseats))
+NLF_sa <- deseasonalize(NLF_deseats)
+COVID_sa <- exp(deseasonalize(LCO_deseats))
+par_old <- par(no.readonly = TRUE) ##Hide##
+par(fig = c(0, 0.5, 0.5, 1), cex = 0.5)       ##Hide##
+ts.plot(GDP, GDP_sa, col = c("grey60", "blue"), main = "(a) Real GDP of the US", 
+     xlab = "Year", ylab = "Billions of USD")
+lines(t1, adj_stl_GDP, col = "red", lty = 2) ##Hide##
+par(fig = c(0.5, 1, 0.5, 1), new = TRUE)  ##Hide##
+ts.plot(NLF, NLF_sa, col = c("grey60", "blue"), ylab = "Millions of persons",
+        main = "(b) US persons not in the labor force", xlab = "Year")
+lines(t2, adj_stl_NLF, col = "red", lty = 2) ##Hide##
+par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)  ##Hide##
+ts.plot(COVID, COVID_sa, col = c("grey60", "blue"), 
+        xlab = "Calendar week of year 2021", ylab = "Thousands of cases",
+        main = "(c) Newly confirmed COVID-19 Cases in Germany")
+lines(t3, adj_stl_COVID, col = "red", lty = 2) ##Hide##
+par(par_old)  ##Hide##
+```
+
+`r noindent_f()`
+The original-scale series (solid and grey) together with the seasonally adjusted series by DeSeaTS (solid and blue) are shown in Figure \@ref(fig:plotdeseas). As a benchmark, the seasonally adjusted series in accordance with an automated application of STL via `mstl()` of the `forecast` package (dashed and red) are displayed as well. As a first impression, the differences between the two seasonally adjusted series seem to be marginal in all three cases. Near the end of the COVID series, however, the series obtained by STL includes a few clear peaks that have been reduced in the adjusted series following DeSeaTS. Interested readers may also want to compare these results to the seasonally adjusted series obtained by X13 and TRAMO-SEATS, which are the international standard procedures for seasonal adjustment in the European Union. The adjusted series are displayed in Figure \@ref(fig:figuresx13) in the appendix and were obtained by applying the functions `x13()` and `tramoseats()` (with default settings) of the `RJDemetra` package to the objects `GDP` and `NOLABORFORCE` directly. An application of those functions to the COVID data is not possible, as they are designed for quarterly and monthly series.
+
+Entire S-Semi-ARMA models are fitted by applying `s_semiarma()` to the series of interest. Therein, `deseats()` is applied initially for decomposing the data; afterwards, an ARMA model is automatically selected for the resulting residual series in accordance with the BIC. Alternatively, implementing `inf_criterion = "aic"` uses the AIC for the ARMA model identification instead. In the following, we furthermore restrict the AR and MA orders to be selected from the values 0 to 2 via `nar_lim <- c(0, 2)` and `nma_lim <- c(0, 2)`, so that the selected ARMA models for the residuals do not become too complex.
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Fit S-Semi-ARMA models
+```
+
+```{r, echo = TRUE, eval = TRUE, include = TRUE}
+nar_lim <- nma_lim <- c(0, 2)
+model_LGDP <- s_semiarma(LGDP, sm_options1, nar_lim = nar_lim, nma_lim = nma_lim) 
+model_NLF <- s_semiarma(NLF, sm_options3, nar_lim = nar_lim, nma_lim = nma_lim)
+model_LCO <- s_semiarma(LCO, sm_options3, nar_lim = nar_lim, nma_lim = nma_lim) 
+```
+
+`r noindent_f()`
+`@par_model` gives access to the fitted ARMA models for the residual series. In Table \@ref(tab:tabtests), the estimation information is summarized for the three series LGDP, NLF and LCO. Therein, the three selected bandwidths by DeSeaTS are stated, which range from 0.0806 for LGDP to 0.2113 for NLF. Furthermore, the estimated ARMA parameters and corresponding standard errors are displayed as selected in the fitted S-Semi-ARMA models. An ARMA($2, 1$) model was fitted to the DeSeaTS residuals for LGDP with a strongly positive lag-1 AR coefficient estimate of 1.5442 and negative lag-2 AR and lag-1 MA coefficient estimates -0.6545 and -0.4083. An AR(1) model was picked by BIC for the DeSeaTS residuals of NLF with a strongly positive coefficient estimate 0.6885. Conversely, an MA(1) model was selected for the LCO residuals with strongly positive MA coefficient estimate 0.5485. All estimated coefficients are statistically significant at least at the 5% level of significance. 
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Run seasonality tests on residuals
+```
+
+```{r tabtests, echo = FALSE, eval = TRUE, include = TRUE}
+library(knitr)
+library(kableExtra)
+
+# For seasonality tests
+source("scripts/seasonality_tests.R") 
+
+sprintf4 <- function(x) {sprintf("%.4f", x)}
+
+# Apply seasonality tests (to residual data of full models)
+res_LGDP <- model_LGDP@par_model$residuals
+res_NLF <- model_NLF@par_model$residuals
+res_LCO <- model_LCO@par_model$residuals
+
+qs_LGDP <- qs_test_internal(res_LGDP, 2) 
+qs_NLF <- qs_test_internal(res_NLF, 2)
+qs_LCO <- qs_test_internal(res_LCO, 2)
+
+qs_p_LGDP <- sprintf4(qs_LGDP$p_val)
+qs_p_NLF <- sprintf4(qs_NLF$p_val)
+qs_p_LCO <- sprintf4(qs_LCO$p_val)
+
+fried_LGDP <- fried_test(res_LGDP)
+fried_NLF <- fried_test(res_NLF)
+fried_LCO <- fried_test(res_LCO)
+
+fried_p_LGDP <- sprintf4(fried_LGDP$p_val)
+fried_p_NLF <- sprintf4(fried_NLF$p_val)
+fried_p_LCO <- sprintf4(fried_LCO$p_val)
+
+bwidth_LGDP <- sprintf4(bwidth(LGDP_deseats))
+bwidth_NLF <- sprintf4(bwidth(NLF_deseats))
+bwidth_LCO <- sprintf4(bwidth(LCO_deseats))
+
+ar1_LGDP <- sprintf4(model_LGDP@par_model$coef[["ar1"]])
+ar2_LGDP <- sprintf4(model_LGDP@par_model$coef[["ar2"]])
+ma1_LGDP <- sprintf4(model_LGDP@par_model$coef[["ma1"]])
+se_ar1_LGDP <- sprintf4(sqrt(model_LGDP@par_model$var.coef[1, 1]))
+se_ar2_LGDP <- sprintf4(sqrt(model_LGDP@par_model$var.coef[2, 2]))
+se_ma1_LGDP <- sprintf4(sqrt(model_LGDP@par_model$var.coef[3, 3]))
+
+ar1_NLF <- sprintf4(model_NLF@par_model$coef[["ar1"]])
+se_ar1_NLF <- sprintf4(sqrt(model_NLF@par_model$var.coef[[1, 1]]))
+
+ma1_LCO <- sprintf4(model_LCO@par_model$coef[["ma1"]])
+se_ma1_LCO <- sprintf4(sqrt(model_LCO@par_model$var.coef[[1, 1]]))
+
+df_tab <- data.frame(
+  Series = c("LGDP", "NLF", "LCO"),
+  Bandwidth = c(bwidth_LGDP, bwidth_NLF, bwidth_LCO),
+  ar1 = c(ar1_LGDP, ar1_NLF, "---"),
+  se_ar1 = c(se_ar1_LGDP, se_ar1_NLF, "---"),
+  ar2 = c(ar2_LGDP, "---", "---"),
+  se_ar2 = c(se_ar2_LGDP, "---", "---"),
+  ma1 = c(ma1_LGDP, "---", ma1_LCO),
+  se_ma1 = c(se_ma1_LGDP, "---", se_ma1_LCO),
+  qs_p = c(qs_p_LGDP, qs_p_NLF, qs_p_LCO),
+  fried_p = c(fried_p_LGDP, fried_p_NLF, fried_p_LCO)
+)
+
+fmt <- if(knitr::is_latex_output()) {
+  "latex"
+} else if (knitr::is_html_output()) {
+  "html"
+}
+
+kable(df_tab, booktabs = TRUE, col.names = c("Series", "Bandwidth", "$\\hat\\phi_1$", "$se\\left(\\hat\\phi_1\\right)$", "$\\hat\\phi_2$", "$se\\left(\\hat\\phi_2\\right)$", "$\\hat\\theta_1$", "$se\\left(\\hat\\theta_1\\right)$", "$p$-value (QS)", "$p$-value (Friedman)"), escape = FALSE, format = fmt, caption = "Selected bandwidths for the three series LGDP, NLF and LCO, estimated ARMA parameters and corresponding standard errors for DeSeaTS residuals and $p$-values for QS tests and Friedman tests applied to S-Semi-ARMA residuals.") %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size
+```
+
+In addition, QS tests, i.e. a special form of the Ljung-Box test at seasonal lags [@ljung1978measure], and Friedman rank tests [@friedman1937ranks;@friedman1939correction] were applied to the S-Semi-ARMA residuals fitted to the three series. For the QS tests, we check for the statistical significance of autocorrelations at the first and second seasonal lags; for the Friedman tests, we do not consider residuals in incomplete years / weeks. The $p$-values obtained are also stated in Table \@ref(tab:tabtests). According to the Friedman tests, we clearly cannot reject the null hypothesis of no stable seasonality in any of the cases. Simultaneously, the null hypothesis of no seasonality cannot be rejected in all three cases following the QS tests either, as the smallest obtained $p$-value is 0.3140 in the context of the LGDP series. Since the test decisions align, we conclude that the removal of the seasonality from the three series was successful.
+
+## Forecasting examples
+
+Following the fitted S-Semi-ARMA models, point and interval forecasts can be created as discussed in the last subsection of Section 2. For simplicity, we use `method = "boot"` in the calls to the `predict()` method to compute the interval forecasts from a bootstrap. For reproducibility, a seed needs to be set via `set.seed()`. Since extrapolating the trend and seasonal component estimates into the future is highly unstable if the forecasting horizon is too large, we produce forecasts for one cycle of the seasonal pattern. To exponentiate the forecasts back to the scale of the original `GDP` and `COVID` objects in `deseats`, we implement `expo = TRUE` in these two cases. By default (`adjust.bias = TRUE`), the point forecasts are adjusted for bias upon retransformation to the original scale.
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Forecasting
+```
+
+```{r, eval = TRUE, echo = TRUE}
+set.seed(1) 
+fc_GDP_DS <- predict(model_LGDP, n.ahead = 4, method = "boot", expo = TRUE)
+fc_NLF_DS <- predict(model_NLF, n.ahead = 12, method = "boot")
+fc_COVID_DS <- predict(model_LCO, n.ahead = 7, method = "boot", expo = TRUE)
+```
+
+A designated `plot()` method allows one to produce quick figures of the forecasts. The corresponding forecasting plots for the three examples are displayed in Figure \@ref(fig:plotfcast).
+
+```{r plotfcast, fig.cap = "S-Semi-ARMA point and 95% / 99% interval forecasts (blue) together with automated ARIMA-based STL point forecasts (red) as a benchmark.", fig.height = 4.5, fig.width = 5.6, eval = TRUE, fig.pos = 't', echo = TRUE}
+par_old <- par(no.readonly = TRUE)  ##Hide##
+par(fig = c(0, 0.5, 0.5, 1), cex = 0.5) ##Hide##
+plot(fc_GDP_DS, main = "(a) Real GDP of the US", xlab = "Year", 
+     ylab = "Billions of USD", xlim = c(2010, 2020.75), ylim = c(3500, 6000))
+lines(t1_fc, fc_GDP_stl, col = "red", lty = 2) ##Hide##
+par(fig = c(0.5, 1, 0.5, 1), new = TRUE)  ##Hide##
+plot(fc_NLF_DS, main = "(b) US persons not in the labor force", xlab = "Year", 
+     ylab = "Millions of persons", xlim = c(2010, 2020.917), ylim = c(80, 97.2))
+lines(t2_fc, fc_NLF_stl, col = "red", lty = 2) ##Hide##
+par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)  ##Hide##
+plot(fc_COVID_DS, main = "(c) Newly confirmed COVID-19 Cases in Germany", 
+     xlab = "Calendar week of year 2021", ylab = "Thousands of cases",
+     xlim = c(45, 49.143), ylim = c(10, 85))
+lines(t3_fc, fc_COVID_stl, col = "red", lty = 2) ##Hide##
+par(par_old)  ##Hide##
+```
+
+`r noindent_f()`
+The point forecasts (solid and blue) extend the series logically into the future, and the 95%- and 99%-forecasting intervals give a first impression of the uncertainty related to each point forecast. As a benchmark, the point forecasts (red and dashed) from an automated ARIMA model with added seasonality estimated via STL by `mstl()` of the `forecast` package are displayed as well; the extra code can be obtained from the accompanying material. For the GDP series (Figure \@ref(fig:plotfcast)(a)), the point forecasts are close to each other. In fact, the point forecasts of the benchmark method lie within the 95%-forecasting intervals by the S-Semi-ARMA models in both cases. For the labor force series (Figure \@ref(fig:plotfcast)(b)), the point forecasts align roughly initially, but after a few months they diverge, leading to the benchmark forecasts leaving the forecasting intervals by S-Semi-ARMA after 12 months. For the COVID-19 series (Figure \@ref(fig:plotfcast)(c)), the point forecasts do not align for most of the future time points. The benchmark forecasts are almost always larger than the upper bound of the 99%-forecasting interval of the S-Semi-ARMA, with the exception of the first and fourth future day. The reason for the difference in point forecasts in the last two cases is that the S-Semi-ARMA forecast, even with linear extrapolation of the trend, also considers the curvature of the fitted trend at the end points to some degree, which is usually more pronounced if a local cubic trend is considered. A comparison of quantified forecasting quality between various methods is, however, not within the scope of this article.
+
+## Simulation studies {#sec:simstudy}
+
+Two different simulation studies are conducted hereinafter. The first study is done to analyze whether the proposed extended DeSeaTS algorithm estimates the smoothing bandwidth suitably both under the assumptions stated in this article and under a slowly changing seasonal component, i.e. under a mild relaxation of assumption (A3) in the first subsection of Section 2. The same simulation study also researches the estimation quality of the trend, the seasonal component and of the trend-seasonal component by DeSeaTS. The second simulation study compares the quality of seasonal component estimation of DeSeaTS in direct comparison to other established seasonal adjustment approaches under various settings.
+
+### Bandwidth study {#sec:bandwidthstudy}
+
+The first simulation study is conducted to verify that the DeSeaTS algorithm works well in practice for series with trends, seasonal components and errors of varying degrees of complexity. We consider the trend functions
+\begin{align*}
+&g_1(x_t)=5x_t + 1,\\
+&g_2(x_t)=2.5\tanh\left[5(x_t - 0.4)\right] + 3.5\hspace{3mm}\text{ and}\\ &g_3(x_t) = 3.2 x_t + 0.92 \sin[3.2\pi (x_t - 0.2)]+1.85,
+\end{align*}
+i.e. $g_1(x_t)$ is a simple linear trend, $g_2(x_t)$ represents a possible simple trend for macroeconomic growth and $g_3(x_t)$ is a more complex trend not necessarily representative of the progression of macroeconomic time series. Using these definitions, all trends range roughly in between 1 and 6 for $x_t\in[0,1]$. In addition, two error processes are considered: $\left\{e_{1,t}\right\}$ is an AR(1)-process with AR-coefficient $\phi_{1,1} = 0.75$ and innovation variance $\sigma_{e,1}^2=0.083^2$ and $\left\{e_{2,t}\right\}$ follows an AR(2)-process with $\phi_{1,2} = 1.05$, $\phi_{2,2} = -0.3$ and $\sigma_{e,2}^2 = 0.06^2$. Throughout, innovations are independently normally distributed with mean zero and the corresponding innovation variance. The seasonal components considered here are $s_{1,4}(x_t)$ and $s_{2,4}(x_t)$ for quarterly data as well as $s_{1,12}(x_t)$ and $s_{2,12}(x_t)$ for monthly data. We define
+\begin{align*}
+s_{1,4}(x_t)&=\left\{\begin{array}{rl}
+-0.39, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 4] = 0,\\ 0.01, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 4] = 1,\\ -0.04, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 4] = 2,\\ 0.42, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 4] = 3,\end{array}\right\}  \hspace{6mm}\text{ and}\\
+s_{1,12}(x_t)&=\left\{\begin{array}{rl}
+-0.39, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 0,\\
+0.05, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 1,\\
+-0.01, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 2,\\
+-0.16, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 3,\\
+-0.31, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 4,\\
+-0.24, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 5,\\
+-0.25, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 6,\\
+-0.10, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 7,\\
+0.50, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 8,\\
+0.62, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 9,\\
+0.34, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 10,\\
+-0.05, & \hspace{3mm}\text{ for }[(t-1)\text{ mod } 12] = 11.\\
+\end{array}\right\}
+\end{align*}
+$s_{1,4}(x_t)$ and $s_{1,12}(x_t)$ are hence exactly periodic. In addition, we have $s_{2,4}(x_t)=f_{\text{sc}}(x_t)s_{1,4}(x_t)$ and $s_{2,12}(x_t)=f_{\text{sc}}(x_t)s_{1,12}(x_t)$, where
+\begin{equation*}
+f_{\text{sc}}(x_t)=0.83 [1 + 0.1 \sin(50\pi x_t/ 9) + 0.2 \cos(3\pi x_t)],
+\end{equation*}
+so that $s_{2,4}(x_t)$ and $s_{2,12}(x_t)$ have slowly changing amplitudes over time.
+
+Furthermore, for the simulation, we check for $n_\text{1}=15p_s$, $n_{\text{2}}=30p_s$ and $n_{3}=60p_s$, $p_s=4$ for quarterly data and $p_s=12$ for monthly data, as numbers of observations, so that we are simulating data for 15, 30 and 60 years, respectively. Since DeSeaTS considers an asymptotically optimal bandwidth \@ref(eq:hA) internally, the smallest number of observations considered, $n_1$, is not set to an overly small value. In the following, the asymptotically optimal bandwidth is calculated in each of the setting combinations, however, whenever $s_{2,4}$ or $s_{2,12}$ are used, the values can only be interpreted as rough approximations, as Equation \@ref(eq:hA) holds only under exact periodicity or constantly linearly changing seasonality. Moreover, for $g_1(x_t)$ we have $h_A\rightarrow \infty$. Thus, in these situations, we consider $h_A=0.49$, since this is the maximum value for the bandwidth estimate the algorithm implemented in `deseats` can return. Given the trends $g_1$, $g_2$ and $g_3$, the seasonal components $s_{1,4}$, $s_{2,4}$, $s_{1,12}$ and $s_{2,12}$, the error processes $\left\{e_{1,t}\right\}$ and $\left\{e_{2,t}\right\}$, and the numbers of observations $n_1$, $n_2$ and $n_3$, we check 72 constellations. For each of them we produce 1000 simulated series. The DeSeaTS bandwidth selection algorithm and automated decomposition is used under $r=1$ and $r = 3$ with both optimal and naive inflation rates. By default, $c_b=0.05,d_b=0.95$ and a starting bandwidth of 0.1 are employed whenever $r=1$, and $c_b=0.1,d_b=0.9$ are considered with the starting bandwidth 0.2 for $r=3$. Furthermore, an epanechnikov kernel ($\mu=1$) is considered throughout. We run the DeSeaTS algorithm to estimate the bandwidth for each simulated series and obtain the sample mean, the sample standard deviation and the sample mean squared error (MSE) of the bandwidth estimates for each setting. Furthermore, the mean MSE is obtained for the trend estimates ($\hat g$), the seasonality estimates ($\hat s$) and for the trend estimates together with the seasonality estimates ($\hat m = \hat g + \hat s$).
+
+In Figures \@ref(fig:plotsimexamples) and \@ref(fig:plotsimexamples2), examples of simulated series under these settings are illustrated together with the true trends and seasonal components and their estimates. For simplicity, the illustrated simulated series were obtained with $n_1$ and the same realization of $\{e_{1,t}\}$. The estimation results were obtained using `deseats` considering $r=3$ with `inflation_rate = "naive"` and `drop = 0.1`, i.e. the default settings for $r=3$ within `deseats`. It is apparent that Subfigures (b), (d) and (f) in Figures \@ref(fig:plotsimexamples) and \@ref(fig:plotsimexamples2) show a slow change in the seasonal component $s_2$ over time, resulting in slowly changing phases of smaller and larger seasonal variation. Conversely, the seasonal component $s_1$ implemented in Subfigures (a), (c) and (e) remains exactly periodic throughout. Furthermore, the increase in complexity of the trends from $g_1$ over $g_2$ to $g_3$ is visible in Figure \@ref(fig:plotsimexamples), because of the rise in the number of (local) minima and maxima and turning points. Regarding the estimated trends displayed as solid red lines in Figure \@ref(fig:plotsimexamples), we can observe that, despite the low number of observations, the true trends, which are shown as blue dashed lines, are captured well in all scenarios, including the Subfigures \@ref(fig:plotsimexamples)(a) and \@ref(fig:plotsimexamples)(b), where the simple linear trend $g_1$ was considered. Similarly, the estimated seasonal components illustrated as solid red lines in Figure \@ref(fig:plotsimexamples2) are close to the true seasonal components, shown as grey solid lines, throughout. Even the slow change in the seasonal component $s_2$ is captured to some degree in the estimates in Subfigures (b), (d) and (f). However, it is observable at the very beginning and the very end of the time period that the seasonality estimates by DeSeaTS cannot seem to follow the changes of the true component as quickly, as the true component shows its quickest changes during those periods.
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Examples for first simulation
+```
+
+```{r plotsimexamples, fig.cap = "Examples of quarterly simulated series (grey and solid) together with the true underlying trends (blue and dashed) for $n_1$ and the estimated trends (red and solid) using the DeSeaTS framework with $r=3$. All examples are with number of observations $n_1$ and the same simulated errors from $\\{e_{1,t}\\}$.", echo = FALSE, fig.height = 5, fig.pos = "t", fig.align='center'}
+library(deseats)
+library(magrittr)
+library(tidyverse)
+
+set.seed(123) 
+
+### Number of observations
+
+ny <- 15
+n1 <- ny * 4
+
+# Time points
+
+t1 <- 1:n1
+xt_n1 <- (t1) / n1
+
+### Trend functions
+
+# Trend 1
+
+t1_n1 <- (5 * xt_n1 + 1) %>%
+  ts(frequency = 4)
+
+# Trend 2
+
+t2_n1 <- (2.5 * tanh(5 * (xt_n1 - 0.4)) + 3.5) %>%
+  ts(frequency = 4)
+
+# Trend 3
+
+t3_n1 <- (3.2 * xt_n1 + 0.92 * (sin(3.2 * pi * (xt_n1 - 0.2))) + 1.85) %>%
+  ts(frequency = 4)
+
+### Seasonalities
+
+## Exactly periodic and with frequency 4
+
+quart <- (t1 - 1) %% 4
+s1 <- rep(-0.39, length(t1))
+s1[quart == 1] <- 0.01
+s1[quart == 2] <- -0.04
+s1[quart == 3] <- 0.42
+
+s1_n1 <- s1 %>%
+  ts(frequency = 4)
+
+#### Slowly changing and with frequency 4
+f_sc <- 0.83 * (1  +0.1 * sin(50 * pi * xt_n1 / 9) + 0.2 * cos(3 * pi * xt_n1))
+s2_n1 <-  f_sc * s1_n1
+
+### Errors
+
+arma1 <- list(ar = 0.75, sd_e = 0.083)
+
+# Example simulations
+e1 <- arima.sim(model = list(ar = arma1$ar), sd = arma1$sd_e, n = n1) %>%
+  ts(frequency = 4)
+
+series1s1 <- t1_n1 + s1_n1 + e1
+series1s2 <- t1_n1 + s2_n1 + e1
+series2s1 <- t2_n1 + s1_n1 + e1
+series2s2 <- t2_n1 + s2_n1 + e1
+series3s1 <- t3_n1 + s1_n1 + e1
+series3s2 <- t3_n1 + s2_n1 + e1
+
+est1s1 <- deseats(series1s1, set_options(order_poly = 3))
+est1s2 <- deseats(series1s2, set_options(order_poly = 3))
+est2s1 <- deseats(series2s1, set_options(order_poly = 3))
+est2s2 <- deseats(series2s2, set_options(order_poly = 3))
+est3s1 <- deseats(series3s1, set_options(order_poly = 3))
+est3s2 <- deseats(series3s2, set_options(order_poly = 3))
+
+par_old <- par(no.readonly = TRUE)
+par(mfrow = c(3, 2), cex.axis = 0.9, cex.lab = 0.9, cex.main = 0.9,
+    mar = c(2, 4, 3, 2) + 0.1, oma = c(2, 0, 0, 0))
+ts.plot(series1s1, t1_n1, trend(est1s1),
+     col = c("grey50", "blue", "red"),
+     main = expression(paste(bold("(a) "), italic(g[1]), ", ", italic(s[1]))),
+     lty = c(1, 2, 1))
+ts.plot(series1s2, t1_n1, trend(est1s2),
+     col = c("grey50", "blue", "red"),
+     main = expression(paste(bold("(b) "), italic(g[1]), ", ", italic(s[2]))),
+     lty = c(1, 2, 1))
+ts.plot(series2s1, t2_n1, trend(est2s1),
+     col = c("grey50", "blue", "red"),
+     main = expression(paste(bold("(c) "), italic(g[2]), ", ", italic(s[1]))),
+     lty = c(1, 2, 1))
+ts.plot(series2s2, t2_n1, trend(est2s2),
+     col = c("grey50", "blue", "red"),
+     main = expression(paste(bold("(d) "), italic(g[2]), ", ", italic(s[2]))),
+     lty = c(1, 2, 1))
+par(xpd = NA)
+ts.plot(series3s1, t3_n1, trend(est3s1),
+     col = c("grey50", "blue", "red"),
+     main = expression(paste(bold("(e) "), italic(g[3]), ", ", italic(s[1]))),
+     lty = c(1, 2, 1))
+par(xpd = NA)
+ts.plot(series3s2, t3_n1, trend(est3s2),
+     col = c("grey50", "blue", "red"),
+     main = expression(paste(bold("(f) "), italic(g[3]), ", ", italic(s[2]))),
+     lty = c(1, 2, 1))
+par(par_old)
+```
+
+```{r plotsimexamples2, fig.cap = "True underlying seasonal components (grey and solid) of the quarterly simulated examples and the estimated seasonal components (red and solid) using the DeSeaTS framework with $r=3$. On the time axis, the true values are slightly shifted to the left and the estimates slightly to the right for better comparability. All examples are with number of observations $n_1$ and the same simulated errors from $\\{e_{1,t}\\}$.", echo = FALSE, fig.height = 5, fig.pos = "t", fig.align='center'}
+par_old <- par(no.readonly = TRUE)
+par(mfrow = c(3, 2), cex.axis = 0.9, cex.lab = 0.9, cex.main = 0.9,
+    mar = c(2, 4, 3, 2) + 0.1, oma = c(2, 0, 0, 0))
+tp <- c(time(s1_n1)) 
+matplot(cbind(tp - 0.07, tp + 0.07), cbind(c(s1_n1), c(season(est1s1))),
+    type = "hh",
+     col = c("grey50", "red"),
+     main = expression(paste(bold("(a) "), italic(g[1]), ", ", italic(s[1]))),
+    xlab = "Time", ylab = "", lty = c(1, 1))
+matplot(cbind(tp - 0.07, tp + 0.07), cbind(c(s2_n1), c(season(est1s2))),
+    type = "hh",
+     col = c("grey50", "red"),
+     main = expression(paste(bold("(b) "), italic(g[1]), ", ", italic(s[2]))),
+    xlab = "Time", ylab = "", lty = c(1, 1))
+matplot(cbind(tp - 0.07, tp + 0.07), cbind(c(s1_n1), c(season(est2s1))),
+    type = "hh",
+     col = c("grey50", "red"),
+     main = expression(paste(bold("(c) "), italic(g[2]), ", ", italic(s[1]))),
+    xlab = "Time", ylab = "", lty = c(1, 1))
+matplot(cbind(tp - 0.07, tp + 0.07), cbind(c(s2_n1), c(season(est2s2))),
+    type = "hh",
+     col = c("grey50", "red"),
+     main = expression(paste(bold("(d) "), italic(g[2]), ", ", italic(s[2]))),
+    xlab = "Time", ylab = "", lty = c(1, 1))
+par(xpd = NA)
+matplot(cbind(tp - 0.07, tp + 0.07), cbind(c(s1_n1), c(season(est3s1))),
+    type = "hh",
+     col = c("grey50", "red"),
+     main = expression(paste(bold("(e) "), italic(g[3]), ", ", italic(s[1]))),
+    xlab = "Time", ylab = "", lty = c(1, 1))
+par(xpd = NA)
+matplot(cbind(tp - 0.07, tp + 0.07), cbind(c(s2_n1), c(season(est3s2))),
+    type = "hh",
+     col = c("grey50", "red"),
+     main = expression(paste(bold("(f) "), italic(g[3]), ", ", italic(s[2]))),
+    xlab = "Time", ylab = "", lty = c(1, 1))
+par(par_old)
+```
+
+Figures \@ref(fig:sim1fig1) to \@ref(fig:sim1fig8) in the appendix show boxplots of the estimated bandwidths for the various simulation settings. Analogously, Tables \@ref(tab:sim1tab1) to \@ref(tab:sim1tab4) in the appendix show the sample mean of the estimated bandwidths $\text{Mean}\left(\hat h\right)$, the sample standard deviations of the estimated bandwidths $\text{SD}\left(\hat h\right)$, the sample mean squared error $\text{MSE}\left(\hat h\right)$ and the average sample MSEs over all time points and iterations for the estimated trend ($\text{MSE}\left(\hat g\right)$), for the estimated seasonal component ($\text{MSE}\left(\hat s\right)$) and for the estimated trend-seasonal component ($\text{MSE}\left(\hat m\right)$). MSEs and $\text{SD}\left(\hat h\right)$ values in the tables were multiplied by 1000. The given asymptotic bandwidths $h_A$ are only valid under the exactly periodic component $s_1$; they are only rough approximations under $s_2$.  
+
+We can conclude that DeSeaTS under $r=3$ can sometimes struggle to select the optimal bandwidth under a very simplistic simple linear trend $g_1$, as the bandwidth is clearly underestimated. However, the MSE of the bandwidth estimator still reduces slightly for an increase in the number of observations and the average MSEs of the estimated components still clearly decrease. Furthermore, considering more complex trends $g_2$ and $g_3$, the bandwidth selection seems to be most stable under an optimal inflation rate for $r=1$ and under a naive inflation rate for $r=3$. In some instances, $r=1$ with naive inflation rate also works well for large enough $n$, but usually comes with a larger $\text{SD}\left(\hat h\right)$. Consistency of the bandwidth selection is apparent from the decrease in $\text{MSE}\left(\hat h\right)$ for an increase in the number of observations. $\text{SD}\left(\hat h\right)$ can sometimes increase when increasing the number of observations from $n_1$ to $n_2$; we presume that this is due to the relatively small number of observations $n_1$ and the hence more unstable behavior of the bandwidth selector, as asymptotics may not yet be a good enough approximation under $n_1$. In addition, in some few instances, for example $r=3$ with $g_3$, $s_1$ and $\{e_{1,t}\}$ in the quarterly setting, one may yet need a larger number of observations, so that the bandwidth estimator may become even closer to the true $h_A$. This is because quarterly data contains fewer observations to estimate the sum of autocovariances $2\pi c_f$ from than monthly data (for the same amount of years). Likewise, $\hat h$ is expected to converge more slowly to $h_A$ for $r=3$ than for $r=1$ (see Equation \@ref(eq:hconvergence)). Converging behavior in this context is observable nonetheless. Importantly, the bandwidth selector also seems to converge to the (approximated) true $h_A$ for $s_2$ in all cases with an increase in $n$. 
+
+Due to the decrease in $\text{MSE}\left(\hat g\right)$, $\text{MSE}\left(\hat s\right)$ and $\text{MSE}\left(\hat m\right)$ by approximately constant rates, we have a strong indication that DeSeaTS leads to consistent estimators of the components. This implies also consistency of the error estimator $\hat\xi_t=y_t-\hat m(x_t)$ and consequently of ARMA parameters obtained from $\hat\xi_t$ instead of the non-observable $\xi_t$.
+
+### Study on seasonality estimation {#sec:seasadjuststudy}
+
+We consider the following additive base model:
+\begin{equation*}
+Y_{ijk,t} = \alpha G_{i,t} + \beta S_{j,t} + \gamma E_{k,t}
+\end{equation*}
+with $G_{i,t}$, $i=1,2$, as a (deterministic or stochastic) trend, $S_{j,t}$, $j=1,2,3$, as a (deterministic or stochastic) seasonal component, and $E_{k,t}$, $k=1,2,3$ as a stochastic error. $\alpha,\beta,\gamma>0$ are real constants. $G_{1,t}$ is the same as $g_{3}(x_t)$ from the first simulation study but normalized to have (sample) mean zero and (sample) variance one and $G_{2,t}$ is obtained from a random walk with iid $N(0.05,1)$ innovations and again normalized. $S_{1,t}$ is $s_1(x_t)$ from the first simulation study but normalized to have (sample) mean zero and (sample) variance one, $S_{2,t}$ is the normalized analogue of  $s_2(x_t)$ from the first simulation study, and $S_{3,t}$ is obtained from $S_{3,t}=-\sum_{l=1}^{p_s - 1}S_{3,t-l}+e_t$ and then normalized, where $e_t\overset{\text{iid}}{\sim}N(0,0.025)$. Furthermore, we have $E_{1,t}\overset{\text{iid}}{\sim}N(0,1)$, $E_{2,t}$ being governed by an AR(1) process with AR-parameter 0.75 and innovation variance $1 - 0.75^2$, and $E_{3,t}$ follows an AR(2) process with parameters 1.05 and -0.3 as well as the innovation variance $0.7(1.3^2 - 1.05^2) / (1.3)$. All three error variants are hence with (theoretical) mean zero and (theoretical) variance one. Note that $G_{1,t}$ is deterministic, while $G_{2,t}$ is stochastic. $S_{1,t}$ and $S_{2,t}$ are both deterministic, while $S_{1,t}$ is exactly periodic and $S_{2,t}$ is changing slowly over time. In contrast, $S_{3,t}$ is stochastic. Example realizations of the stochastic components $G_{2,t}$ and $S_{3,t}$ and their quickly changing behavior can be observed in Figure \@ref(fig:stochexample). 
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Examples for stochastic components for second simulation study
+```
+
+```{r stochexample, echo = FALSE, fig.cap = "A realization of the stochastic trend $G_{2,t}$ and of the stochastic seasonal component $S_{3,t}$ for 15 years.", fig.height = 2.5, fig.width = 5.6, fig.pos = 'h'}
+t2_fun <- function(xt) {
+  n <- length(xt)
+  et <- rnorm(n = n + 200) + 0.05
+
+  g_out <- tail(cumsum(et), n)
+  (g_out - mean(g_out)) / sd(g_out)
+
+}
+
+s3_fun <- function(t, sig2) {
+  sig <- sqrt(sig2)
+  ps <- 12
+
+  n <- length(t)
+  m <- 300 * 12
+
+  sx <- rep(0, n + m)
+  sx[1:11] <- rnorm(n = ps - 1, mean = 0, sd = sig)
+
+  for (i in ps:(n + m)) {
+    sx[[i]] <- -sum(sx[(i - 11):(i - 1)]) + rnorm(n = 1, mean = 0, sd = sig)
+  }
+  sx <- tail(sx, n)
+
+  (sx - mean(sx)) / sd(sx)
+
+}
+
+set.seed(1)
+
+n <- 15 * 12
+t <- 1:n
+xt <- t / n
+
+sig2 <- 0.025
+
+example_trend2 <- ts(t2_fun(xt), frequency = 12)
+example_season3 <- ts(s3_fun(t, sig2), frequency = 12)
+
+main1 <- expression(paste(bold("(a) "), italic(G[2*","*t])))
+main2 <- expression(paste(bold("(b) "), italic(S[3*","*t])))
+
+par_old <- par(no.readonly = TRUE)
+par(mfrow = c(1, 2), cex = 0.6, mar = c(5, 3, 4, 1) + 0.1)
+plot(example_trend2, main = main1, ylab = "")
+plot(example_season3, main = main2, ylab = "")
+par(par_old)
+```
+
+Since DeSeaTS uses an asymptotically valid bandwidth formula internally, we consider for the comparison $n_1=15p_s$, $n_2=30p_s$ and $n_3=60p_s$ observations; numbers of observations smaller than $n_1$ are not considered here and should be studied elsewhere. For simplicity, we only consider $p_s = 4,12$ as the two most frequent seasonal periods in macroeconomic time series. In addition, we keep $\alpha = 1$ and $\beta=0.4$ constant throughout and consider $\gamma = 0.1, 0.2$. Given two trends, three seasonal components, three error variations, three numbers of observations, two seasonal periods and two settings of $\gamma$, we arrive at 216 different setting combinations. For each of them, we simulate 1000 series and apply different methods to them.
+
+In the following, the abbreviations DS, X13, TS, STL, TBATS and MA are used for DeSeaTS, X13-ARIMA, TRAMO-SEATS, STL, TBATS and the `decompose()` function, respectively. X13 and TS will be implemented using the functions `x13()` and `tramoseats()` of the `RJDemetra` package, where, aside from turning off calendar adjustments, default settings will be employed. STL will be applied by means of the automated function `mstl()` of the `forecast` package, and TBATS will be implemented following the function `tbats()` within the same package. DeSeaTS will be tested with different algorithm settings, so that the abbreviations $\text{DS}_{1,\text{opt}}$, $\text{DS}_{1,\text{nai}}$, $\text{DS}_{3,\text{opt}}$ and $\text{DS}_{3,\text{nai}}$ indicate the order of local polynomial $r$ as well as the inflation factor (optimal or naive). We consider the final seasonality estimates as returned by those functions.
+
+Tables \@ref(tab:sim2tab1) through \@ref(tab:sim2tab12) in the appendix contain the simulated numerical results following the different specifications. They contain the average sample MSE (Mean) of the seasonality estimates over all time points and 1000 simulated series as well as the sample standard deviation (SD) of the average MSEs obtained for each of the 1000 series (separately for each estimation method). Both quantities are multiplied by 1000. From the tables we can conclude the following: for $S_1$, MA always produces the smallest average MSE in our simulation. This is not unexpected, as MA assumes an exactly periodic component and estimates the seasonality using global averaging of detrended values of the same time unit. In some instances, it can also produce the smallest average MSE among the tested methods for $n_1$ under more complex settings. The worst performing method on average for quarterly series is TBATS, which produces in the given simulation notably larger average MSE values than the other approaches throughout without a structural decrease in average MSE. Moreover, TBATS is the only method that, in rare cases, failed to run the decomposition successfully; its stated average MSE and standard deviation values hence rely sometimes on fewer simulated series. Its performance is, however, clearly better for monthly series under $S_1$ and $S_2$. For $S_3$, its estimation quality decreases again.
+
+X13 is never the best-performing method under any of the settings in our simulation study. Under $n_1$, it usually performs better than DS, but yet still worse than STL or TS. Under $n_1$, STL sometimes performs best for $G_1$ together with $S_3$. Aside from the cases where MA and STL have the smallest average MSE, the minimum-MSE methods are always TS or DS. DS appears to usually exceed other methods for larger numbers of observations under $S_2$ for all three error processes regardless of whether a deterministic trend ($G_1$) or a stochastic trend ($G_2$) is considered. While this holds true for $n_2$ and $n_3$ in most cases, there are rare exceptions, where TS works slightly better. For quarterly data with $S_2$ and larger numbers of observations $n_2$ and $n_3$, DS with local cubic trend is on average preferable under iid errors, and DS with local linear trend under autocorrelated errors, where the differences in estimation quality between the algorithm with optimal and naive inflation rate are usually minimal. For monthly data with $S_2$, DS is more sensitive to the magnitude of errors given different trend settings. For $\gamma = 0.1$, DS with local linear trend works better for $G_1$, if the errors are autocorrelated, whereas DS with local cubic trend results in smaller average MSE for $G_2$. Under $\gamma = 0.2$ and $S_2$, DS with local cubic trend is on average the best method for larger numbers of observations regardless of the trend setting.
+
+If the stochastic seasonal component $S_3$ is considered, TS is often the most competitive method. The disadvantage of DS for this setting is expected, as the method assumes a deterministic seasonal component. Hence, random short-term changes in the seasonality cannot be identified properly by DS. Nonetheless, as can be seen in Tables \@ref(tab:sim2tab9) and \@ref(tab:sim2tab12), DS with local cubic trend can sometimes outperform TS even under $S_3$ for a large number of observations. In all other cases with $S_3$, the best DS subroutine is usually only roughly 0.2 to 0.4 points in MSE worse than TS for large $n$. Furthermore, in these instances, we can observe a stronger decrease in the average MSE by DS than by TS. While left for future research, it seems not unreasonable to assume that DS may outperform TS even for $S_3$, if the number of observations was even larger than $n_3$.
+
+# Concluding remarks {#sec:conclusion}
+
+A data-driven algorithm for decomposing univariate time series into a trend component, a seasonal component and a remainder component using locally weighted regression is proposed that extends already established algorithms for the case when the remainder is not iid. Moreover, the algorithm is fully nonparametric, as no further model assumptions are imposed on the remainder term. Therefore, a seasonal semiparametric extension of the ARMA model is introduced that can be fitted in two simple consecutive steps and used for producing point and interval forecasts. All methods described are made applicable within the R package `deseats`. The decomposition performance of the proposed method on real-world data is validated against STL as a benchmark, whereas the seasonal adjustments by X13-ARIMA and TRAMO-SEATS are also shown as a reference whenever possible. In case of the three selected examples series, the US-GDP, the non-laborforce US-series, and the German COVID cases, all of which have different seasonal periods, DeSeaTS leads to suitable seasonal adjustments following two common seasonality tests.
+
+A simulation study confirmed the consistency of the DeSeaTS bandwidth selector and of the correspondingly estimated trend, seasonal and trend-seasonal components, even if the assumption of exact periodicity is violated. Ultimately, a second simulation study compared the quality of seasonality estimation of various popular methods. In our setup, DeSeaTS usually works best in identifying the seasonal component under a slowly changing but still deterministic seasonal component, regardless of deterministic or stochastic trends and regardless of iid or autocorrelated errors, if the number of observations is sufficiently large. In our simulation, this was usually fulfilled for quarterly and monthly series of 30 or 60 years. Under an exactly periodic seasonal component, approaches with global seasonality estimation are preferable. Such a behavior is, however, not observable in most real-world data. In addition, the study showed that TRAMO-SEATS usually works best under a stochastic seasonal component. While DeSeaTS produced competitive results for large numbers of observations in such instances, it outperformed TRAMO-SEATS only on few occasions. In spite of this, the rate of decrease in average MSE of the DeSeaTS seasonality estimator, compared to that of TRAMO-SEATS, suggests that the DeSeaTS seasonality estimator could exceed that of TRAMO-SEATS in quality also under stochastic seasonality for even larger numbers of observations than those considered here. Thus, while DeSeaTS works poorly for small numbers of observations (by design), it is a viable and flexible choice for decomposition of seasonal time series and seasonal adjustment.
+
+However, the introduced algorithm and the current version of the `deseats` package can clearly be improved. First, the current algorithm requires the seasonal component to be exactly periodic at least in theory. While we find that the algorithm also works reasonably well under violations of this assumption, like a slowly changing deterministic seasonal component, an improved algorithm, for which this assumption could be relaxed, is desirable. Moreover, the development of a procedure in which two separate bandwidths, one for the trend and one for the seasonal component, are estimated in a data-driven way, could be a promising endeavor. An additional feature could be the consideration of long-range dependence in the data. In the current state of the algorithm only short-memory errors are assumed, which could lead to misspecifications in some cases. As a further point, DeSeaTS may be non-robust with respect to outliers and structural breaks, which was not studied in detail within this article. A further disadvantage is that DeSeaTS in its current version does not account for trading-day effects. Ultimately, while we have shown the consistency of the trend and seasonality estimates following DeSeaTS in the given simulation studies, which implies that the residuals must approach the true errors, an additional simulation study on the parametric part of the seasonal Semi-ARMA is left for future research.
+
+# Computational details {-}
+
+The numerical and visual results in this paper were obtained using R 4.5.1 with the `deseats` 1.1.2 package, the `RJDemetra` 0.2.8 package and the `forecast` 8.23.0 package. R itself and all packages used are available from the Comprehensive R Archive Network (CRAN) at https://CRAN.R-project.org/.
+
+`r noindent_f()`
+**Acknowledgments**: We thank the Federal Statistical Office of Germany for allowing us to implement the estimation method of the BV4.1 base model into the `deseats` package. Moreover, we are grateful to CRAN for their help during the publication of the R package `deseats`. We would also like to thank Prof. Dr. Yuanhua Feng and Ms. Shujie Li for helpful discussions, and two anonymous reviewers for thoughtful feedback to help improve the empirical section of this article.
+
+`r newpage_f()`
+
+\section*{Appendix}
+
+\addcontentsline{toc}{section}{Appendix}
+\renewcommand{\thesubsection}{\Alph{subsection}}
+
+## X13 and TRAMO-SEATS real example figures {#sec:x13figures}
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### X13 and TRAMO-SEATS applied to real examples
+```
+
+```{r figuresx13, eval = TRUE, echo = FALSE, include=TRUE, fig.cap = "Seasonally adjusted series for the US-GDP series and of the series about US persons not in the labor force following the automated X13 (blue and solid) and TRAMO-SEATS (red and dashed) subroutines of RJDemetra+. X13 used a 5-terms Henderson trend filter and a 3x5 seasonal filter for the series in (a), whereas a 13-terms Henderson trend filter and a 3x5 seasonal filter were considered for the series in (b).", fig.height = 2.6, warning = FALSE, fig.width = 5.6, fig.pos='h'}
+library(RJDemetra)
+library(deseats)
+X13_GDP <- x13(GDP)
+X13_NLF <- x13(NOLABORFORCE)
+TS_GDP <- tramoseats(GDP)
+TS_NLF <- tramoseats(NOLABORFORCE)
+X13_sa_GDP <- X13_GDP$final$series[, "sa"]
+X13_sa_NLF <- X13_NLF$final$series[, "sa"]
+TS_sa_GDP <- TS_GDP$final$series[, "sa"]
+TS_sa_NLF <- TS_NLF$final$series[, "sa"]
+
+old_par <- par(no.readonly = TRUE)
+par(mfrow = c(1, 2), cex = 0.5)
+ts.plot(GDP, X13_sa_GDP, TS_sa_GDP, col = c("grey60", "blue", "red"), lty = c(1, 1, 2),
+        xlab = "Year", ylab = "Billions of Australian dollars", main = "(a) Real consumption expenditure for Australia")
+ts.plot(NOLABORFORCE, X13_sa_NLF, TS_sa_NLF, col = c("grey60", "blue", "red"), lty = c(1, 1, 2),
+        xlab = "Year", main = "(b) US persons not in the labor force",
+        ylab = "Millions of persons")
+par(old_par)
+```
+
+## Tables and figures on bandwidth simulation study {#sec:appbwidth}
+
+On the following pages, the Tables \@ref(tab:sim1tab1) through \@ref(tab:sim1tab4) and the Figures \@ref(fig:sim1fig1) through \@ref(fig:sim1fig8)  with the results for the first simulation study described in Section 4 are included. Brief interpretations of the results are given within Section 4. The tables include the asymptotically optimal bandwidths $h_A$ for each setting, the sample mean over the estimated bandwidths $\text{Mean}\left(\hat h\right)$, the sample standard deviation over the estimated bandwidths $\text{SD}\left(\hat h\right)$ (multiplied by 1000), the sample MSE over the estimated bandwidths $\text{MSE}\left(\hat h\right)$ (multiplied by 1000), and the average sample MSE over all series and time points for the estimated trend, the estimated seasonal component, and the estimated trend-seasonal component, denoted by $\text{MSE}\left(\hat g\right)$, $\text{MSE}\left(\hat s\right)$ and $\text{MSE}\left(\hat m\right)$, respectively, and multiplied by 1000. The figures show the distributions of the estimated bandwidths.
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Tables for first simulation study
+```
+
+```{r sim1tab1, echo = FALSE}
+library(knitr)
+library(kableExtra)
+data0 <- read.csv("sim-data/Sim1Table-Quarterly-Error1.csv") 
+data0$X.r.[is.na(data0$X.r.)] <- ""
+kable(data0, col.names = c("$r$", "Inflation", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)),
+      booktabs = TRUE, escape = FALSE, format = fmt,
+      linesep = c("\\addlinespace", rep("", 5), "\\addlinespace", rep("", 5), "\\addlinespace", "\\addlinespace", rep("", 5), "\\addlinespace", rep("", 5)),
+    caption = "DeSeaTS simulation results under consideration of quarterly data and error process $\\{e_{1,t}\\}$. $\\text{SD}\\left(\\hat h\\right)$, $\\text{MSE}\\left(\\hat h\\right)$, $\\text{MSE}\\left(\\hat g\\right)$, $\\text{MSE}\\left(\\hat s\\right)$ and $\\text{MSE}\\left(\\hat m\\right)$ were multiplied by 1000.") %>%
+  add_header_above(
+    c(" ", " ", " ", "$g_1$" = 3, "$g_2$" = 3, "$g_3$" = 3, "$g_1$" = 3, "$g_2$" = 3, "$g_3$" = 3), escape = FALSE
+  ) %>%
+  add_header_above(
+    c(" ", " ", " ", "$s_1$" = 9, "$s_2$" = 9), escape = FALSE
+  ) %>%  
+  kable_styling(font_size = 7.5) %>%
+  adjust_html_tab_size() %>%
+  landscape_tab() 
+```
+
+`r newpage_f()`
+
+```{r sim1tab2, echo = FALSE}
+library(knitr)
+library(kableExtra)
+data0 <- read.csv("sim-data/Sim1Table-Quarterly-Error2.csv") 
+data0$X.r.[is.na(data0$X.r.)] <- ""
+kable(data0, col.names = c("$r$", "Inflation", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)),
+      booktabs = TRUE, escape = FALSE, format = fmt,
+      linesep = c("\\addlinespace", rep("", 5), "\\addlinespace", rep("", 5), "\\addlinespace", "\\addlinespace", rep("", 5), "\\addlinespace", rep("", 5)),
+    caption = "DeSeaTS simulation results under consideration of quarterly data and error process $\\{e_{2,t}\\}$. $\\text{SD}\\left(\\hat h\\right)$, $\\text{MSE}\\left(\\hat h\\right)$, $\\text{MSE}\\left(\\hat g\\right)$, $\\text{MSE}\\left(\\hat s\\right)$ and $\\text{MSE}\\left(\\hat m\\right)$ were multiplied by 1000.") %>%
+  add_header_above(
+    c(" ", " ", " ", "$g_1$" = 3, "$g_2$" = 3, "$g_3$" = 3, "$g_1$" = 3, "$g_2$" = 3, "$g_3$" = 3), escape = FALSE
+  ) %>%
+  add_header_above(
+    c(" ", " ", " ", "$s_1$" = 9, "$s_2$" = 9), escape = FALSE
+  ) %>%  
+  kable_styling(font_size = 7.5) %>%
+  adjust_html_tab_size() %>%
+  landscape_tab() 
+```
+
+`r newpage_f()`
+
+```{r sim1tab3, echo = FALSE}
+data0 <- read.csv("sim-data/Sim1Table-Monthly-Error1.csv") 
+data0$X.r.[is.na(data0$X.r.)] <- ""
+kable(data0, col.names = c("$r$", "Inflation", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)),
+      booktabs = TRUE, escape = FALSE, format = fmt,
+      linesep = c("\\addlinespace", rep("", 5), "\\addlinespace", rep("", 5), "\\addlinespace", "\\addlinespace", rep("", 5), "\\addlinespace", rep("", 5)),
+    caption = "DeSeaTS simulation results under consideration of monthly data and error process $\\{e_{1,t}\\}$. $\\text{SD}\\left(\\hat h\\right)$, $\\text{MSE}\\left(\\hat h\\right)$, $\\text{MSE}\\left(\\hat g\\right)$, $\\text{MSE}\\left(\\hat s\\right)$ and $\\text{MSE}\\left(\\hat m\\right)$ were multiplied by 1000.") %>%
+  add_header_above(
+    c(" ", " ", " ", "$g_1$" = 3, "$g_2$" = 3, "$g_3$" = 3, "$g_1$" = 3, "$g_2$" = 3, "$g_3$" = 3), escape = FALSE
+  ) %>%
+  add_header_above(
+    c(" ", " ", " ", "$s_1$" = 9, "$s_2$" = 9), escape = FALSE
+  ) %>%  
+  kable_styling(font_size = 7.5) %>%
+  adjust_html_tab_size() %>%
+  landscape_tab() 
+```
+
+`r newpage_f()`
+
+```{r sim1tab4, echo = FALSE}
+data0 <- read.csv("sim-data/Sim1Table-Monthly-Error2.csv") 
+data0$X.r.[is.na(data0$X.r.)] <- ""
+kable(data0, col.names = c("$r$", "Inflation", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)),
+      booktabs = TRUE, escape = FALSE, format = fmt,
+      linesep = c("\\addlinespace", rep("", 5), "\\addlinespace", rep("", 5), "\\addlinespace", "\\addlinespace", rep("", 5), "\\addlinespace", rep("", 5)),
+    caption = "DeSeaTS simulation results under consideration of monthly data and error process $\\{e_{2,t}\\}$. $\\text{SD}\\left(\\hat h\\right)$, $\\text{MSE}\\left(\\hat h\\right)$, $\\text{MSE}\\left(\\hat g\\right)$, $\\text{MSE}\\left(\\hat s\\right)$ and $\\text{MSE}\\left(\\hat m\\right)$ were multiplied by 1000.") %>%
+  add_header_above(
+    c(" ", " ", " ", "$g_1$" = 3, "$g_2$" = 3, "$g_3$" = 3, "$g_1$" = 3, "$g_2$" = 3, "$g_3$" = 3), escape = FALSE
+  ) %>%
+  add_header_above(
+    c(" ", " ", " ", "$s_1$" = 9, "$s_2$" = 9), escape = FALSE
+  ) %>%  
+  kable_styling(font_size = 7.5) %>%
+  adjust_html_tab_size() %>%
+  landscape_tab() 
+```
+
+`r newpage_f()`
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Boxplot figures for first simulation study
+```
+
+```{r}
+unwrap <- function() {
+  `%>%` <- magrittr::`%>%`
+  data_bw <- read.csv("sim-data/sim1_all_bwidths.csv", check.names = FALSE) %>%
+    tidyr::pivot_longer(
+      cols = 1:288, 
+      names_to = "Setting",
+      values_to = "bwidth"
+    ) %>%
+    separate_wider_delim(
+      cols = "Setting",
+      delim = "_",
+      names = c("N_Year", "Seasonal_Period", "Trend", "Season", "Error_Process",
+                "r", "infr")
+    ) %>%
+    mutate(
+      N_Year = as.numeric(N_Year),
+      Seasonal_Period = as.numeric(Seasonal_Period),
+      infr = factor(infr, levels = c("opt", "nai"))
+    ) %>%
+    arrange(Seasonal_Period, Error_Process, Season, Trend, r, N_Year, infr) %>%
+    group_by(Seasonal_Period, Error_Process, r) %>%
+    group_split()
+  nams <- map_chr(data_bw, function(.x) {
+
+    paste0("sp", .x$Seasonal_Period[[1]], "_r", .x$r[[1]], "_", .x$Error_Process[[1]])
+  })
+  names(data_bw) <- nams
+  data_bw <- data_bw %>%
+    map(function(.x) {
+      .x %>%
+        select(-Error_Process, -r)
+    })
+}
+
+boxplot_fun <- function(df, ep, poly_ord) {
+  parold <- par(no.readonly = TRUE)
+  par(mfrow = c(6, 2), mar = c(4, 4, 3, 2) + 0.1)
+  on.exit(expr = {par(parold)}, add = TRUE, after = TRUE)
+
+  season_p <- df$Seasonal_Period[[1]]
+
+  df %>%
+    mutate(N_Year = factor(N_Year)) %>%
+    mutate(infr = factor(infr, levels = c("opt", "nai"))) %>%
+    arrange(Trend, Season, N_Year, infr) %>%
+    group_by(Season, Trend, infr) %>%
+    group_split() %>%
+    walk(function(.x, ep, poly_ord, season_p) {
+      tn <- switch(
+        .x$Trend[[1]],
+        "t1" = 1,
+        "t2" = 2,
+        "t3" = 3
+      )
+      sn <- switch(
+        .x$Season[[1]],
+        "s1" = 1,
+        "s2" = 2
+      )
+      ifr <- switch(
+        as.character(.x$infr[[1]]),
+        "opt" = "optimal",
+        "nai" = "naive"
+      )
+
+      arma_list <- if (ep == 1) {
+        list(ar = 0.75, ma = NULL, sd_e = 0.083)
+      } else if (ep == 2) {
+        list(ar = c(1.05, -0.3), ma = NULL, sd_e = 0.06)
+      }
+
+      cb <- if (poly_ord == 1) {0.05} else if (poly_ord == 3) {0.1}
+
+      if (tn == 1) {
+        bw1 <- bw2 <- bw3 <- 0.49
+      } else if (tn == 2) {
+        fun <- expression(2.5 * tanh(5 * (x - 0.4)) + 3.5)
+        bw1 <- hA_calc(fun, arma = arma_list, p = poly_ord, mu = 1, frequ = season_p, n = season_p * 15, cb = cb)$hA
+        bw2 <- hA_calc(fun, arma = arma_list, p = poly_ord, mu = 1, frequ = season_p, n = season_p * 30, cb = cb)$hA
+        bw3 <- hA_calc(fun, arma = arma_list, p = poly_ord, mu = 1, frequ = season_p, n = season_p * 60, cb = cb)$hA
+      } else if (tn == 3) {
+        fun <- expression(3.2 * x + 0.92 * (sin(3.2 * pi * (x - 0.2))) + 1.85)
+        bw1 <- hA_calc(fun, arma = arma_list, p = poly_ord, mu = 1, frequ = season_p, n = season_p * 15, cb = cb)$hA
+        bw2 <- hA_calc(fun, arma = arma_list, p = poly_ord, mu = 1, frequ = season_p, n = season_p * 30, cb = cb)$hA
+        bw3 <- hA_calc(fun, arma = arma_list, p = poly_ord, mu = 1, frequ = season_p, n = season_p * 60, cb = cb)$hA
+      }
+
+      y_min <- min(bw1, bw2, bw3, .x$bwidth)
+      y_max <- max(bw1, bw2, bw3, .x$bwidth)
+      ylim <- c(y_min, y_max)
+
+      boxplot(bwidth ~ N_Year, data = .x, xlab = "Number of years",
+              ylab = "Estimated bandwidth", ylim = ylim, col = "white",
+              main = substitute(italic(g[trn])*", "*italic(s[srn])*", "*infl*" inflation rate", list(trn = tn, srn = sn, infl = ifr)))
+      points(c(1, 2, 3), c(bw1, bw2, bw3), pch = 4, col = "red", cex = 1.5)
+    }, ep = ep, poly_ord = poly_ord, season_p = season_p)
+}
+
+# Get and unwrap data from the file 
+# "sim1_all_bwidths.csv"
+data_bw <- unwrap()
+```
+
+```{r sim1fig1, fig.cap = "Boxplots of estimated bandwidths using $r=1$ for simulated quarterly data with $\\{e_{1,t}\\}$. Red crosses mark the true $h_A$.", fig.align='center', fig.height = 8.8, fig.width = 5.8, echo = FALSE, fig.pos="H"}
+boxplot_fun(data_bw$sp4_r1_e1, ep = 1, poly_ord = 1)
+```
+
+`r newpage_f()`
+
+```{r sim1fig2, fig.cap = "Boxplots of estimated bandwidths using $r=1$ for simulated quarterly data with $\\{e_{2,t}\\}$. Red crosses mark the true $h_A$.", fig.align='center', fig.height = 8.8, fig.width = 5.8, echo = FALSE, fig.pos="H"}
+boxplot_fun(data_bw$sp4_r1_e2, ep = 2, poly_ord = 1)
+```
+
+`r newpage_f()`
+
+```{r sim1fig3, fig.cap = "Boxplots of estimated bandwidths using $r=3$ for simulated quarterly data with $\\{e_{1,t}\\}$. Red crosses mark the true $h_A$.", fig.align='center', fig.height = 8.8, fig.width = 5.8, echo = FALSE, fig.pos="H"}
+boxplot_fun(data_bw$sp4_r3_e1, ep = 1, poly_ord = 3)
+```
+
+`r newpage_f()`
+
+```{r sim1fig4, fig.cap = "Boxplots of estimated bandwidths using $r=3$ for simulated quarterly data with $\\{e_{2,t}\\}$. Red crosses mark the true $h_A$.", fig.align='center', fig.height = 8.8, fig.width = 5.8, echo = FALSE, fig.pos="H"}
+boxplot_fun(data_bw$sp4_r3_e2, ep = 2, poly_ord = 3)
+```
+
+`r newpage_f()`
+
+```{r sim1fig5, fig.cap = "Boxplots of estimated bandwidths using $r=1$ for simulated monthly data with $\\{e_{1,t}\\}$. Red crosses mark the true $h_A$.", fig.align='center', fig.height = 8.8, fig.width = 5.8, echo = FALSE, fig.pos="H"}
+boxplot_fun(data_bw$sp12_r1_e1, ep = 1, poly_ord = 1)
+```
+
+`r newpage_f()`
+
+```{r sim1fig6, fig.cap = "Boxplots of estimated bandwidths using $r=1$ for simulated monthly data with $\\{e_{2,t}\\}$. Red crosses mark the true $h_A$.", fig.align='center', fig.height = 8.8, fig.width = 5.8, echo = FALSE, fig.pos="H"}
+boxplot_fun(data_bw$sp12_r1_e2, ep = 2, poly_ord = 1)
+```
+
+`r newpage_f()`
+
+```{r sim1fig7, fig.cap = "Boxplots of estimated bandwidths using $r=3$ for simulated monthly data with $\\{e_{1,t}\\}$. Red crosses mark the true $h_A$.", fig.align='center', fig.height = 8.8, fig.width = 5.8, echo = FALSE, fig.pos="H"}
+boxplot_fun(data_bw$sp12_r3_e1, ep = 1, poly_ord = 3)
+```
+
+`r newpage_f()`
+
+```{r sim1fig8, fig.cap = "Boxplots of estimated bandwidths using $r=3$ for simulated monthly data with $\\{e_{2,t}\\}$. Red crosses mark the true $h_A$.", fig.align='center', fig.height = 8.8, fig.width = 5.8, echo = FALSE, fig.pos="H"}
+boxplot_fun(data_bw$sp12_r3_e2, ep = 2, poly_ord = 3)
+```
+
+`r newpage_f()`
+
+## Tables on comparative simulation study {#sec:appcompa}
+
+On the following pages, the Tables \@ref(tab:sim2tab1) through \@ref(tab:sim2tab12) include the numerical results of the second simulation study described in Section 4. Brief interpretations of the results are given in Section 4. The tables contain the average mean squared errors (Mean) of the estimated seasonality over all series and time points in accordance with various methods. The sample standard deviations of the series-wise average mean squared errors are also given. For a better overview, the abbreviations **DS** (DeSeaTS), **X13** (X13-ARIMA), **TS** (TRAMO-SEATS), **STL** (STL), **TBATS** (TBATS) and **MA** (`decompose()` function in R) are used. Furthermore, the index given for **DS** describes the considered order of polynomial $r$ and the inflation rate (either **opt** or **nai** for optimal or naive).
+
+```{r, echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE}
+
+##### Tables for second simulation study
+```
+
+```{r sim2tab1, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+
+df <- read.csv("sim-data/sim2_error1_gamma01_quarterly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for quarterly data with error $\\{E_{1,t}\\}$ and $\\gamma = 0.1$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%
+  landscape_tab()
+
+```
+
+`r newpage_f()`
+
+```{r sim2tab2, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error2_gamma01_quarterly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for quarterly data with error $\\{E_{2,t}\\}$ and $\\gamma = 0.1$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
+
+`r newpage_f()`
+
+```{r sim2tab3, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error3_gamma01_quarterly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for quarterly data with error $\\{E_{3,t}\\}$ and $\\gamma = 0.1$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
+
+`r newpage_f()`
+
+```{r sim2tab4, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error1_gamma02_quarterly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for quarterly data with error $\\{E_{1,t}\\}$ and $\\gamma = 0.2$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+
+```
+
+`r newpage_f()`
+
+```{r sim2tab5, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error2_gamma02_quarterly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for quarterly data with error $\\{E_{2,t}\\}$ and $\\gamma = 0.2$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
+
+`r newpage_f()`
+
+```{r sim2tab6, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error3_gamma02_quarterly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for quarterly data with error $\\{E_{3,t}\\}$ and $\\gamma = 0.2$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
+
+`r newpage_f()`
+
+```{r sim2tab7, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error1_gamma01_monthly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for monthly data with error $\\{E_{1,t}\\}$ and $\\gamma = 0.1$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+
+```
+
+`r newpage_f()`
+
+```{r sim2tab8, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error2_gamma01_monthly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for monthly data with error $\\{E_{2,t}\\}$ and $\\gamma = 0.1$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
+
+`r newpage_f()`
+
+```{r sim2tab9, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error3_gamma01_monthly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for monthly data with error $\\{E_{3,t}\\}$ and $\\gamma = 0.1$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
+
+`r newpage_f()`
+
+```{r sim2tab10, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error1_gamma02_monthly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for monthly data with error $\\{E_{1,t}\\}$ and $\\gamma = 0.2$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
+
+`r newpage_f()`
+
+```{r sim2tab11, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error2_gamma02_monthly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for monthly data with error $\\{E_{2,t}\\}$ and $\\gamma = 0.2$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
+
+`r newpage_f()`
+
+```{r sim2tab12, echo = FALSE}
+library(knitr) 
+library(kableExtra)
+df <- read.csv("sim-data/sim2_error3_gamma02_monthly.csv")  
+if (knitr::is_html_output()) {
+  df <- df %>% adjust_bold_html()
+}
+
+kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 6)), escape = FALSE, format = fmt, booktabs = TRUE, 
+  linesep = c(rep(c("", "\\addlinespace"), 8), ""),
+  align = "llrrrrrrrrrrrrrrrrrr", caption = "Results of the seasonality estimation simulation study for monthly data with error $\\{E_{3,t}\\}$ and $\\gamma = 0.2$. The simulated mean MSE (Mean) and the MSE standard deviation (SD), both multiplied by 1000, are displayed for various methods. The smallest MSE values in each column are highlighted.") %>%
+  add_header_above(c(" ", " ", rep(c("$G_1$" = 3, "$G_2$" = 3), 3)), escape = FALSE) %>%
+  add_header_above(c(" ", " ", "$S_1$" = 6, "$S_2$" = 6, "$S_3$" = 6), escape = FALSE) %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  adjust_html_tab_size() %>%  
+  landscape_tab()
+```
