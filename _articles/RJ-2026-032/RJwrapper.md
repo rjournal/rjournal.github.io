@@ -1,0 +1,1167 @@
+---
+abstract: |
+  The Neyman-Scott point process is a widely used point process model
+  which is easily interpretable and easily extendable to include various
+  types of inhomogeneity. The inference for such complex models is then
+  complicated and fast methods, such as minimum contrast method or
+  composite likelihood approach do not provide accurate estimates or
+  fail completely. Therefore, we introduce Bayesian MCMC approach for
+  the inference of Neyman-Scott point process models with inhomogeneity
+  in any or all of the following model components: process of cluster
+  centers, mean number of points in a cluster, spread of the clusters.
+  We also extend the Neyman-Scott point process to the case of
+  overdispersed or underdispersed cluster sizes and provide a Bayesian
+  MCMC algorithm for its inference. The R package binspp provides these
+  estimation methods in an easy to handle implementation, with detailed
+  graphical output including traceplots for all model parameters and
+  further diagnostic plots. All inhomogeneities are modelled by spatial
+  covariates and the Bayesian inference for the corresponding regression
+  parameters is provided.
+address:
+- |
+  Jiří Dvořák\
+  Charles university, Faculty of Mathematics and Physics\
+  Sokolovská 83, 186 75 Prague\
+  Czech Republic\
+  (ORCiD: 0000-0003-3290-8518)\
+  [dvorak@karlin.mff.cuni.cz](dvorak@karlin.mff.cuni.cz){.uri}
+- |
+  Radim Remeš\
+  University of South Bohemia, Faculty of Agriculture and Technology\
+  Studentská 1668\
+  Czech Republic\
+  (ORCiD: 0000-0002-3306-0347)\
+  [inrem@ef.jcu.cz](inrem@ef.jcu.cz){.uri}
+- |
+  Ladislav Beránek\
+  University of South Bohemia, Faculty of Agriculture and Technology\
+  Studentská 1668\
+  Czech Republic\
+  (ORCiD: 0000-0001-5004-0164)\
+  [beranek@ef.jcu.cz](beranek@ef.jcu.cz){.uri}
+- |
+  Tomáš Mrkvička\
+  University of South Bohemia, Faculty of Agriculture and Technology\
+  Studentská 1668\
+  Czech Republic\
+  (ORCiD: 0000-0003-1613-2780)\
+  [mrkvicka.toma@gmail.com](mrkvicka.toma@gmail.com){.uri}
+author:
+- by Jiří Dvořák, Radim Remeš, Ladislav Beránek and Tomáš Mrkvička
+bibliography:
+- masterbib.bib
+title: "**binspp**: An R Package for Bayesian Inference for Neyman-Scott
+  Point Processes with Complex Inhomogeneity Structure"
+---
+
+::: article
+Keywords: Generalised Poisson distribution; Inference for covariate
+effect; Inhomogeneity; Neyman-Scott point process; Thomas point process
+
+## Introduction
+
+The Neyman-Scott point process (Neyman and Scott 1958) is a cluster
+point process model widely used in biology, astronomy, forestry,
+medicine, etc. Its main advantages are the straightforward
+interpretation of the model parameters and the closed form of moment
+properties, at least for the stationary version of the model.
+
+The model can be constructed in two stages and it is often called a
+doubly stochastic process: first, cluster centers are randomly sampled
+from a given Poisson point process; second, conditionally on the
+positions of cluster centers, a random number of offspring points are
+randomly and independently placed around each cluster center. Thus, the
+stationary Neyman-Scott point process model is specified by the
+intensity of the Poisson process of cluster centers, the distribution of
+the number of points per cluster (hereafter called cluster size), and
+the distribution of the relative displacement of the offspring points
+around their respective cluster centers (hereafter called cluster
+spread).
+
+In the most popular type of Neyman-Scott point process, called the
+(modified) Thomas process (Thomas 1949), the cluster size is assumed to
+follow a Poisson distribution and the cluster spread is governed by a
+radially symmetric Gaussian distribution. The stationary Thomas process
+is then described by the following parameters: the intensity $\kappa$ of
+the process of cluster centers, the mean number of points in a cluster
+$\alpha$ and the standard deviation $\omega$ of the Gaussian
+distribution determining cluster spread.
+
+A natural way of introducing inhomogeneity into the Neyman-Scott process
+model is allowing some of the model components (intensity of cluster
+centers $\kappa$, cluster size $\alpha$, cluster spread $\omega$) to
+depend on a set of spatial covariates. Their significance then needs to
+be assessed. Several models of this type have been studied in the
+literature, as discussed in the following paragraphs.
+
+The Neyman-Scott point process with inhomogeneous cluster centers, with
+the distribution of the clusters being the same in terms of size and
+spread, allows for varying the number of clusters in the space. The
+inference for this process was investigated in Mrkvička et al. (2014)
+and it was found that the Bayesian MCMC estimation procedure is more
+precise than composite likelihood or minimum contrast method. This model
+is not second-order inhomogeneity reweighted stationary (SOIRS)
+(Baddeley et al. 2000), but if instead the mean number of points in a
+cluster $\alpha$ is inhomogeneous, the resulting process is very close
+to SOIRS. The inference for SOIRS Neyman-Scott process (stationary
+Neyman-Scott point process thinned by a spatially varying function) can
+be performed by a two step method based on minimum contrast or composite
+likelihood (Waagepetersen and Guan 2009), as implemented in the R
+package [**spatstat**](https://CRAN.R-project.org/package=spatstat)
+(Baddeley et al. 2015).
+
+The inhomogeneity can be also introduced in the cluster spread $\omega$,
+then the process will be locally-scaled Neyman-Scott point process (Hahn
+et al. 2003). It is also possible to introduce inhomogeneity
+simultaneously in $\alpha$ and $\omega$, then the process can be called
+a Neyman-Scott point process with growing clusters (Mrkvička 2014).
+
+For the models with homogeneous population of cluster centers but
+inhomogeneity in the cluster properties we talk about cluster
+inhomogeneity. On the other hand, for the Neyman-Scott point process
+with inhomogeneous cluster centers we talk about inhomogeneity of
+centers. Combining the cluster inhomogeneity and inhomogeneity of
+centers leads to the notion of doubly inhomogeneous Neyman-Scott point
+process. The Bayesian MCMC inference for such a process was studied in
+(Mrkvička and Soubeyrand 2017). Other kinds of inference were found to
+be useless for such a complex model.
+
+Therefore, we build up the R package **binspp** which contains the
+Bayesian MCMC estimation procedure for the most general model with
+inhomogeneity in all three model components. This model contains all the
+previous models as special cases, including the stationary one. The
+radially symmetric Gaussian distribution is assumed to determine the
+cluster spread, which does not limit practical applicability of the
+models. We do not include SOIRS Neyman-Scott point process due to the
+different construction of the model and also due to availability of
+moment-based estimation methods. However, practically speaking the
+Neyman-Scott point process with inhomogeneous cluster size $\alpha$ can
+be used as an approximation to the SOIRS Neyman-Scott point process
+model.
+
+The most important statistical problem here is to assess the dependence
+of the data on the given set of covariates. Our package handles the
+spatial covariates influencing any or all of the model components: the
+intensity of the cluster centers $\kappa$, the cluster size $\alpha$ and
+the cluster spread $\omega$. The Bayesian MCMC procedure is time
+consuming, but its great benefit is that the significance of all
+covariates is provided from the estimated posterior distributions in a
+natural way. For example, in case of the inhomogeneity of cluster
+centers if a faster estimation method is used, it is necessary to
+perform parametric bootstrap in order to obtain the significance of the
+covariates. This is as time consuming as the Bayesian MCMC procedure
+(Mrkvička et al. 2014). Only in the case of SOIRS Neyman-Scott processes
+it is possible to use the fast estimation method and the significance of
+covariates can be assessed using the asymptotic normality result
+obtained in Waagepetersen and Guan (2009).
+
+As mentioned above, the minimum contrast approach and the composite
+likelihood approach are available for SOIRS Neyman-Scott point process.
+They are also described in Mrkvička et al. (2014) for the Neyman-Scott
+point process with inhomogeneous cluster centers. To the best of our
+knowledge, they are not available for the other kinds of inhomogeneity
+discussed above.
+
+In order to model inhomogeneous clustered point patterns log-Gaussian
+Cox process (LGCP) models are often used (Møller et al. 1998). The
+inference for SOIRS LGCP is well developed with integrated nested
+Laplace approximation (INLA) (Rue et al. 2009) available through the
+package [**inlabru**](https://CRAN.R-project.org/package=inlabru) (Bachl
+and Lindgren 2020), with Bayesian MCMC inference available through the
+package [**lgcp**](https://CRAN.R-project.org/package=lgcp) (Taylor et
+al. 2020) or with the moment methods available through the package
+**spatstat**. Nevertheless, none of these packages allows for inference
+for LGCP with more complex types of inhomogeneity. An attempt in this
+direction has been made in (Dvořák et al. 2019).
+
+With these considerations in mind, we have implemented the core
+functions of the **binspp** package using **Rcpp** to speed up the
+computation. As a result, short runs of the chain, useful for tuning up
+the hyperparameters of the prior distributions, are finished within
+minutes on a regular laptop. Long runs, used for the actual estimation,
+may be finished within a few hours, see the detailed example in
+Section [4.5](#subsec:complex_example){reference-type="ref"
+reference="subsec:complex_example"}. This makes our implementation
+easily applicable in practice, without the need to worry about the
+computational demands.
+
+The inference for Neyman-Scott point processes is usually performed with
+the assumption of Poisson distribution of the number of points in a
+cluster. The same is assumed in all models discussed above, but the
+**binspp** package contains also the Bayesian MCMC estimation procedure
+for homogeneous generalised Neyman-Scott process. The method was
+described in (Andersson and Mrkvička 2020). This model uses the
+generalised Poisson distribution (GPD) as a distribution of the number
+of points in a cluster. The GPD allows for modelling of under- or
+over-dispersion. This allows for more flexible modelling of the
+distribution of the number of points in a cluster.
+
+The package specifically considers the following models. The
+inhomogeneous Thomas point process allowing for modelling of cluster
+centers, cluster spread and cluster sizes through covariates. The
+covariates are incorporated in every model component via exponential
+model. Such a general process was not presented in the literature, even
+(Mrkvička and Soubeyrand 2017) presents only a special case of this
+general model. Furthermore, the generalised Neyman-Scott point process
+which allows for modelling underdispersed or overdispersed cluster sizes
+is considered.
+
+This paper is organized as follows. First, in
+Section [2](#models){reference-type="ref" reference="models"} we
+describe the models considered here. Then we briefly describe the
+algorithms in Section [3](#MCMC){reference-type="ref" reference="MCMC"}.
+In Section [4](#examples){reference-type="ref" reference="examples"} we
+show the use of our package for different types of models, with a
+detailed example in
+Section [4.5](#subsec:complex_example){reference-type="ref"
+reference="subsec:complex_example"} considering a real dataset of
+infected oak trees. This is a part of a larger dataset studied in
+Fernández-Habas et al. (2019). The model for the observed point pattern
+includes inhomogeneity in all three components of the model and for
+illustration we provide the outputs of a long run of the MCMC chain. We
+also show in Section [4.7](#subsec:generalised){reference-type="ref"
+reference="subsec:generalised"} the use of the estimation procedure for
+homogeneous generalised Neyman-Scott point process and the possibility
+of detecting over- or under-dispersion of cluster sizes.
+Section [5](#sec:discussion){reference-type="ref"
+reference="sec:discussion"} is left for discussion.
+
+## Models
+
+Let us first describe the model in its full generality, i.e. the doubly
+inhomogeneous Neyman-Scott point process. The process of cluster centers
+$C$ follows an inhomogeneous Poisson point process with intensity
+function $\kappa f (\beta, u), \ u\in W \subset \mathbb{R}^2$, where
+$\kappa > 0$ and $\beta \in \mathbb{R}^k$ are parameters. The clusters
+$X_c, c \in C$, are independently attached to every cluster center $c$.
+The Neyman-Scott point process is the superposition of the clusters
+$X=\cup_{c\in C} X_c$, where $X_c$ are independent Poisson point
+processes with intensity function
+$\alpha (\mu,c)k(u-c, \omega (\nu,c)), u \in \mathbb{R}^2$, which
+depends on $c$. Here $\alpha(\mu, c)$ is the expected number of
+offspring points in the cluster corresponding to the parent point $c$
+and $\mu \in \mathbb{R}^{l+1}$ is a parameter. Furthermore,
+$k(\cdot, \omega(\nu, c))$ is the probability density function governing
+the relative displacement of the offspring points around the parent
+point $c$ (in this paper we assume $k$ is the density of the centered
+radially symmetric normal distribution with the standard deviation
+$\omega(\nu, c$)). The distribution of the number of points in the
+cluster with the cluster center $c$ is assumed to be Poisson for all
+inhomogeneous models, with the probabilities being denoted
+$p(n, \alpha(\mu, c))$.
+
+The parametric functions $f$, $\alpha$ and $\omega$ are the key
+ingredients of the model which describe the dependence on the spatial
+covariates. These functions are assumed to take the following parametric
+form:
+$$\begin{align*}
+    f(\beta,u) & = \exp(\beta_1 z_1(u)+\ldots + \beta_k z_k(u)), \\
+    \alpha(\mu,c) & = \exp(\beta^\alpha_0+\beta^\alpha_1 z^\alpha_1(c)+\ldots + \beta^\alpha_l z^\alpha_l(c)), \\
+    \omega(\nu,c) & = \exp(\beta^\omega_0+\beta^\omega_1 z^\omega_1(c)+\ldots + \beta^\omega_m z^\omega_m(c)).
+\end{align*}$$
+
+Here $z_1, \ldots , z_k$ are the spatial covariates influencing the
+population of cluster centers, $z_1^\alpha, \ldots , z_l^\alpha$ are the
+spatial covariates influencing the cluster size and
+$z_1^\omega, \ldots , z_m^\omega$ are the spatial covariates influencing
+the cluster spread. All the $\beta$s are real-valued regression
+parameters. Note that the model for $f$ does not contain the intercept
+since its role is taken by the parameter $\kappa$. We use this
+parametrization to be consistent with the earlier works describing the
+models and the corresponding Bayesian inference (Mrkvička 2014; Kopecký
+and Mrkvička 2016; Mrkvička and Soubeyrand 2017).
+
+Specific choices of $k,l,m$ result in different special cases of the
+general model. For $k = 0, l = 0, m = 0$ the process is the stationary
+Neyman-Scott process. For $k > 0, l = 0, m = 0$ we obtain the
+inhomogeneous cluster centers. Similarly, $k = 0, l > 0, m = 0$ results
+in inhomogeneous cluster sizes, while $k = 0, l = 0, m > 0$ leads to
+locally scaled process (inhomogeneous cluster spread). For
+$k = 0, l > 0, m > 0$ we obtain the process with growing clusters
+(Mrkvička 2014) and finally for $k > 0, l > 0, m > 0$ we obtain the most
+general, doubly inhomogeneous process (Mrkvička and Soubeyrand 2017).
+
+Our package allows for all the possible choices of $k, l, m$. However,
+the user must be aware of the possible identifiability issues which
+occur if the same covariate is used for $z_i$ and $z_j^\alpha$ for some
+$i$ and $j$, i.e. if the same covariate influences both $f$ and
+$\alpha$. It is a property of the two-step estimation algorithm
+described in the next section that the parameters $\beta_i$ and
+$\beta_j^\alpha$ cannot be estimated correctly in this case. For
+example, if $\beta_i = 0$ and $\beta_j^\alpha \neq 0$ then the first
+step of the algorithm will estimate $\hat\beta_i$ to be approximately
+$\beta_j^\alpha$.
+
+The **binspp** package allows also for the estimation of the homogeneous
+generalised Neyman-Scott point process, where the distribution of the
+cluster sizes follows the generalised Poisson distribution, which is a
+popular model for count data (Wang and Famoye 1997). The probability
+mass function of GPD is
+$$\begin{align*}
+p(n|\lambda, \theta) = \left\{\begin{array}{l} \frac{1}{n!}\theta(\theta + \lambda n)^{n-1}e^{-\theta-\lambda n}, \quad  n = 0, 1, 2, \ldots, \\ 
+0, \quad \quad  \text{if } n > \tilde n \text{ when } \lambda <0,
+\end{array} \right.
+\end{align*}$$
+where $\theta > 0$, $| \lambda | < 1$, and $\tilde n$ is the largest
+integer such that $\theta + \lambda \tilde n > 0$ when $\lambda < 0$.
+When $\lambda < 0, p(n|\lambda, \theta)$ does not sum to 1, and needs to
+be renormalized. The expectation is equal to
+$\alpha =  \frac{\theta}{1-\lambda}$, []{#eq:E label="eq:E"} and
+variance is equal to $\frac{\theta}{(1-\lambda)^3}. \label{eq:V}$ The
+parameter $\lambda \in [-1,1]$ in GPD models the over- or
+under-dispersion, $\lambda=0$ corresponds to the Poisson case,
+$\lambda>0$ to the over-dispersed and $\lambda<0$ to the under-dispersed
+case.
+
+## Inference {#MCMC}
+
+The inference for the doubly inhomogeneous Neyman-Scott point process
+observed in a bounded observation window W is performed in two steps,
+similar to the approach of (Waagepetersen and Guan 2009).
+
+In the first step, the parameters $\overline{\beta}=(\log (\lambda)
+,\beta_1, \ldots, \beta_k)$ of the intensity function are estimated,
+based on the assumption that $X$ is the Poisson process with the
+intensity function
+$$\begin{align}
+ \label{aprox} \overline{f}_{\overline{\beta}}
+(u) =  \exp (\overline z(u) \overline \beta^T), \  u \in \mathbb R^2,
+\end{align}   (\#eq:aprox)$$
+where $\overline z(u) = (1, z_1(u), \ldots , z_k(u))$. This assumption
+is intuitively justified if the range of interaction among the points is
+small compared to the range of changes in the spatial covariates and if
+$z_i$ is different from $z_j^\alpha$ for all combinations of $i$ and
+$j$. Specifically, we maximize the log-likelihood of the assumed
+inhomogeneous Poisson process:
+$$\begin{align}
+    l(\overline{\beta})=\sum_{x\in X \cap W}
+    \overline z(x)\overline{\beta}^T - \int_W \exp (\overline z(u)\overline{\beta}^T)
+    \, \mathrm{d}u
+\end{align}$$
+Here $W$ is the observation window.
+
+The second step consists of estimation of the interaction parameters
+$\mu$ and $\nu$, conditionally on the estimate of $\overline{\beta}$.
+
+Bayesian estimation for the homogeneous Neyman-Scott point processes was
+carried out with an MCMC algorithm e.g. in (Guttorp and Thorarinsdottir
+2012; Møller and Waagepetersen 2007; Mrkvička 2014; Kopecký and Mrkvička
+2016). In this approach, the cluster centers and the model parameters
+are updated in each step of the MCMC algorithm. After reaching the
+equilibrium, posterior distributions of the parameters can be estimated.
+The cluster centers are generally viewed as nuisance parameters.
+
+Considering the inhomogeneous clusters, the MCMC algorithm proceeds in
+the same way as in the homogeneous case, except that the likelihood is
+influenced by the parameters connected with the cluster inhomogeneity.
+We remark here that the estimation algorithm was not presented in such
+generality earlier, even (Mrkvička and Soubeyrand 2017) considered only
+a special case of this model, without allowing for the general form with
+covariates. However, the generalisation is straightforward.
+
+Let $C$ denote the inhomogeneous Poisson point process of cluster
+centers with the intensity $\kappa f(\beta, u)$. Let
+$p(C|\kappa, \beta)$ denote the Poisson probability density function of
+the point process $C$, conditionally on $\kappa$ and $\beta$, with
+respect to the distribution of the unit-rate homogeneous Poisson point
+process. Furthermore, let $p(X|C, \beta, \kappa, \mu, \nu)$ denote the
+Poisson probability density function of the point process $X$ under the
+knowledge of $C$, $\beta$, $\kappa$, $\mu$ and $\nu$. The joint
+posterior distribution of the process $C$ and the parameters is then
+$$\begin{align}
+  p(C, \kappa, \mu, \nu |X) \propto p(X|C, \beta, \kappa, \mu, \nu) p(C|\kappa, \beta)  p(\mu) p(\nu),
+\end{align}$$
+where $p(\mu)$ and $p(\nu)$ denote the prior probability density
+functions for the respective parameters. No prior for $\kappa$ is
+required because it is, in our estimation procedure including a
+modification similar to the one proposed by Kopecký and Mrkvička (2016),
+a deterministic function of $\mu$ and $\beta$. Indeed, the expected
+number $\mathbb E M$ of the observed points in the observation window
+$W$ is equal to
+$$\begin{align*}
+  \kappa  \int_W \alpha(\mu, u) \left[\int_{\mathbb R^2} k(u-c,\omega (\nu, c))f(\beta, c) \, \mathrm{d}c \right] \, \mathrm{d}u,
+\end{align*}$$
+which can be approximated by
+$$\begin{align*}
+    \mathbb E M \approx \kappa  \int_W \alpha(\mu, u))f(\beta, u) \, \mathrm{d}u.
+\end{align*}$$
+Thus, in each iteration of the MCMC algorithm, $\kappa$ can be
+re-computed when $\mu$ is updated.
+
+Our MCMC algorithm consists of updating the process of cluster centers
+$C$ and updating the parameters $\mu$ and $\nu$. For updating $C$ we use
+the birth-death-move algorithm described in Møller and Waagepetersen
+(2004). For updating $\mu$ and $\nu$ we use the Metropolis-Hastings
+algorithm. In order to obtain better mixing properties $\mu$ and $\nu$
+are updated separately. Full details about this algorithm can be found
+in (Mrkvička and Soubeyrand 2017).
+
+The inference for the interaction parameters $\mu$ and $\nu$ is
+performed from the estimated posterior distributions which are obtained
+from the MCMC samples after appropriate burn-in. The inference about the
+first-order inhomogeneity parameters $\beta$ cannot be obtained from the
+first step where the Poisson distribution is assumed. Therefore, we base
+the inference about $\beta$ on the posterior distribution of the cluster
+centers obtained in the second step. In every step the significance of
+$z_1, \ldots, z_k$ with respect to the process of cluster centers $C$ is
+assessed using the Poisson distribution of $C$ assumed in this model.
+The median of respective $p$-values computed from the posterior
+distribution is taken to be the estimate of the $p$-value of the test of
+significance of the given covariate. We remark that it is also possible
+to perform the full Bayesian estimation by considering the inhomogeneity
+of cluster centers in the MCMC procedure. However, this approach was
+found to be less efficient than the two-step approach due to
+identifiability issues in the full likelihood.
+
+Considering the generalised Neyman-Scott process, the MCMC algorithm
+consists of one extra step in addition to the traditional
+Metropolis-Hastings update of the model parameters and the
+birth-death-move update of the cluster centers. It is the update of the
+connections between the points and the cluster centers, since by
+assuming the non-Poisson distribution these connections take part in the
+likelihood of the process. Full details about this algorithm can be
+found in (Andersson and Mrkvička 2020).
+
+## Examples
+
+In this section we provide a set of examples illustrating how different
+types of models can be fitted using the Bayesian MCMC approach
+implemented in the **binspp** package. The first few examples illustrate
+the use of the package, while the most complex example in
+Section [4.5](#subsec:complex_example){reference-type="ref"
+reference="subsec:complex_example"} describes the outputs of the
+algorithm in full detail. Model parametrization is described in
+Section [2](#models){reference-type="ref" reference="models"}.
+
+Below we assume that `X` is the observed point pattern in the `ppp`
+format used in the **spatstat** package. We further assume that `X` is
+observed through the observation window `W`, which is a union of aligned
+rectangles, aligned with the coordinate axes. `x‘_left`, `x‘_right`,
+`y‘_bottom` and `y‘_top` are vectors giving the coordinates of the
+extreme points of the rectangles whose union forms the observation
+window `W`.When the observation window is rectangular, it is possible to
+supply it using the argument `W` in the estimation function instead of
+the vectors `x‘_left` to `y‘_top`. Furthermore, `W‘_dil` is the dilated
+observation window used to accommodate cluster centers outside `W` to
+mitigate the edge effects. An easy way to obtain `W‘_dil` from the
+vectors `x‘_left` to `y‘_top` is shown in Section
+[4.5](#subsec:complex_example){reference-type="ref"
+reference="subsec:complex_example"}. All covariates such as `cov1` are
+assumed to be pixel images (objects of type `im` from the **spatstat**
+package) defined over the `W‘_dil` domain.
+
+The list `control` contains important tuning constants such as the
+required number of iterations to be run (`NStep`), the length of the
+initial part of the chain to be discarded before computing estimates
+(`BurnIn`) or the sampling frequency used to reduce autocorrelations in
+the values used for computing the estimates (`SamplingFreq`). Also,
+hyperparameters for prior distributions for different parameters can be
+specified in this list, as illustrated in the detailed example in
+Section [4.5](#subsec:complex_example){reference-type="ref"
+reference="subsec:complex_example"}. Providing hyperparameter values
+guided by the knowledge of the problem at hand is highly recommended!
+However, some default values are used if the user does not provide them.
+
+All priors are normal distributions, priors for $\beta_i^\alpha$ and
+$\beta_i^\omega$, $i>0$, have expectation 0. We remark here that also
+the hyperparameters for $\beta_0^\alpha$ and $\beta_0^\omega$ must be
+given in $\log$ scale because all parameters, except $\kappa$, are
+estimated in the exponential form.
+
+The estimation algorithm runs an MCMC chain of all the model parameters
+(and the process of cluster centers). The chain converges to the
+equilibrium state corresponding to the posterior distribution. The
+values of the MCMC chain can be accessed using the `rawMCMCoutput`
+function, providing samples from the posterior distribution of the model
+parameters. The tuning constants given in the `control` argument specify
+how the MCMC algorithm is run. `NStep` gives the required number of
+steps of the chain, and `BurnIn` gives the number of initial steps to be
+disregarded so that the equilibrium state is reached. The equilibrium
+state can be determined by various diagnostic plots provided by the
+package. E.g. the log-likelihood does not increase anymore, the number
+of centers is stabilized, the trace plots of the parameters show
+stationary behavior, and the histograms of posterior distributions are
+unimodal. The value `SamplingFreq` controls how many steps of the chain
+are made before recording a new sample. This helps control the
+dependence between the sampled values. The bigger the `SamplingFreq`,
+the lower the correlation, but fewer samples are obtained.
+
+### Homogeneous Thomas process
+
+First, we simulate a point pattern using the **spatstat** function
+`rThomas` and specify the observation window. In the following examples,
+we do not explicitly include these commands for conciseness.
+
+``` r
+library(spatstat)
+library(binspp)
+W     <- square(1)
+W_dil <- dilation.owin(W,0.1)
+X     <- rThomas(30, 0.02, 5, W)
+```
+
+Then we set up the control parameters. Based on our experience, for this
+homogeneous model we recommend running at least $50\,000$ iterations,
+with burn-in of at least $25\,000$ steps.
+
+``` r
+control <- list(NStep=50000, BurnIn=25000, SamplingFreq=10)
+```
+
+The following commands provide equivalent ways of specifying that all
+three components of the model are homogeneous (no covariates are
+provided):
+
+``` r
+Output <- estintp(X=X, control=control, W=W, W_dil=W_dil)
+Output <- estintp(X=X, control=control, W=W, W_dil=W_dil,
+                  z_beta=NULL, z_alpha=NULL, z_omega=NULL)
+Output <- estintp(X=X, control=control, W=W, W_dil=W_dil,
+                  z_beta=list(), z_alpha=list(), z_omega=list())
+```
+
+In this example the default hyperparameter values were used. These can
+be retrieved in the following way:
+
+``` r
+Output$priorParameters
+```
+
+The text outputs and graphical outputs are obtained as follows:
+
+``` r
+print(Output)
+plot(Output)
+```
+
+### Thomas process with inhomogeneous cluster centers
+
+In this example the population of parent points is inhomogeneous, with
+intensity function depending on a covariate. More covariates can be
+included in the model, provided they are given in the `z‘_beta` list,
+see Section [4.5](#subsec:complex_example){reference-type="ref"
+reference="subsec:complex_example"} for an illustration.
+
+For this model with simple inhomogeneity we recommend running at least
+$100\,000$ iterations, with burn-in of at least $50\,000$ steps. Note
+that the covariates in the list `z‘_beta` must be named in order for the
+`ppm` function from the **spatstat** package to run properly. We first
+create a simple covariate describing the $x$-coordinate.
+
+``` r
+cov1    <- as.im(function(x,y){x}, W=W_dil)
+control <- list(NStep=100000, BurnIn=50000, SamplingFreq=10)
+Output  <- estintp(X=X, control=control, W=W, W_dil=W_dil,
+                  z_beta=list(Z1=cov1))
+```
+
+### Thomas process with inhomogeneous mean number of points in a cluster
+
+Now we assume that the mean number of points in a cluster depends on the
+position of the corresponding parent point $c$, with the function
+$\alpha(\mu,c)$ depending on a covariate. Again, more than one covariate
+may be used, provided they are given in the `z‘_alpha` list.
+
+For this model with simple inhomogeneity we recommend running at least
+$100\,000$ iterations, with burn-in of at least $50\,000$ steps.
+
+``` r
+control <- list(NStep=100000, BurnIn=50000, SamplingFreq=10)
+Output  <- estintp(X=X, control=control, W=W, W_dil=W_dil,
+                  z_alpha=list(cov1))
+```
+
+### Thomas process with inhomogeneous cluster spread
+
+In this case the spread of the clusters depends on the position of the
+corresponding parent point $c$, with the function $\omega(\nu,c)$
+depending on a covariate. As before, more than one covariate may be
+given in the `z‘_omega` list.
+
+For this model with simple inhomogeneity we recommend running at least
+$100\,000$ iterations, with burn-in of at least $50\,000$ steps.
+
+``` r
+control <- list(NStep=100000, BurnIn=50000, SamplingFreq=10)
+Output  <- estintp(X=X, control=control, W=W, W_dil=W_dil,
+                  z_omega=list(cov1))
+```
+
+### Thomas process with complex inhomogeneities in all model components {#subsec:complex_example}
+
+For this example we use the real dataset provided in the **binspp**
+package, see also (Fernández-Habas et al. 2019).The dataset is shown in
+Figure [1](#fig:Oaks){reference-type="ref" reference="fig:Oaks"} and it
+can be plotted using `plot` command as usual. The aim of this example is
+to show the possibility of modeling simultaneously the inhomogeneous
+centers of clusters, inhomogeneous cluster sizes and inhomogeneous
+cluster spread, using the lists of covariates `z‘_beta`, `z‘_alpha` and
+`z‘_omega`. The presented methodology is the only available methodology
+that allows for such a complexity.
+
+![Figure 1: The oak trees dataset sampled in 2009 in a region consisting
+of 5 rectangles.](Oaks.png){#fig:Oaks width="120.0%"
+alt="graphic without alt text"}
+
+``` r
+X        <- trees_N4
+x_left   <- x_left_N4
+x_right  <- x_right_N4
+y_bottom <- y_bottom_N4
+y_top    <- y_top_N4
+```
+
+Several covariates accompany the observed point pattern. In the
+following lists we specify which covariates are assumed to influence
+which model components. Note that each model component depends on two
+covariates. Due to identifiability reasons the lists `z‘_beta` and
+`z‘_alpha` must be disjoint (no covariate can appear in both lists).
+
+``` r
+z_beta  <- list(refor=cov_refor, slope=cov_slope)
+z_alpha <- list(tmi=cov_tmi, td=cov_tdensity)
+z_omega <- list(slope=cov_slope, reserv=cov_reserv)
+```
+
+The observation window is given as the union of aligned rectangles,
+aligned with the coordinate axes.
+
+``` r
+W <- owin(c(x_left[1],x_right[1]),c(y_bottom[1],y_top[1]))
+if(length(x_left)>=2){ 
+  for(i in 2:length(x_left)){ 
+    W2 <- owin(c(x_left[i],x_right[i]),c(y_bottom[i],y_top[i])) 
+    W <- union.owin(W,W2)
+  } 
+}
+```
+
+The dilated observation window is obtained as follows:
+
+``` r
+W_dil <- dilation.owin(W,100)
+```
+
+The parameter 100 for the dilation specifies the width of the zone
+around `W` where centers having offsprings in `W` can occur. Since the
+Gaussian distribution for the offsprings is used, the width is infinite
+in theory, but for computational reasons we bound this region.
+
+For this model with complex inhomogeneities we recommend running at
+least $250\,000$ iterations, with burn-in of at least $150\,000$ steps.
+Hyperparameter values for prior distributions can be specified as
+follows:
+
+``` r
+control <- list(NStep=250000, BurnIn=150000, SamplingFreq=10, Prior_alpha_mean=3, 
+              Prior_alpha_SD=2, Prior_omega_mean=5.5, Prior_omega_SD=5, 
+              Prior_alphavec_SD=c(4.25,0.012), Prior_omegavec_SD=c(0.18,0.009))
+```
+
+The following commands perform the MCMC estimation. With the required
+250 000 steps of the algorithm the computation takes approx. 2.5 hours
+on a regular laptop due to the implementation of the core functions
+using the **Rcpp** package.
+
+``` r
+set.seed(12345)
+Output <- estintp(X=X, control=control, x_left=x_left, x_right=x_right,
+                  y_bottom=y_bottom, y_top=y_top, W_dil=W_dil,
+                  z_beta=z_beta, z_alpha=z_alpha, z_omega=z_omega)
+```
+
+Text output, providing the parameter estimates (medians of the estimated
+posterior distributions) together with the corresponding 2.5% and 97.5%
+quantiles, is obtained by the command
+
+``` r
+print(Output)
+```
+
+These quantiles provide the 95% credible interval. Note that another
+credibility level may be specified as an argument of the function
+`estintp`.
+
+Graphical output, given in
+Figures [2](#fig:binspp_outputs1){reference-type="ref"
+reference="fig:binspp_outputs1"} to
+[7](#fig:binspp_outputs6){reference-type="ref"
+reference="fig:binspp_outputs6"}, is provided by the command
+
+``` r
+plot(Output)
+```
+
+First, estimated surfaces of the first-order intensity function, the
+$\alpha(c)$ function, describing the mean number of points in a cluster,
+and the $\omega(c)$ function, describing the spread of the clusters, are
+plotted, as illustrated in
+Figure [2](#fig:binspp_outputs1){reference-type="ref"
+reference="fig:binspp_outputs1"}. The estimated surfaces are plotted in
+the dilated window.
+
+Then, histograms describing the estimated posterior distribution of the
+model parameters are plotted, see
+Figure [3](#fig:binspp_outputs2){reference-type="ref"
+reference="fig:binspp_outputs2"}.
+
+The histograms for the first-order parameters are not plotted, because
+the point estimates of $\beta_1$ and $\beta_2$ are computed in the first
+step under the assumption of Poissonity. But these parameters govern the
+inhomogeneity of cluster centers, i.e. their significance should be
+computed from cluster centers only. In order to deal with this issue, we
+record the centers in every step of the Markov chain and also we record
+the significance of the covariates from the list `z‘_beta` with respect
+to the population of cluster centers in every step of the chain.
+Histograms of the corresponding p-values are plotted instead of the
+posterior histograms for these parameters, see the bottom part of
+Figure [3](#fig:binspp_outputs2){reference-type="ref"
+reference="fig:binspp_outputs2"}. This provides more precise inference
+about the significance of the covariates influencing the cluster centers
+than the outcomes of the first step of estimation, where the `ppm`
+function from the **spatstat** package is used and where the locations
+of the (observed) offsprings may confound the significance of the
+covariates with respect to the (unobserved) parent points.
+
+Finally, traceplots for various quantities describing the state of the
+chain are plotted, including 1) the model parameters, 2) the p-values
+discussed in the previous paragraph, 3) the value of the log-likelihood
+itself, 4) the number of parent points in the dilated window, 5)
+acceptance probabilities for the proposed updates of parameters
+influencing $\alpha(c)$ or $\omega(c)$ (not very informative for long
+runs but useful when tuning the algorithm for a new dataset with shorter
+runs), and 6) fractions of accepted updates in the past 1000 steps of
+the algorithm (much more informative than plots of the acceptance
+probabilities). See
+Figures [4](#fig:binspp_outputs3){reference-type="ref"
+reference="fig:binspp_outputs3"} to
+[7](#fig:binspp_outputs6){reference-type="ref"
+reference="fig:binspp_outputs6"} for illustration. The traceplots for
+model parameters show also the estimated median of the posterior
+distribution (given by the solid red line) together with the bounds of
+the credible interval with the required credibility (red dashed lines).
+These bounds correspond to the empirical 2.5% and 97.5% quantiles of the
+posterior distribution when 95% credibility is chosen.
+
+### Simulation of the Thomas process with complex inhomogeneity
+
+The Thomas process with any kind of assumed inhomogeneity can be
+simulated using the function `rThomasInhom`. This function generates the
+parent process using the `rpoispp` function from the **spatstat**
+package. The offspring points are simulated directly from the
+appropriate normal distributions.
+
+``` r
+W <- square(1)
+W_dil <- dilation.owin(W,0.1)
+cov1 <- as.im(function(x,y){x}, W=W_dil)
+cov2 <- as.im(function(x,y){y}, W=W_dil)
+cov3 <- as.im(function(x,y){1 - (y - 0.5) ^ 2}, W=W_dil)
+Y=rThomasInhom(kappa=10, betavec=c(1), z_beta=list(cov1),
+             alpha=log(10), alphavec = c(1), z_alpha=list(cov2),
+             omega=log(0.01), omegavec=c(1), z_omega=list(cov3),
+             W=W, W_dil=W_dil)
+```
+
+Simulation from the fitted model is also possible using the function
+`simulate`.
+
+``` r
+simulate(Output)
+```
+
+<figure id="fig:binspp_outputs1">
+<img src="Fig_data_1.png" style="width:80.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_2.png" style="width:80.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_3.png" style="width:80.0%"
+alt="graphic without alt text" />
+<figcaption>Figure 2: Plots of the estimated first-order intensity
+function (top), the estimated function <span
+class="math inline"><em>α</em>(<em>c</em>)</span> describing the mean
+number of points in a cluster (middle) and the estimated function <span
+class="math inline"><em>ω</em>(<em>c</em>)</span> describing the spread
+of the clusters (bottom).</figcaption>
+</figure>
+
+<figure id="fig:binspp_outputs2">
+<img src="Fig_data_4.png" style="width:49.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_5.png" style="width:49.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_6.png" style="width:49.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_7.png" style="width:49.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_8.png" style="width:49.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_9.png" style="width:49.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_10.png" style="width:49.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_11.png" style="width:49.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_12.png" style="width:49.0%"
+alt="graphic without alt text" />
+<figcaption>Figure 3: Histograms for estimated posterior distributions
+of various model parameters. Note that the parameter <code>alpha</code>
+in the histogram above corresponds to the parameters <span
+class="math inline"><em>β</em><sub>0</sub><sup><em>α</em></sup></span>,
+the parameter <code>omega</code> corresponds to <span
+class="math inline"><em>β</em><sub>0</sub><sup><em>ω</em></sup></span>
+and the parameters <code>alphavec(i)</code> corresponds to the
+parameters <span
+class="math inline"><em>β</em><sub><em>i</em></sub><sup><em>α</em></sup></span>
+from Section <a href="#models" data-reference-type="ref"
+data-reference="models">2</a>, <code>omegavec(i)</code> corresponds to
+<span
+class="math inline"><em>β</em><sub><em>i</em></sub><sup><em>ω</em></sup></span>
+and <code>beta(i)</code> corresponds to <span
+class="math inline"><em>β</em><sub><em>i</em></sub></span>.
+</figcaption>
+</figure>
+
+<figure id="fig:binspp_outputs3">
+<img src="Fig_data_13.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_14.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_15.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_16.png" style="width:95.0%"
+alt="graphic without alt text" />
+<figcaption>Figure 4: Traceplots for various quantities describing the
+state of the MCMC algorithm. Note that the parameter <code>alpha</code>
+in the traceplot above corresponds to the parameters <span
+class="math inline"><em>β</em><sub>0</sub><sup><em>α</em></sup></span>
+and the parameters <code>alphavec(i)</code> corresponds to the
+parameters <span
+class="math inline"><em>β</em><sub><em>i</em></sub><sup><em>α</em></sup></span>
+from Section <a href="#models" data-reference-type="ref"
+data-reference="models">2</a></figcaption>
+</figure>
+
+<figure id="fig:binspp_outputs4">
+<img src="Fig_data_17.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_18.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_19.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_20.png" style="width:95.0%"
+alt="graphic without alt text" />
+<figcaption>Figure 5: Traceplots for various quantities describing the
+state of the MCMC algorithm. Note that the parameter the parameter
+<code>omega</code> corresponds to <span
+class="math inline"><em>β</em><sub>0</sub><sup><em>ω</em></sup></span>
+and <code>omegavec(i)</code> corresponds to <span
+class="math inline"><em>β</em><sub><em>i</em></sub><sup><em>ω</em></sup></span>
+and <code>beta(i)</code> corresponds to <span
+class="math inline"><em>β</em><sub><em>i</em></sub></span>. The
+parameter <code>beta(1)</code> corresponds to the <span
+class="math inline"><em>β</em><sub>1</sub></span> computed in the first
+step, nevertheless its <span class="math inline"><em>p</em></span>-value
+is computed in the Bayesian step.</figcaption>
+</figure>
+
+<figure id="fig:binspp_outputs5">
+<img src="Fig_data_21.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_22.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_23.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_24.png" style="width:95.0%"
+alt="graphic without alt text" />
+<figcaption>Figure 6: Traceplots for various quantities describing the
+state of the MCMC algorithm.</figcaption>
+</figure>
+
+<figure id="fig:binspp_outputs6">
+<img src="Fig_data_25.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_26.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_27.png" style="width:95.0%"
+alt="graphic without alt text" />
+<img src="Fig_data_28.png" style="width:95.0%"
+alt="graphic without alt text" />
+<figcaption>Figure 7: Traceplots for various quantities describing the
+state of the MCMC algorithm.</figcaption>
+</figure>
+
+### Generalised Neyman-Scott {#subsec:generalised}
+
+In this subsection we specify the implementation of the Bayesian MCMC
+algorithm for estimation of the homogeneous generalised Thomas point
+process (GTPP) which was described in (Andersson and Mrkvička 2020). In
+this subsection we assume that the point pattern `X` is an object of the
+format `ppp` from the **spatstat** package and that it is observed in a
+rectangular observation window `W`. The notation and priors are slightly
+different from those for the inhomogeneous models, due to the different
+notations used in the corresponding original papers.
+
+The GTPP can be simulated using
+
+``` r
+kappa <- 10; omega <- .1; lambda <- .5; theta <- 10
+X <- rgtp(kappa, omega, lambda, theta, win = owin(c(0, 1), c(0, 1)))
+plot(X$X)
+plot(X$C)
+```
+
+Here `kappa` corresponds to the intensity of centers, `omega` to the
+standard deviation of the radially symmetric Gaussian distribution
+determining the spread of offsprings, and `lambda` and `theta`
+correspond to the parameters of the GPD governing the cluster size.
+
+The priors used in the estimation are lognormal for all parameters,
+except `lambda` which has a uniform prior. The hyperparametres and
+control parameters must be specified in the estimation function `estgtp`
+itself. The function `estgtpr` allows for plotting of all results and
+outputs of the MCMC chain.
+
+The posterior distribution of the parameter `lambda` can be used to
+determine the over- or under-dispersion. Specifically, if 0 lies in the
+95% credible interval for `lambda`, then the Poisson assumption cannot
+be rejected. See the example code where the result summarizes all
+posterior medians and credible intervals for the model parameters.
+
+``` r
+#Prior for parameter kappa
+a_kappa <- 4
+b_kappa <- 1
+x       <- seq(0, 100, length = 100)
+hx      <- dlnorm(x, a_kappa, b_kappa)
+plot(x, hx, type = "l", lty = 1, xlab = "x value",
+     ylab = "Density", main = "Prior")
+
+#Prior for parameter omega
+a_omega <- -3
+b_omega <- 1
+x       <- seq(0, 1, length = 100)
+hx      <- dlnorm(x, a_omega, b_omega)
+plot(x, hx, type = "l", lty = 1, xlab = "x value",
+     ylab = "Density", main = "Prior")
+
+#Prior for parameter lambda
+l_lambda <- -1
+u_lambda <- 0.99
+x        <- seq(-1, 1, length = 100)
+hx       <- dunif(x, l_lambda, u_lambda)
+plot(x, hx, type = "l", lty = 1, xlab = "x value",
+     ylab = "Density", main = "Prior")
+
+#Prior for parameter theta
+a_theta <- 4
+b_theta <- 1
+x       <- seq(0, 100, length = 100)
+hx      <- dlnorm(x, a_theta, b_theta)
+plot(x, hx, type = "l", lty = 1, xlab = "x value",
+     ylab = "Density", main = "Prior")
+
+#estimation procedure with default values for standard deviations of updates for the parameters
+est <- estgtp(X$X,
+             skappa = exp(a_kappa + ((b_kappa ^ 2) / 2)) / 100, 
+             somega = exp(a_omega + ((b_omega ^ 2) / 2)) / 100, dlambda = 0.01,
+             stheta = exp(a_theta + ((b_theta ^ 2) / 2)) / 100, smove = 0.1,
+             a_kappa = a_kappa, b_kappa = b_kappa,
+             a_omega = a_omega, b_omega = b_omega,
+             l_lambda = l_lambda, u_lambda = u_lambda,
+             a_theta = a_theta, b_theta = b_theta,
+             iter = 1000, plot.step = 1000, save.step = 1e9,
+             filename = "")
+
+#plotting the results and estimationg of the parameters from refined MCMC chain
+discard <- 100
+step <- 10
+
+result <- estgtpr(est, discard, step)
+result
+```
+
+## Summary {#sec:discussion}
+
+This paper presents a model and an implementation of the Bayesian MCMC
+algorithm for estimating parameters of inhomogeneous Neyman-Scott point
+process with inhomogeneity in cluster centers, cluster spread and/or
+cluster sizes. The simulation studies assessing the performance of the
+presented algorithm were published in (Kopecký and Mrkvička 2016) for
+the homogeneous process, in (Mrkvička et al. 2014) for inhomogeneous
+cluster centers and in (Mrkvička and Soubeyrand 2017) for inhomogeneous
+cluster centers and cluster spread.
+
+The presented package **binspp** allows also for identification of over-
+or under-dispersion of cluster sizes in a homogeneous model through the
+generalised Thomas point process. Since the algorithm is rather
+flexible, the package can be further extended by estimation methods for
+models where some cluster centers are given and fixed. It can also be
+extended in the direction of the spatio-temporal Neyman-Scott point
+processes.
+
+A user of this package should be aware of the following issues,
+connected with the Bayesian MCMC algorithms. First, priors should be
+carefully chosen, even though we provide a sensible default. For
+example, the range of the $\omega$ prior must be in coherence with the
+size of the observation window; similarly, the range of the priors for
+the regression parameters connected with the covariates must reflect the
+range of the covariate values. Second, when slow mixing is observed via
+low fractions of accepted updates, one might think of changing the
+standard deviation for proposal distributions. These standard deviations
+are also provided in the package by their default value. Third, if many
+covariates are considered, longer chains are needed to get reasonably
+close to the equilibrium. The equilibrium state can be determined by the
+log-likelihood not increasing anymore, stabilized number of centers,
+stationary behaviour of the trace plots of the parameters, or by
+unimodal histograms of posterior distributions.
+
+## Acknowledgements {#acknowledgements .unnumbered}
+
+The project has been financially supported by the Grant Agency of Czech
+Republic (Project No. 19-04412S) and by the ERC CZ grant LL2407 of the
+Ministry of Education, Youth and Sport of the Czech Republic. The
+authors wish to express their gratitude to the editor and the anonymous
+referees for their insightful comments both on the text of the
+manuscript and the implementation of the package itself. The authors are
+also grateful to Begona Abellanas who initiated this project by asking
+for the implementation of the method and who provided the real data set.
+:::
+
+:::::::::::::::::::::::: {#refs .references .csl-bib-body .hanging-indent}
+::: {#ref-AM2020 .csl-entry}
+Andersson, C., and T. Mrkvička. 2020. "Inference for Cluster Point
+Processes with over- or Under-Dispersed Cluster Sizes." *Statistics and
+Computing* 30: 1573--90. <https://doi.org/10.1007/s11222-020-09960-8>.
+:::
+
+::: {#ref-inlabru .csl-entry}
+Bachl, Fabian E., and Finn Lindgren. 2020. *Inlabru: Spatial Inference
+Using Integrated Nested Laplace Approximation*.
+<https://CRAN.R-project.org/package=inlabru>.
+:::
+
+::: {#ref-BMW2000 .csl-entry}
+Baddeley, A. J., J. Møller, and R. Waagepetersen. 2000. "Non- and
+Semi-Parametric Estimation of Interaction in Inhomogeneous Point
+Patterns." *Statistica Neerlandica* 54: 329--50.
+<https://doi.org/10.1111/1467-9574.00144>.
+:::
+
+::: {#ref-spatstat .csl-entry}
+Baddeley, A., E. Rubak, and R. Turner. 2015. *Spatial Point Patterns:
+Methodology and Applications with R*. Chapman & Hall.
+<http://www.crcpress.com/Spatial-Point-Patterns-Methodology-and-Applications-with-R/Baddeley-Rubak-Turner/9781482210200/>.
+:::
+
+::: {#ref-Dvoraketal2019 .csl-entry}
+Dvořák, Jiří, Jesper Møller, Tomáš Mrkvička, and Samuel Soubeyrand.
+2019. "Quick Inference for Log Gaussian Cox Processes with
+Non-Stationary Underlying Random Fields." *Spatial Statistics* 33:
+100388. https://doi.org/<https://doi.org/10.1016/j.spasta.2019.100388>.
+:::
+
+::: {#ref-FFCGA2019 .csl-entry}
+Fernández-Habas, J., P. Fernández-Rebollo, M. R. Casado, A. M. García
+Moreno, and B. Abellanas. 2019. "Spatio-Temporal Analysis of Oak Decline
+Process in Open Woodlands: A Case Study in SW Spain." *Journal of
+Environmental Management* 248: 109308.
+<https://doi.org/10.1016/j.jenvman.2019.109308>.
+:::
+
+::: {#ref-GT2012 .csl-entry}
+Guttorp, Peter, and Thordis L Thorarinsdottir. 2012. "Bayesian Inference
+for Non-Markovian Point Processes." In *Advances and Challenges in
+Space-Time Modelling of Natural Events*, edited by E. Porcu, J. M.
+Montero, and M. Schlather. Springer.
+:::
+
+::: {#ref-HJLN2003 .csl-entry}
+Hahn, U., E. B. V. Jensen, M. N. M. van Lieshout, and L. S. Nielsen.
+2003. "Inhomogeneous Spatial Point Processes by Location-Dependent
+Scaling." *Advances in Applied Probability* 35 (2): 319--36.
+<https://doi.org/10.1239/aap/1051201648>.
+:::
+
+::: {#ref-KM2016 .csl-entry}
+Kopecký, J., and T. Mrkvička. 2016. "On Bayesian Estimation for
+Neyman-Scott Point Processes." *Applications of Mathematics* 61 (4):
+503--14.
+:::
+
+::: {#ref-MSW1998 .csl-entry}
+Møller, Jesper, Anne Randi Syversveen, and Rasmus Plenge Waagepetersen.
+1998. "Log Gaussian Cox Processes." *Scandinavian Journal of Statistics*
+25 (3): 451--82. <http://www.jstor.org/stable/4616515>.
+:::
+
+::: {#ref-MW2007 .csl-entry}
+Møller, Jesper, and Rasmus P. Waagepetersen. 2007. "Modern Statistics
+for Spatial Point Processes." *Scandinavian Journal of Statistics* 34
+(4): 643--84.
+:::
+
+::: {#ref-MollerWaagepetersen2004 .csl-entry}
+Møller, Jesper, and Rasmus Plenge Waagepetersen. 2004. *Statistical
+Inference and Simulation for Spatial Point Processes*. 1st ed.
+Monographs on Statistics and Applied Probability 100. Chapman &
+Hall/CRC.
+:::
+
+::: {#ref-M2014 .csl-entry}
+Mrkvička, T. 2014. "Distinguishing Different Types of Inhomogeneity in
+Neyman-Scott Point Processes." *Methodology and Computing in Applied
+Probability* 16: 385--95. <https://doi.org/10.1007/s11009-013-9365-4>.
+:::
+
+::: {#ref-MMK2014 .csl-entry}
+Mrkvička, T., M. Muška, and J. Kubečka. 2014. "Two Step Estimation for
+Neyman-Scott Point Process with Inhomogeneous Cluster Centers."
+*Statistics and Computing* 24: 91--100.
+<https://doi.org/10.1007/s11222-012-9355-3>.
+:::
+
+::: {#ref-MS2017 .csl-entry}
+Mrkvička, T., and S. Soubeyrand. 2017. "On Parameter Estimation for
+Doubly Inhomogeneous Cluster Point Processes." *Spatial Statistics* 20:
+191--205. <https://doi.org/10.1016/j.spasta.2017.03.005>.
+:::
+
+::: {#ref-NeymanScott1958 .csl-entry}
+Neyman, Jerzy, and Elizabeth Leonard Scott. 1958. "Statistical Approach
+to Problems of Cosmo­logy." *J Roy Stat Soc B* 20: 1--43.
+:::
+
+::: {#ref-RMCh2009 .csl-entry}
+Rue, Håvard, Sara Martino, and Nicolas Chopin. 2009. "Approximate
+Bayesian Inference for Latent Gaussian Models by Using Integrated Nested
+Laplace Approximations." *Journal of the Royal Statistical Society:
+Series B (Statistical Methodology)* 71 (2): 319--92.
+https://doi.org/<https://doi.org/10.1111/j.1467-9868.2008.00700.x>.
+:::
+
+::: {#ref-lgcp .csl-entry}
+Taylor, Benjamin M., Tilman M. Davies, Barry S. Rowlingson, Peter J.
+Diggle. Additional code contributions from Edzer Pebesma, and Dominic
+Schumacher. 2020. *Lgcp: Log-Gaussian Cox Process*.
+<https://CRAN.R-project.org/package=lgcp>.
+:::
+
+::: {#ref-Thomas1949 .csl-entry}
+Thomas, Marjorie. 1949. "A Generalization of Poisson's Binomial Limit
+for Use in Ecology." *Biometrika* 36: 18--25.
+:::
+
+::: {#ref-WG2009 .csl-entry}
+Waagepetersen, R., and Y. Guan. 2009. "Two-Step Estimation for
+Inhomogeneous Spatial Point Processes." *Journal of the Royal
+Statistical Society, Series B* 71: 685--702.
+<https://doi.org/10.1111/j.1467-9868.2008.00702.x>.
+:::
+
+::: {#ref-WF1997 .csl-entry}
+Wang, W., and F. Famoye. 1997. "Modeling Household Fertility Decisions
+with Generalized Poisson Regression." *Journal of Population Economics*
+10 (3): 273--83. <https://doi.org/10.1007/s001480050043>.
+:::
+::::::::::::::::::::::::
