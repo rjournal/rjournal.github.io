@@ -1,0 +1,197 @@
+---
+title: "RGAN Replication"
+output: pdf_document
+date: '2023-03-03'
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup}
+install.packages(c("RGAN", "torchvision"))
+library(RGAN)
+library(here)
+```
+
+# Replication of the Example in Section 4.1
+
+The first example with very simple tabular data should serve as an easy entry point
+to working with the RGAN package.
+
+```{r Setting up the data}
+
+data <- RGAN::sample_toydata()
+
+#' # Build new transformer to standardize data
+transformer <- RGAN::data_transformer$new()
+
+#' # Fit transformer to data
+transformer$fit(data)
+
+#' # Transform data and store as new object
+transformed_data <-  transformer$transform(data)
+```
+
+```{r Figure 1}
+# Plot original data and transformed data (Figure 1)
+
+par(mfrow = c(1, 2))
+dimensions <- c(1, 2)
+
+plot(
+  data[, dimensions],
+  bty = "n",
+  col = viridis::viridis(2, alpha = 0.7)[1],
+  #xlim = c(-50, 50),
+  pch = 19,
+  xlab = ifelse(
+    !is.null(colnames(data)),
+    colnames(data)[dimensions[1]],
+    paste0("Var ", dimensions[1])
+  ),
+  ylab = ifelse(
+    !is.null(colnames(data)),
+    colnames(data)[dimensions[2]],
+    paste0("Var ", dimensions[2])
+  ),
+  main = "(A)",
+  las = 1
+)
+
+plot(
+  transformed_data[, dimensions],
+  bty = "n",
+  col = viridis::viridis(2, alpha = 0.7)[1],
+  #xlim = c(-50, 50),
+  pch = 19,
+  xlab = ifelse(
+    !is.null(colnames(data)),
+    colnames(data)[dimensions[1]],
+    paste0("Var ", dimensions[1])
+  ),
+  ylab = ifelse(
+    !is.null(colnames(data)),
+    colnames(data)[dimensions[2]],
+    paste0("Var ", dimensions[2])
+  ),
+  main = "(B)",
+  las = 1
+)
+```
+
+```{r Training the GAN}
+#' # Train the default GAN
+
+torch::torch_manual_seed(20220629)
+trained_gan_4_1 <- RGAN::gan_trainer(transformed_data)
+
+# Sample synthetic data from the trained GAN
+
+trained_gan_4_1$settings$eval_dropout <- FALSE
+
+synthetic_data_no_dropout <- sample_synthetic_data(trained_gan_4_1, transformer)
+
+trained_gan_4_1$settings$eval_dropout <- TRUE
+
+synthetic_data_dropout <- sample_synthetic_data(trained_gan_4_1, transformer)
+```
+
+```{r Figure 2}
+par(mfrow = c(1, 2))
+# Plot the results
+GAN_update_plot(
+  data = data,
+  synth_data = synthetic_data_no_dropout,
+  main = "(A)"
+)
+
+GAN_update_plot(
+  data = data,
+  synth_data = synthetic_data_dropout,
+  main = "(B)"
+)
+```
+
+# Replication of the Example in Section 4.2
+
+Note that this example is a bit more resource intensive.
+With a GPU (NVIDIA GeForce RTX 2070 SUPER) training the following GAN for one epoch takes about 20 minutes. 
+Training on CPU takes considerably longer, on my machine (Apple Macbook Air M1, running R and torch through Rosetta) about 6 hours.
+
+```{r Getting the celeba images}
+if(!dir.exists(here::here("celeba/img_align_celeba"))){
+# Create celeba directory in working directory
+dir.create(here::here("celeba"))
+
+# Download the celeba images
+invisible(system(
+  paste0(
+    "wget --load-cookies /tmp/cookies.txt \"https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate \'https://docs.google.com/uc?export=download&id=0B7EVK8r0v71pZjFTYXZWM3FlRnM\' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\\1\\n/p')&id=0B7EVK8r0v71pZjFTYXZWM3FlRnM\" -O",
+    here::here("celeba/img_align_celeba.zip"),
+    " && rm -rf /tmp/cookies.txt"
+  ),
+  intern = TRUE
+))
+
+# Unzip the folder
+invisible(system(paste0(
+  "unzip -o ",
+  here::here("celeba/img_align_celeba.zip"),
+  " -d ",
+  here::here("celeba")
+), intern = TRUE))
+}
+```
+
+```{r Preparing the data and GAN}
+
+torch::torch_manual_seed(20220629)
+dataset <- torchvision::image_folder_dataset(root = here::here("celeba"),
+                                             transform = function(x) {
+                                               x = torchvision::transform_to_tensor(x)
+                                               x = torchvision::transform_resize(x, size = c(64, 64))
+                                               x = torchvision::transform_center_crop(x, c(64, 64))
+                                               x = torchvision::transform_normalize(x, c(0.5, 0.5, 0.5), 
+                                                                                    c(0.5, 0.5, 0.5))
+                                               return(x)
+                                             })
+
+device <- torch::torch_device(ifelse(torch::cuda_is_available(), "cuda", "cpu"))
+
+g_net <- RGAN::DCGAN_Generator(dropout_rate = 0, noise_dim = 100)$to(device = device)
+d_net <- RGAN::DCGAN_Discriminator(dropout_rate = 0, sigmoid = F)$to(device = device)
+
+g_optim <- torch::optim_adam(g_net$parameters, lr = 0.0002, betas = c(0.5, 0.999))
+d_optim <- torch::optim_adam(d_net$parameters, lr = 0.0002, betas = c(0.5, 0.999))
+
+noise_dim <- c(100, 1, 1)
+fixed_z <-
+  torch::torch_randn(c(16, noise_dim))$to(device = device) 
+```
+
+```{r Training the GAN}
+trained_gan_4_2 <- RGAN::gan_trainer(
+  data = dataset,
+  noise_dim = noise_dim,
+  noise_distribution = "normal",
+  data_type = "image",
+  value_function = "wasserstein",
+  generator = g_net,
+  generator_optimizer = g_optim,
+  discriminator = d_net,
+  discriminator_optimizer = d_optim,
+  plot_progress = FALSE,
+  plot_interval = 10,
+  batch_size = 128,
+  synthetic_examples = 16,
+  device = device,
+  eval_dropout = FALSE,
+  epochs = 1
+)
+```
+
+Now we sample fake images after one epoch with `expert_sample_synthetic_data`; the function allows us to pass a fixed noise sample so that one can observe the evolution of the same images through training.
+
+```{r Figure 3}
+GAN_update_plot_image(synth_data = expert_sample_synthetic_data(g_net, fixed_z, device,eval_dropout = FALSE))
+
+```
