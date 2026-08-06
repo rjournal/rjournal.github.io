@@ -2,7 +2,7 @@
 # Please edit RJ-2026-024.Rmd to modify this file
 
 ## ----setup, include=FALSE-----------------------------------------------------
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
 
 
 ## ----data-load, message=FALSE, echo=TRUE--------------------------------------
