@@ -602,6 +602,7 @@ rank_results(ames_workflowset_results, rank_metric = "rmse") |>
 ## -----------------------------------------------------------------------------
 #| label: finalize-fit-and-evaluate
 #| results: hide
+#| cache: true
 
 best_functional_mlp_params <- select_best(ames_tune_results, metric = "rmse")
 
