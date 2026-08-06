@@ -2,7 +2,7 @@
 # Please edit RJ-2026-036.Rmd to modify this file
 
 ## ----setup, include=FALSE-----------------------------------------------------
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE, cache = TRUE)
 library(iAR)
 library(ggplot2)
 library(microbenchmark)
@@ -128,7 +128,7 @@ plot(model_BiAR@times,model_BiAR@series[,2],main="(b)",xlab="Time",ylab="Values"
 
 ## ----BIARkalman,echo=TRUE-----------------------------------------------------
 model_BiAR@hessian=TRUE
-model_BiAR <- kalman(model_BiAR)
+model_BiAR <- kalman(model_BiAR, niter = 20)
 summary(model_BiAR,diagnostic=FALSE)
 
 
@@ -303,7 +303,7 @@ pargr1=na.omit(o1@paired)
 st=apply(pargr1[,c(1,4)],1,mean)
 model_BiAR <- BiAR(times = st,series=pargr1[,c(2,5)],series_esd=pargr1[,c(3,6)])
 model_BiAR@hessian=T
-model_BiAR <- kalman(model_BiAR)
+model_BiAR <- kalman(model_BiAR, niter = 20)
 summary(model_BiAR,diagnostic=FALSE)
 model_BiAR <- fit(model_BiAR)
 print(model_BiAR@rho)
