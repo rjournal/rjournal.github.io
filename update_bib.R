@@ -89,3 +89,19 @@ for (iss in new_issues) {
   df <- parse_doi_xml(paste0("_issues/", iss, "/doi.xml"))
   bib2df::df2bib(df, "RJournal.bib", append = TRUE)
 }
+
+readr::read_lines("RJournal.bib") |>
+  stringr::str_replace_all(
+    c("TITLE" = "title",
+      "AUTHOR" = "author",
+      "YEAR" = "year",
+      "MONTH" = "month",
+      "PAGES" = "pages",
+      "DOI" = "doi",
+      "URL" = "url",
+      "JOURNAL" = "journal",
+      "VOLUME" = "volume",
+      "NUMBER" = "number",
+      "CATEGORY" = "category")
+  ) |>
+  readr::write_lines("RJournal.bib")
