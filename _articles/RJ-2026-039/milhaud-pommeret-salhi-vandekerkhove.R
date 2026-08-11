@@ -578,7 +578,7 @@ param_d <- list(f1 = list("size" = 1, "prob" = c(0.25,0.5,0.25)),
                 g1 = list("size" = 1, "prob" = c(0.8,0.1,0.1)),
                 f2 = list("size" = 1, "prob" = c(0.25,0.5,0.25)), 
                 g2 = list("size" = 1, "prob" = c(0.3,0.3,0.4)),
-                f3 = list("size" = 1, "prob" = c(0.1,0.8,0.1)), 
+                f3 = list("size" = 1, "prob" = c(0.7,0.1,0.2)), 
                 g3 = list("size" = 1, "prob" = c(0.5,0.3,0.2)),
                 f4 = list("size" = 1, "prob" = c(0.25,0.5,0.25)), 
                 g4 = list("size" = 1, "prob" = c(0.1,0.7,0.2)))
