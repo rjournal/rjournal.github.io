@@ -33,7 +33,7 @@ reduce_vspace <- function(space = "-0.9cm") {
 
 # Change from bold in PDF to bold in HTML for table entries
 adjust_bold_html <- function(df, cols = 3:20) {
-  
+
   df[, cols] <- df[, cols] %>%
     purrr::map_dfc(
       function(.x) {
@@ -315,7 +315,6 @@ t2_n1 <- (2.5 * tanh(5 * (xt_n1 - 0.4)) + 3.5) %>%
 t3_n1 <- (3.2 * xt_n1 + 0.92 * (sin(3.2 * pi * (xt_n1 - 0.2))) + 1.85) %>%
   ts(frequency = 4)
 
-
 ### Seasonalities
 
 ## Exactly periodic and with frequency 4
@@ -436,30 +435,29 @@ par(par_old)
 t2_fun <- function(xt) {
   n <- length(xt)
   et <- rnorm(n = n + 200) + 0.05
-  
+
   g_out <- tail(cumsum(et), n)
   (g_out - mean(g_out)) / sd(g_out)
-  
+
 }
 
 s3_fun <- function(t, sig2) {
   sig <- sqrt(sig2)
   ps <- 12
-  
+
   n <- length(t)
   m <- 300 * 12
-  
+
   sx <- rep(0, n + m)
   sx[1:11] <- rnorm(n = ps - 1, mean = 0, sd = sig)
-  
+
   for (i in ps:(n + m)) {
     sx[[i]] <- -sum(sx[(i - 11):(i - 1)]) + rnorm(n = 1, mean = 0, sd = sig)
   }
   sx <- tail(sx, n)
-  
+
   (sx - mean(sx)) / sd(sx)
-  
-  
+
 }
 
 set.seed(1)
@@ -620,7 +618,7 @@ unwrap <- function() {
     group_by(Seasonal_Period, Error_Process, r) %>%
     group_split()
   nams <- map_chr(data_bw, function(.x) {
-    
+
     paste0("sp", .x$Seasonal_Period[[1]], "_r", .x$r[[1]], "_", .x$Error_Process[[1]])
   })
   names(data_bw) <- nams
@@ -809,8 +807,6 @@ kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 
   kable_styling(latex_options = c("scale_down")) %>%
   adjust_html_tab_size() %>%  
   landscape_tab()
-  
-  
 
 
 
@@ -866,8 +862,6 @@ kable(df, col.names = c("Method", "Quantity", rep(c("$n_1$", "$n_2$", "$n_3$"), 
   kable_styling(latex_options = c("scale_down")) %>%
   adjust_html_tab_size() %>%  
   landscape_tab()
-  
-  
 
 
 

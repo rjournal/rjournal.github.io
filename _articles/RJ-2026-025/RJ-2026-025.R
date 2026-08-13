@@ -92,16 +92,18 @@ LCO_deseats <- deseats(LCO, sm_options3)
 # ##### Plotting of results
 
 
-## ----plotdec, fig.cap = "The estimated trend and seasonal components for the LGDP, NLF and LCO data following DeSeaTS. The estimated seasonal components are shifted for better visibility.", fig.height = 4.5, fig.width = 5.6, echo = TRUE, fig.pos = 'h'----
-par_old <- par(no.readonly = TRUE)  ##Hide##
-par(fig = c(0, 0.5, 0.5, 1), cex = 0.5)        ##Hide##
+
+
+## ----plotdec, fig.cap = "The estimated trend and seasonal components for the LGDP, NLF and LCO data following DeSeaTS. The estimated seasonal components are shifted for better visibility.", fig.height = 4.5, fig.width = 5.6, echo = FALSE, fig.pos = 'h', purl = TRUE----
+par_old <- par(no.readonly = TRUE)
+par(fig = c(0, 0.5, 0.5, 1), cex = 0.5)
 plot(LGDP_deseats, which = 5, s_around = 3.9, main = "(a) LGDP", xlab = "Year")
-par(fig = c(0.5, 1, 0.5, 1), new = TRUE)  ##Hide##
+par(fig = c(0.5, 1, 0.5, 1), new = TRUE)
 plot(NLF_deseats, which = 5, s_around = 55, main = "(b) NLF", xlab = "Year")
-par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)  ##Hide##
+par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)
 plot(LCO_deseats, which = 5, s_around = -2.2, main = "(c) LCO", 
      xlab = "Calendar week of year 2021")
-par(par_old)  ##Hide##
+par(par_old)
 
 
 ## ----echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE------------------
@@ -137,25 +139,27 @@ fc_COVID_stl <- as.numeric(fc_COVID_stl)
 # ##### Plots of seasonally adjusted series
 
 
-## ----plotdeseas, fig.cap = "The original example series (grey and solid) together with the seasonally adjusted series following DeSeaTS (blue and solid). The seasonally adjusted series following automated STL decompositions (red and dashed) are displayed as a benchmark.", fig.height = 4.5, fig.width = 5.6, echo = TRUE, fig.pos = "h"----
+
+
+## ----plotdeseas, fig.cap = "The original example series (grey and solid) together with the seasonally adjusted series following DeSeaTS (blue and solid). The seasonally adjusted series following automated STL decompositions (red and dashed) are displayed as a benchmark.", fig.height = 4.5, fig.width = 5.6, echo = FALSE, fig.pos = "h", purl = TRUE----
 GDP_sa <- exp(deseasonalize(LGDP_deseats))
 NLF_sa <- deseasonalize(NLF_deseats)
 COVID_sa <- exp(deseasonalize(LCO_deseats))
-par_old <- par(no.readonly = TRUE) ##Hide##
-par(fig = c(0, 0.5, 0.5, 1), cex = 0.5)       ##Hide##
+par_old <- par(no.readonly = TRUE)
+par(fig = c(0, 0.5, 0.5, 1), cex = 0.5)
 ts.plot(GDP, GDP_sa, col = c("grey60", "blue"), main = "(a) Real GDP of the US", 
      xlab = "Year", ylab = "Billions of USD")
-lines(t1, adj_stl_GDP, col = "red", lty = 2) ##Hide##
-par(fig = c(0.5, 1, 0.5, 1), new = TRUE)  ##Hide##
+lines(t1, adj_stl_GDP, col = "red", lty = 2)
+par(fig = c(0.5, 1, 0.5, 1), new = TRUE)
 ts.plot(NLF, NLF_sa, col = c("grey60", "blue"), ylab = "Millions of persons",
         main = "(b) US persons not in the labor force", xlab = "Year")
-lines(t2, adj_stl_NLF, col = "red", lty = 2) ##Hide##
-par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)  ##Hide##
+lines(t2, adj_stl_NLF, col = "red", lty = 2)
+par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)
 ts.plot(COVID, COVID_sa, col = c("grey60", "blue"), 
         xlab = "Calendar week of year 2021", ylab = "Thousands of cases",
         main = "(c) Newly confirmed COVID-19 Cases in Germany")
-lines(t3, adj_stl_COVID, col = "red", lty = 2) ##Hide##
-par(par_old)  ##Hide##
+lines(t3, adj_stl_COVID, col = "red", lty = 2)
+par(par_old)
 
 
 ## ----echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE------------------
@@ -258,22 +262,24 @@ fc_NLF_DS <- predict(model_NLF, n.ahead = 12, method = "boot")
 fc_COVID_DS <- predict(model_LCO, n.ahead = 7, method = "boot", expo = TRUE)
 
 
-## ----plotfcast, fig.cap = "S-Semi-ARMA point and 95% / 99% interval forecasts (blue) together with automated ARIMA-based STL point forecasts (red) as a benchmark.", fig.height = 4.5, fig.width = 5.6, eval = TRUE, fig.pos = 't', echo = TRUE----
-par_old <- par(no.readonly = TRUE)  ##Hide##
-par(fig = c(0, 0.5, 0.5, 1), cex = 0.5) ##Hide##
+
+
+## ----plotfcast, fig.cap = "S-Semi-ARMA point and 95% / 99% interval forecasts (blue) together with automated ARIMA-based STL point forecasts (red) as a benchmark.", fig.height = 4.5, fig.width = 5.6, eval = TRUE, fig.pos = 't', echo = FALSE, purl = TRUE----
+par_old <- par(no.readonly = TRUE)
+par(fig = c(0, 0.5, 0.5, 1), cex = 0.5)
 plot(fc_GDP_DS, main = "(a) Real GDP of the US", xlab = "Year", 
      ylab = "Billions of USD", xlim = c(2010, 2020.75), ylim = c(3500, 6000))
-lines(t1_fc, fc_GDP_stl, col = "red", lty = 2) ##Hide##
-par(fig = c(0.5, 1, 0.5, 1), new = TRUE)  ##Hide##
+lines(t1_fc, fc_GDP_stl, col = "red", lty = 2)
+par(fig = c(0.5, 1, 0.5, 1), new = TRUE)
 plot(fc_NLF_DS, main = "(b) US persons not in the labor force", xlab = "Year", 
      ylab = "Millions of persons", xlim = c(2010, 2020.917), ylim = c(80, 97.2))
-lines(t2_fc, fc_NLF_stl, col = "red", lty = 2) ##Hide##
-par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)  ##Hide##
+lines(t2_fc, fc_NLF_stl, col = "red", lty = 2)
+par(fig = c(0.25, 0.75, 0, 0.5), new = TRUE)
 plot(fc_COVID_DS, main = "(c) Newly confirmed COVID-19 Cases in Germany", 
      xlab = "Calendar week of year 2021", ylab = "Thousands of cases",
      xlim = c(45, 49.143), ylim = c(10, 85))
-lines(t3_fc, fc_COVID_stl, col = "red", lty = 2) ##Hide##
-par(par_old)  ##Hide##
+lines(t3_fc, fc_COVID_stl, col = "red", lty = 2)
+par(par_old)
 
 
 ## ----echo = FALSE, eval = FALSE, incude = FALSE, purl = TRUE------------------
