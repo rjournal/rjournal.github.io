@@ -1,0 +1,793 @@
+% !TeX root = RJwrapper.tex
+\title{MSTest: An R Package for Testing Markov Switching Models}
+
+
+\author{by Gabriel Rodriguez-Rondon and Jean-Marie Dufour}
+
+\maketitle
+
+\abstract{%
+We present the R package MSTest, which implements hypothesis testing procedures to determine the number of regimes in Markov switching models. These models have wide-ranging applications in economics, finance, and many other fields. MSTest provides several testing frameworks, including Monte Carlo likelihood ratio tests, moment-based tests, parameter stability tests, and classical likelihood ratio procedures. In addition, the package offers tools for simulating and estimating univariate and multivariate Markov switching and hidden Markov models using either the expectation--maximization algorithm or maximum likelihood estimation. The functionality of the package is demonstrated through simulation-based examples.
+}
+
+\section{Introduction}\label{intro}
+
+Markov switching models were introduced by \citet{goldfeld1973markov} but became an active area of research in economics after \citet{hamilton89} proposed modeling the first difference of U.S. GNP as a nonlinear stationary process, where the nonlinearity arises from discrete shifts in the process.
+
+These models have since been applied in a wide range of macroeconomic and financial settings. For example, they have been used to identify business cycles and provide probabilistic statements about the state of the economy \citep{chauvet1998econometric, chauvet2006dating, chauvet2002markov, diebold1996measuring, hamilton89, kimnel1999, quqin2021}, to model stock market volatility using Markov switching ARCH, GARCH, and stochastic volatility models \citep{hamilton1994, gray1996, klaassen2002improving, haas2004new, pelletier2006regime, so1998stochastic}, to model interest rate dynamics \citep{cai1994markov, garper1996}, to study state-dependent impulse response functions \citep{sims2006were, caggiano2017}, to identify structural shocks in SVAR models \citep{lanne2010structural, herwartz2014structural, lutkepohl2021testing}, and more recently to improve measures of core inflation by allowing for multiple inflation regimes \citep{rodron_inf_2024, ahn2024common, le2024underlying}. \citet{hamilton2016} provides a detailed survey of regime switching models in macroeconomics.
+
+Outside of macroeconomic and financial applications, these models have also been applied in climate change research \citep{golosov2014optimal, dietz2015endogenous}, environmental and energy economics \citep{cevik2021renewable, charfeddine2017impact}, and industrial organization \citep{aguirregabiria2007sequential, sweeting2013dynamic}. Additionally, there is a related class of models---the hidden Markov model---which has been widely used in computational molecular biology \citep{krogh1994hidden, baldi1994hidden}, handwriting and speech recognition \citep{rabiner1986introduction, nag1986script, RabJuanFundamentals, jelinek1997statistical}, computer vision and pattern recognition \citep{bunke2001hidden}, and other machine learning applications.
+
+Given their empirical relevance, determining the number of regimes needed to capture these nonlinearities is a key step in specifying a Markov switching model, since it is not determined endogenously during estimation. However, the asymptotic results underlying conventional testing procedures do not apply in this setting, because the required regularity conditions are violated. This has motivated a range of alternative testing procedures in the literature.
+
+A range of procedures have been proposed for testing the null hypothesis of a linear model against a two-regime alternative \citep{hansen92, hansen96, garcia98, chowhite07, marmer2008, chp14, kso2014modqlr, dufourluger17, quzhuo2021likelihood}. Testing the null of an \(M\)-regime model against an \(M+m\)-regime alternative for \(M \geq 1\) and \(m = 1\) has been considered by \citet{kasshi2018}, who show that the parametric bootstrap test can be asymptotically valid under restrictions on the parameter space and for univariate models with fixed or predetermined regressors. \citet{quzhuo2021likelihood} present similar bootstrap results for \(M = m = 1\) for a broader class of univariate models, though still under constrained parameter spaces. More recently, \citet{rodrondufour_mcmstest} propose Monte Carlo likelihood ratio tests that accommodate both \(M \geq 1\) and \(m \geq 1\) and extend to multivariate settings, which had not been addressed previously. Their procedures are the most general available and deal transparently with the violations of regularity conditions that arise in this setting. Importantly, they do not require parametric restrictions, normality of the errors, or stationarity of the underlying process, since they do not rely on the existence of an asymptotic distribution. As a result, they apply in a wider range of settings than the parametric bootstrap, including cases where the bootstrap's asymptotic validity has not been established. The maximized Monte Carlo version of the test further controls size in finite samples, which is particularly relevant for macroeconomic applications with quarterly data that are often short, and is robust to the identification problems that are common in Markov switching models.
+
+Because carrying out these tests is not always straightforward, and conducting more than one can quickly become tedious, we introduce \CRANpkg{MSTest}, an R package designed to test the null hypothesis of \(M\) regimes against the alternative of \(M+m\) regimes for both univariate and multivariate models. By making these testing procedures readily available to a broad audience, the package allows users to compare different tests and determine the appropriate number of regimes for economic research and policy-relevant applications.
+
+The package also allows users to simulate and estimate univariate and multivariate Markov switching models, as well as hidden Markov models, with estimation available through the expectation--maximization (EM) algorithm or maximum likelihood estimation (MLE). For computational efficiency, \pkg{MSTest} relies on \CRANpkg{Rcpp} \citep{eddetal2018} and \CRANpkg{RcppArmadillo} \citep{eddsan2024} and provides parallel computing options, which are especially valuable given the computational burden of testing in the presence of nuisance parameters. The package implements the methodologies of \citet{rodrondufour_mcmstest}, \citet{dufourluger17}, \citet{chp14}, and \citet{hansen92}. The parametric bootstrap discussed by \citet{quzhuo2021likelihood} and \citet{kasshi2018} is not implemented explicitly, but it can be carried out using specific settings in combination with the local Monte Carlo likelihood ratio test of \citet{rodrondufour_mcmstest}.
+
+The paper first introduces the Markov switching and hidden Markov models, then the testing procedures the package implements and how they address the regularity and identification problems specific to this setting. It then turns to the main focus of the article: the \pkg{MSTest} package itself---its principal functions, a typical simulation, estimation, and testing workflow, and practical guidance that complements the CRAN documentation. A brief summary concludes.
+
+\section{Markov switching models}\label{models}
+
+The \pkg{MSTest} package considers Markov switching models in which only the mean and variance are governed by the Markov process \(S_t\). We also consider the hidden Markov model, a special case with no autoregressive coefficients. In both cases, exogenous explanatory variables may be included.
+
+The first-order Markov process \(S_t\) that governs changes in the parameters of the Markov switching model is unobserved and evolves according to a first-order ergodic Markov chain with an (\(M \times M\)) transition probability matrix given by
+\begin{align*}
+    \textbf{P} & = \begin{bmatrix}
+            p_{11} & \dots & p_{M1}\\
+            \vdots & \ddots & \vdots \\
+            p_{1M} & \dots & p_{MM}
+    \end{bmatrix}
+\end{align*}
+Here, \(p_{ij} = P(S_t = j \mid S_{t-1} = i)\) is the probability that state \(i\) is followed by state \(j\), \(M\) is the number of regimes, and \(S_t \in \{1, \dots, M\}\). The columns of \(\mathbf{P}\) sum to one (i.e., \(\sum_{j=1}^M p_{ij} = 1\) for all \(i\)). We can obtain the ergodic probabilities using
+\begin{align*}
+    \pmb{\pi} = (\mathbf{A}'\mathbf{A})^{-1}\mathbf{A}'\mathbf{e}_{M+1} \hspace{0.25cm}  \&  \hspace{0.25cm} \mathbf{A} = \begin{bmatrix}
+        \mathbf{I}_M-\textbf{P}\\
+        \pmb{1}'
+        \end{bmatrix}
+\end{align*}
+where \(\mathbf{e}_{M+1}\) is the \((M+1)\)th column of \(\mathbf{I}_{M+1}\). These ergodic probabilities tell us, on average, in the long run, the proportion of time the process \(S_t\) spends in each regime.
+
+A Markov switching model can be expressed as
+\begin{align}
+    y_t & = \mu_{S_t} + \sum^{p}_{k=1} \phi_{k} (y_{t-k} - \mu_{S_{t-k}}) +  Z_t\beta_z + \sigma_{S_t}\epsilon_t \label{eq:msm-uni}
+\end{align}
+where, in a univariate setting, \(y_t\) is a scalar, \(Z_t\) is a \((1 \times q_{z})\) vector of exogenous variables whose coefficients do not depend on the latent Markov process \(S_t\), and \(\epsilon_t\) represents the error process, which, for example, may be distributed as a \(\mathcal{N}(0,1)\). The error term is multiplied by the standard deviation \(\sigma_{S_t}\), which may either depend on the Markov process or remain constant throughout (i.e., \(\sigma\)).
+
+This model is labeled \texttt{MSARmdl} in \pkg{MSTest} when exogenous regressors \(Z_t\) are excluded, and \texttt{MSARXmdl} when included. Other error distributions, such as the Student-\(t\), may be added in future versions. Currently, \pkg{MSTest} simulates only normally distributed errors, so we focus on this setup.
+
+For the Markov switching model in equation \eqref{eq:msm-uni} with \(M\) regimes, the sample log likelihood conditional on the first \(p\) observations of \(y_{t}\) is given by
+\begin{align}
+    L_{T} (\theta) = \mathrm{log} f(y_{1}^{T}|y^{0}_{-p+1};\theta) = \sum^{T}_{t=1} \mathrm{log} f(y_{t}|\mathcal{Y}_{t-1};\theta) \label{eq:arms-loglik}
+\end{align}
+where \(\mathcal{Y}_{t-1} = \sigma\)-field\(\{\dots,Z_{t-1},y_{t-2}, Z_{t}, y_{t-1}\}\) and \(\theta = (\mu_{1}, \dots, \mu_{M}, \beta, \sigma_{1}, \dots, \sigma_{M}, vec(\textbf{P}))\) and \(vec(\cdot)\) is the vectorization operator, which stacks the columns of a matrix to form a column vector.
+
+The conditional density \(f(y_{t}\,|\,\mathcal{Y}_{t-1};\theta)\) is obtained by summing the regime-specific densities over the possible configurations of the current and previous \(p\) regimes, weighted by their conditional probabilities. The explicit expression can be found in \citep{hamilton89, hamilton1994, rodrondufour_mcmstest}.
+
+\citet{krolzig1997markov} generalized the univariate model to the Markov switching vector autoregressive (MS-VAR) model, which in the \pkg{MSTest} package can be expressed as
+\begin{align}
+    \pmb{y}_t & = \pmb{\mu}_{S_t} + \pmb{\Phi}_1(\pmb{y}_{t-1} - \pmb{\mu}_{S_{t-1}}) + \cdots + \pmb{\Phi}_p(\pmb{y}_{t-p} - \pmb{\mu}_{S_{t-p}}) + Z_{t}\pmb{\beta} + \pmb{\Sigma}^{1/2}_{S_t}\pmb{\epsilon}_t \label{eq:msm-multi}
+\end{align}
+where \(\pmb{y}_t = [y_{1,t}, \dots, y_{q,t}]'\), \(\pmb{\mu}_{S_t} = [\mu_{1,S_t}, \dots, \mu_{q,S_t}]'\), \(\pmb{\epsilon}_t = [\epsilon_{1,t}, \dots, \epsilon_{q,t}]'\), \(\pmb{\Phi}_k\) is a (\(q \times q\)) matrix containing the autoregressive parameters at lag \(k\), \(\pmb{\beta}\) is now a (\(q_z \times q\)) matrix, and \(\pmb{\Sigma}_{S_t}=\pmb{\Sigma}^{1/2}_{S_t}(\pmb{\Sigma}^{1/2}_{S_t})'\) is the (\(q \times q\)) regime-dependent covariance matrix. As in the univariate setting, the \pkg{MSTest} package includes versions with (\texttt{MSVARXmdl}) and without (\texttt{MSVARmdl}) exogenous regressors. More sophisticated versions of the MS-VAR model, together with their likelihood functions, are described in \citet{krolzig1997markov}.
+
+Hidden Markov models (HMMs) are a special case of the Markov switching model defined above. Because they need not be applied to time series data, they typically exclude lags of the endogenous variable \(y_t\). Removing them from \eqref{eq:msm-multi} yields
+\begin{align}
+    \pmb{y}_t & = \pmb{\mu}_{S_t} + Z_{t}\pmb{\beta} + \sigma_{S_t}\epsilon_t \label{eq:hmm}
+\end{align}
+When \(q=1\), we recover a univariate HMM from \eqref{eq:msm-uni}. This version and its multivariate counterpart are the HMMs considered in the package \pkg{MSTest} and are labeled as \texttt{HMmdl}.
+
+As \citet{an2013identifiability} note, dependence on past observations allows richer interactions between \(y_t\) and \(S_t\), capturing more complex relationships between economic and financial variables. Including past observations is common in economic time series, often to control for stochastic trends, which may explain why Markov switching models are more popular than basic HMMs in this literature.
+
+Markov switching models are typically estimated by the expectation--maximization (EM) algorithm \citep{dempster_maximum_1977}, Bayesian methods, or the Kalman filter in a state-space representation. They can also be estimated by maximum likelihood (MLE), which is commonly done, but only when the number of regimes \(M\) is small, since \(S_t\) is latent and the likelihood can exhibit several modes of equal height and other irregularities that make optimization harder as \(M\) grows.
+
+In \pkg{MSTest}, the estimation functions described below use either the EM algorithm (\texttt{control\ =\ list(method\ =\ "EM")}) or MLE (\texttt{control\ =\ list(method\ =\ "MLE")}). Estimates can often be improved by using the EM results as starting values for the Newton-type (MLE) optimizer, a two-step procedure common in empirical work.
+
+We omit the details of EM and MLE, since our focus is the \pkg{MSTest} package. Detailed treatments are given in \citep{hamilton1990, hamilton1994}, and, for MS-VAR models, in \citet{krolzig1997markov}.
+
+\section{Hypothesis testing for number of regimes}\label{testing}
+
+The number of regimes in a Markov switching model must be specified by the researcher, since it is not determined endogenously during estimation. Testing for it is non-standard, however, because the regularity conditions underlying conventional procedures fail.
+
+The general hypothesis of interest is
+\begin{align*}
+    H_0: M = M_0 \quad \text{against} \quad H_1: M = M_0 + m
+\end{align*}
+where, in principle, both \(M_0, m \geq 1\), though most classical procedures only handle the simplest case, \(H_0: M = 1\) against \(H_1: M = 2\). Below we describe the main procedures, focusing on those in \pkg{MSTest}. The Monte Carlo LR procedures of \citet{rodrondufour_mcmstest} are the most general, accommodating \(M_0 \geq 1\), \(m \geq 1\), non-Gaussian errors, non-stationary data, and multivariate models, though at a higher computational cost that can make other methods attractive in the simpler cases they were designed for. For each, we also note how it fits within the literature and handles identification failures and violations of regularity conditions.
+
+Evidence on the size and power of the individual tests is available in the references given for each procedure below. In addition, \citet{rodrondufour_mcmstest} provide a direct comparison of six of the seven tests implemented in \pkg{MSTest}, the LMC-LRT, MMC-LRT, the local and maximized moment-based tests of \citet{dufourluger17}, and the supTS and expTS tests (all but the Hansen test), under a common set of data-generating processes and show that all tests control size. Even in the simple \(M_0 = m = 1\) case, the LMC-LRT is the most powerful in the large majority of settings. For example, it has the highest power when only the mean switches, a case in which the moment-based and CHP tests can have substantially lower power, especially when the autoregressive persistence is high. All tests tend to improve when the variance switches, but even then the LMC-LRT typically leads, motivating its use even in simple settings, despite its greater computational cost.
+
+\subsection{Likelihood ratio--type tests}\label{likelihood-ratiotype-tests}
+
+\citet{hansen92} was the first to propose a testing procedure for Markov switching models when \(M_0 = m = 1\), and we begin with it, as it is available in \pkg{MSTest} (\texttt{HLRTest()}; see Table \ref{tab:testing}). Hansen discusses several issues that complicate the likelihood ratio approach in this setting. First, the likelihood is usually assumed locally quadratic near the null and the global optimum, but because some parameters are unidentified under the null, it is instead flat in those directions. Such unidentified nuisance parameters have been studied by \citep{davies1977, davies87, andrewsploberger94, dufour2006}. Second, the score, usually assumed positive, can be identically \(0\) at the restricted maximum likelihood estimator of the linear (null) model. Third, some parameters, such as the transition probabilities, may take the boundary values \(0\) or \(1\), giving rise to the parameter boundary problem \citep{andrews1999, andrews2001}. In addition, the likelihood surface may have multiple local optima, so the null need not lie in the same region as the global optimum.
+
+To address these issues, \citet{hansen92} models the likelihood function as an empirical process of the unknown parameters and applies empirical process theory to obtain a bound on the asymptotic distribution of a standardized likelihood ratio statistic. The nuisance parameters, which include the second-regime parameters \((\mu_2, \sigma_2)\) and the transition probabilities \((p_{11}, p_{22})\), are not identified under the null, so the statistic is evaluated over a grid of values for these parameters and optimized accordingly. Because the underlying empirical process may be serially correlated for some parameter values, \citet{hansen96} proposes a correction that is applied when computing the asymptotic distribution. This correction is incorporated in the implementation in \pkg{MSTest}.
+
+This procedure has two main drawbacks. First, it provides only a bound for the standardized likelihood ratio statistic, so it can be conservative, and the critical values reported by \pkg{MSTest} are those of the process \(Q\) rather than of the statistic itself. Second, it optimizes over the nuisance parameters by grid search, which becomes computationally intensive as more parameters are allowed to switch. We nonetheless include it because it is a common benchmark in the literature.
+
+Several likelihood ratio--based procedures have followed \citet{hansen92}. \citet{garcia98} reduce the dimensionality of the nuisance parameter space but rely on asymptotic assumptions known to be problematic in Markov switching settings \citep{hansen96inference, andrewsploberger94}, and \citet{chowhite07} develop a quasi-likelihood ratio test that accounts for parameters on the boundary but may not properly handle the time dependence induced by autoregressive dynamics \citep{carsteig2012, chowhi2011}; for these reasons neither is included in \pkg{MSTest}. More recently, \citet{quzhuo2021likelihood} and \citet{kasshi2018} establish the asymptotic validity of parametric bootstrap procedures for likelihood ratio tests, the former for a broad class of univariate models and the latter for testing \(M_0 \geq 1\) against \(M_0 + 1\) regimes under fixed or predetermined regressors. While these parametric bootstrap procedures are not implemented directly in \pkg{MSTest}, they can be replicated using the local Monte Carlo likelihood ratio test of \citet{rodrondufour_mcmstest} described below, which applies in even more general settings.
+
+\citet{rodrondufour_mcmstest} propose the maximized and local Monte Carlo likelihood ratio tests (MMC-LRT and LMC-LRT), the most general procedures currently available (implemented as \texttt{MMCLRTest()} and \texttt{LMCLRTest()}; see Table \ref{tab:testing}). They apply when both \(M_0 \ge 1\) and \(m \ge 1\), remain valid under non-stationarity, non-Gaussian errors, and parameters on the boundary, and are the only tests available for multivariate Markov switching models, including the MS-VAR and multivariate hidden Markov models discussed above. The MMC-LRT additionally controls size in finite samples and is robust to identification problems, which is especially relevant for macroeconomic applications.
+
+Here, we provide a brief overview of the MMC-LRT and LMC-LRT procedures. A formal treatment is given in \citet{rodrondufour_mcmstest}. Both procedures are based on the likelihood ratio statistic \(LR_{T}=2[\bar{L}_{T}(H_{1})-\bar{L}_{T}(H_{0})]\), where \(\bar{L}_{T}(H_{1})\) and \(\bar{L}_{T}(H_{0})\) are the maximized log-likelihoods under the alternative and the null, with the log-likelihood as defined above. Under a null of \(M=1\), the parameter vector \(\theta_{0}=(\mu,\sigma^{2},\phi_{1},\ldots,\phi_{p})'\) collects the nuisance parameters, since the null distribution of \(LR_{T}\) depends on \(\theta_{0}\). Because the model is parametric, for any \(\theta_{0}\) we can simulate \(N\) i.i.d. replications \(LR_{T}^{(1)}(\theta_{0}),\ldots,LR_{T}^{(N)}(\theta_{0})\) of the statistic, and, provided the observed statistic \(LR_{T}^{(0)}\) and the simulated statistics are exchangeable for some \(\theta_{0}\in\bar{\Omega}_{0}\), the Monte Carlo \(p\)-value is
+
+\begin{equation}
+    \hat{p}_{N}[x\,|\,\theta_{0}]=\frac{N+1-R_{LR}[LR_{T}^{(0)};\,N]}{N+1} \label{eq:mmc-pval}
+\end{equation}
+where
+\(R_{LR}[LR_{T}^{(0)};\,N] =\sum_{i=1}^{N}I[LR_{T}^{(0)}\geq LR_{T}^{(i)}(\theta _{0})]\)
+and \(I(C):=1\) if condition \(C\) holds, and \(I(C)=0\) otherwise. As can be seen, \(R_{LR}[LR_{T}^{(0)};\) \thinspace \(N]\) simply computes the rank of the test statistic from the observed data within the generated series \(LR(N,\)\thinspace \(\theta_{0})\). As shown in \citet{rodrondufour_mcmstest}, a critical region for this test statistic with level \(\alpha\) is given by \(\sup_{\theta_{0}\in \bar{\Omega}_{0}}\,\hat{p}_{N}[LR_{T}^{(0)}\,|\,\theta_{0}]\leq \alpha\). More precisely, if \((N+1)\alpha\) is an integer, then
+\begin{equation*}
+    \mathbb{P}\left[ \sup \{\hat{p}_{N}[LR_{T}^{(0)}\,|\,\theta_{0}]:\theta_{0}\in \bar{\Omega}_{0}\}\leq \alpha \right] \leq \alpha 
+\end{equation*}
+under the null hypothesis, so it is a valid test with level \(\alpha\) for \(H_{0}\). Because this result does not depend on the sample size \(T\), the test is also valid in finite samples.
+
+This maximized Monte Carlo procedure requires searching for the maximum Monte Carlo \(p\)-value over the nuisance space \(\bar{\Omega}_{0}\). Because this space can be large, following \citet{dufour2006} the maximization is carried out over a consistent set \(C_T\) built around a consistent estimate \(\hat{\theta}_{0}\). \pkg{MSTest} lets users define \(C_T\) from a confidence interval around \(\hat{\theta}_{0}\) (\(C_T^{CI}\)), from a fixed-radius set (\(C_T^{\epsilon}\)), or from their union.
+
+As discussed in \citet{dufour2006} and \citet{rodrondufour_mcmstest}, the solution to this optimization problem need not be unique, meaning that the maximum Monte Carlo \(p\)-value may correspond to multiple parameter vectors. For this reason, derivative-free numerical optimization methods are recommended to locate the maximum Monte Carlo \(p\)-value over the nuisance parameter space. \pkg{MSTest} allows users to employ the generalized simulated annealing algorithm (\CRANpkg{GenSA}), the genetic algorithm (\CRANpkg{GA}), and particle swarm optimization (\CRANpkg{pso}); see \citep{xiaetal2013, zametal2013, scrucca2013, dufour2006, dufour2019finite}.
+
+Choosing \(C_T\) to be the singleton \(\{\hat{\theta}_{0}\}\) yields the local Monte Carlo test (LMC-LRT), a finite-sample analogue of the parametric bootstrap that requires only a consistent estimate \(\hat{\theta}_{0}\) and, unlike the bootstrap, does not require \(N\to\infty\). As shown in \citet{rodrondufour_mcmstest}, both the LMC-LRT and the MMC-LRT remain valid even when no asymptotic distribution exists, and the parametric bootstrap procedures of \citet{quzhuo2021likelihood} and \citet{kasshi2018} can be reproduced as special cases by constraining the nuisance space accordingly.
+
+\subsection{Moment-based tests}\label{moment-based-tests}
+
+\citet{dufourluger17} propose an alternative approach to testing Markov switching models that avoids the statistical issues associated with likelihood ratio--type tests, is computationally less demanding, and perfectly controls the size of the test through the Monte Carlo testing methods developed in \citet{dufour2006} (implemented as \texttt{DLMCTest()} and \texttt{DLMMCTest()}; see Table \ref{tab:testing}). However, their method is restricted to the case where \(M_0 = m = 1\).
+
+The moment-based test of \citet{dufourluger17} is based on computing moments of the least squares residuals from autoregressive models estimated under the null hypothesis of \(M_0=1\). More specifically, they focus on the mean, variance, skewness, and excess kurtosis of the least squares residuals. These moments are calculated as
+\begin{equation*}
+    M(\hat{\epsilon}) = \frac{|m_2 - m_1|}{\sqrt{s^2_1+s^2_2}}, \quad V(\hat{\epsilon}) = \frac{\vartheta_2(\hat{\epsilon})}{\vartheta_1(\hat{\epsilon})}, \quad S(\hat{\epsilon})= | \frac{\Sigma^T_{t=1} \hat{\epsilon}_{t}^3}{T(\hat{\sigma}^2)^{3/2}} |, \quad K(\hat{\epsilon})= | \frac{\Sigma^T_{t=1} \hat{\epsilon}_{t}^4}{T(\hat{\sigma}^2)^{2}} -3|
+\end{equation*}
+where the truncated means \(m_1, m_2\), the truncated variances \(s_1^2, s_2^2\), the variance components \(\vartheta_1, \vartheta_2\), and \(\hat{\sigma}^2 = T^{-1}\sum_{t=1}^{T}\hat{\epsilon}_t^2\) are computed from the negative and positive parts of the least squares residuals, as defined in \citet{dufourluger17}.
+
+The testing procedure computes a test statistic for each moment, obtains the corresponding individual \(p\)-values, and combines them using one of two standard methods for aggregating independent tests: a minimum-based combination \citep{tippett1931, wilkinson1951}, or a product-based combination \citep{fisher1932, pearson1933} \citep[see][ for further discussion]{dufour2004, dufour2014}. The Monte Carlo \(p\)-value of the combined test statistic is then obtained from its rank among the values simulated under \(\eta \sim N(0, I_T)\), in the same way as for the likelihood ratio statistic above.
+
+Because the transition probabilities, mean, and variance need not be treated as nuisance parameters---only the parameters on explanatory variables may be unidentified under the null---the test avoids much of the identification difficulty that arises in \citet{hansen92}, \citet{garcia98}, and \citet{chp14}, and it extends easily to a maximized Monte Carlo framework. Although it is limited to comparing linear models against two-regime alternatives only, it is the least computationally intensive procedure available and can be computed in seconds, even in its maximized Monte Carlo version.
+
+\subsection{Optimal test for regime switching}\label{optimal-test-for-regime-switching}
+
+\citet{chp14} propose a test for parameter constancy in random coefficient and Markov switching models that extends the information matrix test of \citet{white1982}. Like the moment-based test of \citet{dufourluger17}, it applies only to the case where \(M_0 = m = 1\) and only requires estimation under the null, which is attractive in Markov switching settings where estimating the alternative is computationally demanding because of nonlinearity and multiple local optima. In contrast, likelihood ratio--based procedures such as those of \citet{hansen92}, \citet{garcia98}, \citet{chowhite07}, \citet{quzhuo2021likelihood}, \citet{kasshi2018}, and \citet{rodrondufour_mcmstest} require estimation under both hypotheses.
+
+Although \citet{chp14} show that their test is asymptotically locally equivalent to the likelihood ratio test, simulation evidence in \citep{rodrondufour_mcmstest, quzhuo2021likelihood} suggests that likelihood ratio--based approaches can be more powerful in some settings, such as when only the mean switches and the autoregressive persistence is high. The procedure also involves bootstrapping and optimization over nuisance parameters, which can make it more computationally intensive than the moment-based test of \citet{dufourluger17} or the Monte Carlo likelihood ratio tests of \citet{rodrondufour_mcmstest}, particularly when the variance switches.
+
+\citet{chp14} test the null of parameter constancy, \(\theta_t = \theta_0\), against the alternative \(\theta_t = \theta_0 + \eta_t\), where the switching variable \(\eta_t\) is unobservable, stationary, and may depend on nuisance parameters \(\beta\). Their statistic uses the second derivatives of the log-likelihood and the outer products of the scores, as in the information matrix test, together with an extra term that captures the serial dependence of the time-varying coefficients, so it depends on the latent process \(\eta_t\) only through its second-order properties. To handle the nuisance parameters, \citet{chp14} follow \citet{davies87} and set \(\eta_t = chS_t\), where \(c\) is the amplitude of the change, \(h\) its direction, and \(S_t\) a bounded, mean-zero AR(1) process, collecting the nuisance parameters in \(\beta = (c^2, h', \rho')\). From the second-order properties of the score they obtain the supremum-type statistic
+\begin{equation*}
+    \text{supTS} = \sup_{\{h, p:||h||=1, \underline{\rho} < \rho < \bar{\rho}\}} \frac{1}{2} (max(0, \frac{\Gamma^*_T}{\sqrt{\hat{\epsilon^{*'}}\hat{\epsilon^*}}}))^2
+\end{equation*}
+where \(\Gamma^*_T\) and \(\hat{\epsilon}^*\) are normalized quantities that do not depend on \(c^2\), defined in \citet{chp14}. The test bootstraps over the distribution of the nuisance parameters, for which \pkg{MSTest} uses a uniform prior. Because \(c^2\) need not be bounded above, they also suggest an exponential-type statistic following \citet{andrewsploberger94},
+\begin{equation*}
+    expTS = \int\limits_{\{\underline{\rho} \leq \rho \leq \bar\rho, ||h||<1 \}} \Psi(h,\rho) d\rho dh
+\end{equation*}
+where \(\Psi(h,\rho)\) is defined in \citet{chp14}.
+
+The tests of \citet{chp14} have been widely used in empirical applications \citep{hamilton05, warnevredin06, kahnrich07, morleypiger12, DMPF11}, in testing MS-GARCH models \citep{hushin08}, and as benchmarks \citep{dufourluger17, quzhuo2021likelihood, rodrondufour_mcmstest}. Given their broad use and optimality properties, they are included in \pkg{MSTest} (\texttt{CHPTest()}; see Table \ref{tab:testing}).
+
+\section{The R package MSTest}\label{software}
+
+The \pkg{MSTest} package is designed to conduct hypothesis tests for the number of regimes in Markov switching models. Because many of these procedures require estimating restricted and unrestricted models and simulating under the null, the package also provides tools for simulating and estimating Markov switching models. These features primarily support the testing procedures and are not the main focus of the package.
+
+What distinguishes \pkg{MSTest} is its implementation of testing procedures that remain valid under violations of standard regularity conditions, together with its use of \pkg{Rcpp} and parallel computing, which make it feasible to handle nuisance parameters and Monte Carlo--based procedures in practice. Although other software exists for simulating and estimating Markov switching models, this combination of generality, computational efficiency, and modern hypothesis tests sets \pkg{MSTest} apart.
+
+\subsection{Data sets}\label{data-sets}
+
+The \pkg{MSTest} package includes three samples of U.S. real GNP and one of U.S. real GDP, all readily accessible once the package is loaded. These series have been used by \citet{hansen92}, \citet{chp14}, \citet{dufourluger17}, and \citet{rodrondufour_mcmstest}, among others, to test for the number of regimes in Markov switching models. Table \ref{tab:datasets} reports the label, series, source, and sample span of each.
+
+\begin{table}
+\centering
+\begin{tabular}{llll}
+    \hline
+    Label & Series & Source & Sample span \\
+    \hline
+    \code{hamilton84GNP} & Real GNP & \cite{hamilton89} & 1951Q2--1984Q4 \\
+    \code{chp10GNP} & Real GNP & \cite{chp14} & 1951Q2--2010Q4 \\
+    \code{USGNP} & Real GNP & \cite{rodrondufour_mcmstest} & 1947Q2--2024Q2 \\
+    \code{USRGDP} & Real GDP & \cite{rodrondufour_mcmstest} & 1947Q2--2024Q2 \\
+    \hline
+\end{tabular}
+\caption{U.S. real GNP and GDP data sets included in \pkg{MSTest}}
+\label{tab:datasets}
+\end{table}
+
+These data sets can be loaded using the following commands once \pkg{MSTest} has been attached:
+
+\begin{verbatim}
+data("hamilton84GNP", package = "MSTest")
+data("chp10GNP", package = "MSTest")
+data("USGNP", package = "MSTest")
+data("USRGDP", package = "MSTest")
+\end{verbatim}
+
+Each data set has three columns: a \texttt{Date} column of class \texttt{Date} (constructed with \texttt{as.Date()}), the level of real GNP or GDP (\texttt{GNP} or \texttt{RGDP}), and the corresponding growth rate (\texttt{GNP\_gr} or \texttt{RGDP\_gr}).
+
+\subsection{Simulation}\label{simulation}
+
+Simulation plays a central role in \pkg{MSTest}, as many of the testing procedures rely on Monte Carlo methods to obtain valid critical values in the presence of nuisance parameters and identification failures. The simulation functions are used primarily by the hypothesis testing procedures that build sample or asymptotic null distributions, such as \texttt{LMCLRTest}, \texttt{MMCLRTest}, \texttt{DLMCTest}, \texttt{DLMMCTest}, and \texttt{CHPTest}. They may also be useful to users developing new estimation or testing procedures for Markov switching models who wish to assess performance through controlled experiments.
+
+Table \ref{tab:simulation} lists the simulation functions provided by \pkg{MSTest} and the classes of processes they generate. Each function takes as input a \texttt{List} specifying the data-generating process (DGP). We present illustrative examples below, and a complete description of each function's arguments is available in the package documentation on CRAN.
+
+\begin{table}
+\centering
+\begin{tabular}{l l}
+    \hline
+    Function & Description \\
+    \hline
+    \code{simuNorm} & Normally distributed process, optionally with exogenous regressors.\\
+    \code{simuAR} & Autoregressive process, AR($p$).\\
+    \code{simuARX} & AR($p$) process with exogenous regressors.\\
+    \code{simuVAR} & Vector autoregressive process, VAR($p$).\\
+    \code{simuVARX} & VAR($p$) process with exogenous regressors.\\
+    \code{simuMSAR} & Markov switching AR($p$) process.\\
+    \code{simuMSARX} & Markov switching AR($p$) process with exogenous regressors.\\
+    \code{simuMSVAR} & Markov switching VAR($p$) process.\\
+    \code{simuMSVARX} & Markov switching VAR($p$) process with exogenous regressors.\\
+    \code{simuHMM} & Hidden Markov model (HMM), optionally with exogenous regressors.\\
+    \hline
+\end{tabular}
+\caption{Simulation functions available in \pkg{MSTest}}
+\label{tab:simulation}
+\end{table}
+
+As an illustration, consider the \texttt{simuNorm} function, which generates a univariate or multivariate Gaussian process. The required input is a \texttt{List} containing the sample size (\texttt{n}), the number of series (\texttt{q}) (where \texttt{q=1} indicates a univariate process and \texttt{q\textgreater{}1} a multivariate one), a (\(q \times 1\)) vector of means, and a (\(q \times q\)) covariance matrix. Users may optionally specify a \texttt{burnin} period to discard initial observations, which defaults to zero for \texttt{simuNorm} but is larger for autoregressive processes to reduce sensitivity to initialization, or supply a custom matrix of innovations via the \texttt{eps} argument. The code below applies these functions to simulate several linear and regime-switching processes, including multivariate normal, AR, VAR, Markov switching AR and VAR, and hidden Markov models.
+
+\begin{verbatim}
+mdl_norm <- list(n     = 500, 
+                 q     = 2,
+                 mu    = c(5, -2),
+                 sigma = rbind(c(5.0, 1.5),
+                               c(1.5, 1.0)))
+simu_norm <- simuNorm(mdl_norm)
+
+mdl_ar <- list(n     = 500, 
+               mu    = 5,
+               sigma = 1,
+               phi   = c(0.75))
+simu_ar <- simuAR(mdl_ar)
+
+mdl_var <- list(n     = 500, 
+                p     = 1,
+                q     = 2,
+                mu    = c(5, -2),
+                sigma = rbind(c(5.0, 1.5),
+                              c(1.5, 1.0)),
+                phi   = rbind(c(0.50, 0.30),
+                              c(0.20, 0.70)))
+simu_var <- simuVAR(mdl_var)
+
+mdl_hmm <- list(n     = 500, 
+                q     = 2,
+                mu    = rbind(c(5, -2),
+                              c(10, 2)),
+                sigma = list(rbind(c(5.0, 1.5),
+                                   c(1.5, 1.0)),
+                             rbind(c(7.0, 3.0),
+                                   c(3.0, 2.0))),
+                k     = 2,
+                P     = rbind(c(0.95, 0.10),
+                              c(0.05, 0.90)))
+simu_hmm <- simuHMM(mdl_hmm)
+
+mdl_ms <- list(n     = 500, 
+               mu    = c(5,10),
+               sigma = c(1,1),
+               phi   = c(0.75),
+               k     = 2,
+               P     = rbind(c(0.95, 0.10),
+                             c(0.05, 0.90)))
+simu_msar <- simuMSAR(mdl_ms)
+
+mdl_msvar <- list(n     = 500, 
+                  p     = 1,
+                  q     = 2,
+                  mu    = rbind(c(5, -2),
+                                c(10, 2)),
+                  sigma = list(rbind(c(5.0, 1.5),
+                                     c(1.5, 1.0)),
+                               rbind(c(7.0, 3.0),
+                                     c(3.0, 2.0))),
+                  phi   = rbind(c(0.50, 0.30),
+                                c(0.20, 0.70)),
+                  k     = 2,
+                  P     = rbind(c(0.95, 0.10),
+                                c(0.05, 0.90)))
+simu_msvar <- simuMSVAR(mdl_msvar)
+\end{verbatim}
+
+\begin{figure}
+
+{\centering \includegraphics[width=\textwidth,alt={A three-by-two grid of simulated time series line plots. The left column shows the linear processes (multivariate normal, autoregressive, and vector autoregressive) and the right column shows the corresponding Markov switching processes (hidden Markov, Markov switching autoregressive, and Markov switching vector autoregressive), in which abrupt shifts between regimes are visible.},]{GRR-JMD-MSTest-RJournal_files/figure-latex/sims-1} 
+
+}
+
+\caption{Simulated linear (left column) and Markov switching (right column) processes. Abrupt shifts between regimes are visible in the Markov switching processes.}\label{fig:sims}
+\end{figure}
+
+Figure \ref{fig:sims} shows the simulated processes. Regime switching is clearly visible in the Markov switching specifications, most notably when comparing the autoregressive process (middle left) with its Markov switching counterpart (middle right), and similar differences arise between the VAR and MS-VAR processes.
+
+\subsection{Model estimation}\label{model-estimation}
+
+\pkg{MSTest} can estimate the ten model classes listed in Table \ref{tab:models}, together with their \pkg{MSTest} labels and specifications. Although \texttt{Nmdl} and \texttt{HMmdl} use multivariate notation, both automatically detect a univariate setting when given a \((T \times 1)\) vector. Labels containing an ``X'' allow exogenous regressors, though these can also be included in \texttt{Nmdl} and \texttt{HMmdl} despite their names.
+
+\begin{table}
+\centering
+\begin{tabular}{p{0.18\textwidth}  p{0.18\textwidth} p{0.54\textwidth}}
+    \hline
+    Model & Label & Equation \\
+    \hline
+    N$(\pmb{\mu} +  \pmb{x}_{t} \pmb{\beta}, \pmb{\Sigma})$ & \code{Nmdl} & $\pmb{y}_t = \pmb{\mu} +  \pmb{x}_{t} \pmb{\beta} + \pmb{\Sigma}^{1/2} \pmb{\epsilon}_t$ \\
+    AR($p$) & \code{ARmdl} & $y_t = \mu + \sum^p_{k=1} \phi_k (y_{t-k} - \mu) + \sigma \epsilon_t$ \\
+    ARX($p$) & \code{ARXmdl} & $y_t = \mu + \sum^p_{k=1} \phi_k (y_{t-k} - \mu) +  \pmb{x}_{t} \pmb{\beta} + \sigma \epsilon_t$ \\
+    VAR($p$) & \code{VARmdl} & $\pmb{y}_t  = \pmb{\mu} + \sum^p_{k=1}(\pmb{y}_{t-k} - \pmb{\mu})\pmb{\Phi}_k + \pmb{\Sigma}^{1/2}\pmb{\epsilon}_t$\\
+    VARX($p$) & \code{VARXmdl} & $\pmb{y}_t  = \pmb{\mu} + \sum^p_{k=1}(\pmb{y}_{t-k} - \pmb{\mu})\pmb{\Phi}_k + \pmb{x}_t \pmb{\beta} + \pmb{\Sigma}^{1/2}\pmb{\epsilon}_t$\\
+    MS-AR($p$) & \code{MSARmdl} & $y_t = \mu_{S_t} + \sum^p_{k=1} \phi_k (y_{t-k} - \mu_{S_{t-k}}) + \sigma_{S_t} \epsilon_t$ \\
+    MS-ARX($p$) & \code{MSARXmdl} & $y_t = \mu_{S_t} + \sum^p_{k=1} \phi_k (y_{t-k} - \mu_{S_{t-k}})  +  \pmb{x}_{t} \pmb{\beta} + \sigma_{S_t} \epsilon_t$ \\
+    MS-VAR($p$) & \code{MSVARmdl} & $\pmb{y}_t  = \pmb{\mu}_{S_t} + \sum^p_{k=1}\pmb{\Phi}_k(\pmb{y}_{t-k} - \pmb{\mu}_{S_{t-k}}) + \pmb{\Sigma}^{1/2}_{S_t}\pmb{\epsilon}_t$\\
+    MS-VARX($p$) & \code{MSVARXmdl} & $\pmb{y}_t  = \pmb{\mu}_{S_t} + \sum^p_{k=1}\pmb{\Phi}_k(\pmb{y}_{t-k} - \pmb{\mu}_{S_{t-k}}) +  \pmb{x}_{t} \pmb{\beta} + \pmb{\Sigma}^{1/2}_{S_t}\pmb{\epsilon}_t$\\
+    HMM & \code{HMmdl} & $\pmb{y}_t  = \pmb{\mu}_{S_t} +  \pmb{x}_{t} \pmb{\beta} + \pmb{\Sigma}^{1/2}_{S_t}\pmb{\epsilon}_t$\\
+    \hline
+    \end{tabular}
+\caption{Models and their specifications available in \pkg{MSTest}.}
+\label{tab:models}
+\end{table}
+
+The simulation functions from the previous subsection generated a multivariate hidden Markov process (\(q = 2\) series), a Markov switching autoregressive process (\(p = 1\) lag), and a Markov switching vector autoregressive process (\(p = 1\) lag, \(q = 2\) series). Each returns a list with the simulated data, the true latent state variable \(S_t\), and other DGP elements. These series serve as inputs to the corresponding estimation functions below, for the hidden Markov model and the two Markov switching models.
+
+\begin{verbatim}
+control <- list(msmu   = TRUE, 
+                msvar  = TRUE,
+                method = "EM",
+                use_diff_init = 30)
+mdl_est_hmm <- HMmdl(simu_hmm[["y"]], k = 2, control = control)
+summary(mdl_est_hmm)
+\end{verbatim}
+
+\begin{verbatim}
+#> Hidden Markov Model
+#>               coef     s.e.
+#> mu_1,1    5.151200 0.119030
+#> mu_2,1   -2.007400 0.053269
+#> mu_1,2    9.628800 0.236840
+#> mu_2,2    1.821400 0.117870
+#> sig_11,1  4.973200 0.375510
+#> sig_12,1  1.388800 0.140140
+#> sig_22,1  0.962750 0.075585
+#> sig_11,2  7.384600 0.909040
+#> sig_12,2  3.006800 0.422390
+#> sig_22,2  1.738000 0.227480
+#> p_11      0.961300 0.010523
+#> p_12      0.038702 0.010523
+#> p_21      0.099480 0.026777
+#> p_22      0.900520 0.026777
+#> 
+#> log-likelihood =  -1796.469
+#> AIC =  3620.939
+#> BIC =  3679.943
+#> 
+#> Residuals:
+#>        Min       1Q     Median      3Q    Max
+#> Y1 -6.5756 -1.68620 -0.0424050 1.72610 6.8022
+#> Y2 -2.9919 -0.75449  0.0072404 0.75641 3.2839
+\end{verbatim}
+
+\begin{verbatim}
+control <- list(msmu   = TRUE, 
+                msvar  = FALSE, 
+                method = "EM",
+                use_diff_init = 30)
+mdl_est_msar <- MSARmdl(simu_msar[["y"]], p = 1, k = 2, control = control)
+summary(mdl_est_msar)
+\end{verbatim}
+
+\begin{verbatim}
+#> Markov Switching Autoregressive Model
+#>            coef     s.e.
+#> mu_1   4.994000 0.160730
+#> mu_2  10.041000 0.186710
+#> phi_1  0.715960 0.031774
+#> sig    0.895540 0.057329
+#> p_11   0.953170 0.011205
+#> p_12   0.046832 0.011205
+#> p_21   0.092460 0.022379
+#> p_22   0.907540 0.022379
+#> 
+#> log-likelihood =  -797.9881
+#> AIC =  1611.976
+#> BIC =  1645.677
+#> 
+#> Residuals:
+#>       Min       1Q    Median      3Q    Max
+#> Y1 -3.723 -0.62857 -0.021467 0.61808 2.8027
+\end{verbatim}
+
+\begin{verbatim}
+control <- list(msmu   = TRUE, 
+                msvar  = TRUE,
+                method = "EM",
+                use_diff_init = 30)
+mdl_est_msvar <- MSVARmdl(simu_msvar[["y"]], p = 1, k = 2, control = control)
+summary(mdl_est_msvar)
+\end{verbatim}
+
+\begin{verbatim}
+#> Markov Switching Vector Autoregressive Model
+#>               coef     s.e.
+#> mu_1,1    4.897400 0.543750
+#> mu_2,1   -2.099200 0.509290
+#> mu_1,2   10.290000 0.581890
+#> mu_2,2    2.141000 0.547620
+#> phi_1,11  0.508240 0.063077
+#> phi_1,12  0.287540 0.075495
+#> phi_1,21  0.204040 0.031217
+#> phi_1,22  0.687860 0.037718
+#> sig_11,1  5.561300 0.460000
+#> sig_12,1  1.911700 0.193760
+#> sig_22,1  1.204800 0.103680
+#> sig_11,2  7.440600 0.830910
+#> sig_12,2  3.343700 0.412780
+#> sig_22,2  2.115700 0.239960
+#> p_11      0.927340 0.015909
+#> p_12      0.072658 0.015909
+#> p_21      0.136240 0.030757
+#> p_22      0.863760 0.030757
+#> 
+#> log-likelihood =  -1868.071
+#> AIC =  3772.142
+#> BIC =  3847.969
+#> 
+#> Residuals:
+#>        Min       1Q     Median      3Q    Max
+#> Y1 -9.8948 -1.63520  0.0415660 1.59780 7.6673
+#> Y2 -3.7363 -0.81008 -0.0036109 0.83766 3.2878
+\end{verbatim}
+
+In all three examples, \texttt{method\ =\ "EM"} in the \texttt{control} list estimates the models by the expectation--maximization (EM) algorithm, while \texttt{method\ =\ "MLE"} instead performs direct maximum likelihood estimation. The arguments \texttt{msmu} and \texttt{msvar} control whether the mean and variance switch across regimes, and setting either to \texttt{FALSE} holds the corresponding parameter constant across regimes. For the Markov switching AR example we set \texttt{msvar\ =\ FALSE} because its data-generating process holds the variance constant across regimes.
+
+The option \texttt{use\_diff\_init\ =\ 30} runs the optimizer thirty times from different initial values, retaining the highest-log-likelihood solution as the primary output while storing all runs in the \texttt{trace} element. All estimation functions return \texttt{S3} objects with dedicated \texttt{print()} and \texttt{summary()} methods. The \texttt{summary()} method reports parameter estimates, log-likelihood values, information criteria (AIC and BIC), and diagnostics such as residual quantiles, which in this controlled setting can be compared directly with the true DGP values.
+
+The \texttt{summary()} method also reports asymptotic standard errors for the estimated parameters, computed from the inverse of the observed information matrix (the numerically approximated Hessian of the log-likelihood) evaluated at the estimate. Large within-regime standard errors can serve as an informal indication that a model with fewer regimes may be adequate, which in turn motivates the formal testing procedures that are the focus of \pkg{MSTest}. These standard errors are valid under the usual regularity conditions for a given, correctly specified \(M\)-regime model. They should be interpreted with caution near the boundary of the parameter space (for example, transition probabilities close to \(0\) or \(1\)) or under weak regime separation, where the normal approximation may be poor, and \pkg{MSTest} returns \texttt{NA} in such cases. They concern inference within a fixed \(M\)-regime model and are distinct from the non-standard problem of testing the number of regimes, which is what the test procedures described below are designed to address.
+
+\begin{figure}
+
+{\centering \includegraphics[width=\textwidth,alt={Three stacked time series line plots for the estimated hidden Markov, Markov switching autoregressive, and Markov switching vector autoregressive processes. Each panel overlays the simulated series with the true regime path and the smoothed regime probabilities from the fitted model, which track the true regimes closely.},]{GRR-JMD-MSTest-RJournal_files/figure-latex/estim-1} 
+
+}
+
+\caption{Simulated processes (black and blue), true regimes (red), and smoothed probabilities (green) from the estimated models. The smoothed probabilities closely track the true regime paths.}\label{fig:estim}
+\end{figure}
+
+Figure \ref{fig:estim} displays the simulated series (black and blue), the true latent regime states \(S_t\) (red, dashed), and the estimated smoothed regime probabilities from the fitted models (green, solid). The smoothed probabilities track the true regime changes closely across all three models, and particularly well for the hidden Markov and Markov switching autoregressive models. Regime classification is somewhat less precise over certain intervals in the Markov switching VAR case, reflecting the greater complexity of multivariate models, which can typically be mitigated by a larger sample size or more initial values.
+
+\subsection{Hypothesis testing}\label{hypothesis-testing}
+
+This section describes the hypothesis testing functions available in \pkg{MSTest}. Designed for ease of use, the package in most cases requires only the series \(y_t\) (and \(Z_t\) when applicable) and the number of regimes to be tested.
+
+Table \ref{tab:testing} summarizes the hypothesis testing functions currently implemented in \pkg{MSTest} and reports, for each, the number of regimes it can test, its applicability to multivariate models, its identification robustness, its validity under non-stationarity, and its relative computational cost, as discussed above for each procedure. The \texttt{DLMCTest} and \texttt{DLMMCTest} procedures were not originally designed for non-stationary data, but \citet{rodrondufour_mcmstest} provide simulation evidence that they control size and retain power under a random walk, which is why they carry an asterisk (\(^{*}\)) in Table \ref{tab:testing}. Each returns the test statistic, its \(p\)-value, and, when applicable, critical values and parameter estimates under the null and alternative hypotheses.
+
+\begin{table}
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}l >{\raggedright\arraybackslash}p{0.37\textwidth} >{\centering\arraybackslash}p{0.15\textwidth} >{\centering\arraybackslash}p{0.08\textwidth} >{\centering\arraybackslash}p{0.08\textwidth} >{\centering\arraybackslash}p{0.07\textwidth} c@{}}
+    \hline
+    Function & Description & $H_0$: $M_0$ vs.\ \newline $H_1$: $M_0{+}m$ & Multiv. & Ident.\ robust & Non-stat. & Cost \\
+    \hline
+    \code{LMCLRTest} & Local Monte Carlo LRT & $M_0$ \& $m \ge 1$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & High \\
+    \code{MMCLRTest} & Maximized Monte Carlo LRT & $M_0$ \& $m \ge 1$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & High \\
+    \code{DLMCTest}  & Local MC moment-based test & $M_0 = m = 1$ & -- & $\checkmark$ & $\checkmark^{*}$ & Low \\
+    \code{DLMMCTest} & Maximized MC moment-based test & $M_0 = m = 1$ & -- & $\checkmark$ & $\checkmark^{*}$ & Low \\
+    \code{CHPTest}   & Optimal parameter-constancy test & $M_0 = m = 1$ & -- & -- & -- & Med. \\
+    \code{HLRTest}   & LRT empirical bound & $M_0 = m = 1$ & -- & -- & -- & High \\
+    \hline
+\end{tabular}
+\caption{Hypothesis tests available in \pkg{MSTest}. Multiv.: multivariate models; Ident.\ robust: valid under identification failure without relying on an asymptotic distribution; Non-stat.: valid under non-stationarity.}
+\label{tab:testing}
+\end{table}
+
+The reported critical values warrant clarification. For \texttt{HLRTest()}, they are those of the process \(Q\) introduced in \citet{hansen92}, which bounds the likelihood ratio statistic from above rather than providing critical values for the LR statistic itself. For \texttt{LMCLRTest()}, \texttt{MMCLRTest()}, \texttt{DLMCTest()}, and \texttt{DLMMCTest}, they are empirical quantiles of the simulated null distribution. Throughout the package, ``critical values'' therefore denotes, in a generic sense, rejection thresholds derived from the relevant reference distribution.
+
+\subsubsection{Monte Carlo likelihood ratio test}\label{monte-carlo-likelihood-ratio-test}
+
+The local Monte Carlo likelihood ratio test (LMC-LRT) is implemented via \texttt{LMCLRTest()} (Table \ref{tab:testing}). Because it simulates the null distribution by estimating both the restricted and unrestricted models, the estimation options accepted by the model functions can be passed to the test through \texttt{mdl\_h0\_control} and \texttt{mdl\_h1\_control}. The same structure applies to the maximized Monte Carlo likelihood ratio test discussed below. These control lists specify whether the mean and variance switch across regimes, the estimation method, the number of initial values used in optimization, and related options. A separate number of initial values for the null distribution simulation can be set via \texttt{use\_diff\_init\_sim}, which defaults to the value used on the observed data (in \texttt{mdl\_h0\_control} and \texttt{mdl\_h1\_control}) and is generally recommended. Beyond these estimation controls, \texttt{LMCLRTest()} also requires the number of lags \texttt{p}, the number of regimes under the null \texttt{k0}, and under the alternative \texttt{k1}.
+
+\begin{verbatim}
+lmc_control = list(N = 19,
+                   mdl_h0_control = list(const  = TRUE,
+                                         getSE  = FALSE),
+                   mdl_h1_control = list(msmu   = TRUE,
+                                         msvar  = TRUE,
+                                         getSE  = FALSE,
+                                         method = "EM",
+                                         use_diff_init = 1))
+lmclrt <- LMCLRTest(simu_msvar[["y"]], p = 1, k0 = 1 , k1 = 2, control = lmc_control)
+summary(lmclrt)
+\end{verbatim}
+
+\begin{verbatim}
+#> Restricted Model
+#>              coef
+#> mu_1      6.77680
+#> mu_2     -0.62311
+#> phi_1,11  0.55850
+#> phi_1,12  0.23027
+#> phi_1,21  0.18764
+#> phi_1,22  0.63895
+#> sig_11    8.22430
+#> sig_12    3.98700
+#> sig_22    2.91830
+#> 
+#> log-likelihood =  -1938.175
+#> AIC =  3894.349
+#> BIC =  3932.263
+#> 
+#> Unrestricted Model
+#>              coef
+#> mu_1,1    6.66590
+#> mu_2,1   -0.55236
+#> mu_1,2    7.63580
+#> mu_2,2   -0.35457
+#> phi_1,11  0.60883
+#> phi_1,12  0.22478
+#> phi_1,21  0.22281
+#> phi_1,22  0.64515
+#> sig_11,1  6.25930
+#> sig_12,1  2.18750
+#> sig_22,1  1.33840
+#> sig_11,2 14.00300
+#> sig_12,2  9.91160
+#> sig_22,2  8.27010
+#> p_11      0.75303
+#> p_12      0.24697
+#> p_21      0.83510
+#> p_22      0.16490
+#> 
+#> log-likelihood =  -1901.817
+#> AIC =  3839.633
+#> BIC =  3915.46
+#> 
+#> Rodriguez-Rondon & Dufour (2026) Local Monte Carlo Likelihood Ratio Test
+#>          LRT_0  0.90%  0.95%  0.99% p-value
+#> LMC_LRT 72.716 22.223 30.894 47.549    0.05
+\end{verbatim}
+
+We illustrate it on the Markov switching vector autoregressive model with \(p=1\) lag simulated in the previous subsection, testing \(H_0: M = 1\) against \(H_1: M = 2\). Since the data were generated from a two-regime model, rejection is expected. The output reports the likelihood ratio statistic, Monte Carlo critical values, and the Monte Carlo \(p\)-value, and here the null of a single regime is rejected. Because the \(p\)-value is computed from a finite number of simulations, set here to \texttt{N\ =\ 19}, it is discrete and can only take values on the grid \(\{1/(N+1), 2/(N+1), \ldots, N/(N+1)\}\). With \(N = 19\) the smallest attainable value is \(1/(19+1) = 0.05\), so the reported \(p\)-value of \(0.05\) is the strongest possible evidence against the null at this simulation size. As discussed in \citep{dufour2006, rodrondufour_mcmstest}, larger \texttt{N} can improve power but need not be large, since these methods do not approximate asymptotic critical values. Consistent with this, \citet{dufour2004} show that using more than \(100\) replications (including the observed statistic) has little effect on power, so \(N = 99\) is typically recommended. We use \texttt{N\ =\ 19} purely for illustration.
+
+As noted earlier, \texttt{LMCLRTest()} can also replicate the parametric bootstrap procedures \citep{quzhuo2021likelihood, kasshi2018}. Setting \texttt{mdl\_h1\_control\ =\ list(method\ =\ "MLE")} enables direct maximum likelihood estimation and parameter constraints via \texttt{mle\_theta\_low} and \texttt{mle\_theta\_upp}, which allow constraining the parameters away from the boundary of the parameter space, as required for asymptotic validity (\citet{kasshi2018} additionally constrain the variances). Because the bootstrap approximates asymptotic critical values, a larger \texttt{N} is typical, though lower values remain reasonable (\citet{quzhuo2021likelihood} use \(N = 199\) and \citet{kasshi2018} use \(N = 299\)) given the cost of repeatedly estimating Markov switching models.
+
+The maximized Monte Carlo likelihood ratio test (MMC-LRT) is implemented via \texttt{MMCLRTest()}. It shares the LMC-LRT estimation controls for the restricted and unrestricted models and likewise requires \texttt{p}, \texttt{k0}, and \texttt{k1}, adding several options specific to the maximization step over the nuisance parameter space. The constant \texttt{eps} defines the consistent set over which the maximization is performed. Setting \texttt{CI\_union\ =\ TRUE} constructs \(C_T^\ast = C_T^{CI} \cup C_T^{\epsilon}\), while \texttt{eps\ =\ 0} with \texttt{CI\_union\ =\ TRUE} restricts the search to \(C_T^{CI}\). The optimization algorithm is selected via \texttt{type}. By default the search stops when a Monte Carlo \(p\)-value of \(1\) is reached (the maximum), or, by setting \texttt{threshold\_stop}, once the test fails to reject, that is, when the \(p\)-value exceeds the significance level \(\alpha\).
+
+\begin{verbatim}
+mmc_control = list(N = 19,
+                   eps = 0.3,
+                   threshold_stop = 0.05 + 1e-6,
+                   type = "GenSA",
+                   CI_union = FALSE,
+                   silence = TRUE,
+                   mdl_h0_control = list(const  = TRUE,
+                                         getSE  = FALSE),
+                   mdl_h1_control = list(msmu   = TRUE,
+                                         msvar  = TRUE,
+                                         getSE  = FALSE,
+                                         method = "EM"),
+                   maxit  = 100)
+mmclrt <- MMCLRTest(simu_norm[["y"]], p = 0, k0 = 1 , k1 = 2, control = mmc_control)
+summary(mmclrt)
+\end{verbatim}
+
+\begin{verbatim}
+#> Restricted Model
+#>           coef
+#> mu_1    5.0774
+#> mu_2   -1.9382
+#> sig_11  4.9946
+#> sig_12  1.5268
+#> sig_22  1.0552
+#> 
+#> log-likelihood =  -1688.442
+#> AIC =  3386.884
+#> BIC =  3407.957
+#> 
+#> Unrestricted Model
+#>                 coef
+#> mu_1,1    5.33240000
+#> mu_2,1   -1.77730000
+#> mu_1,2    4.80550000
+#> mu_2,2   -2.10980000
+#> sig_11,1  5.85090000
+#> sig_12,1  1.79770000
+#> sig_22,1  1.03890000
+#> sig_11,2  3.93790000
+#> sig_12,2  1.14750000
+#> sig_22,2  1.01540000
+#> p_11      0.06294900
+#> p_12      0.93705000
+#> p_21      0.99983000
+#> p_22      0.00016602
+#> 
+#> log-likelihood =  -1684.86
+#> AIC =  3397.72
+#> BIC =  3456.724
+#> 
+#> Rodriguez-Rondon & Dufour (2026) Maximized Monte Carlo Likelihood Ratio Test
+#>          LRT_0 p-value
+#> MMC_LRT 7.1641     0.7
+\end{verbatim}
+
+We illustrate the MMC-LRT on the linear bivariate model with \(M = 1\) regime simulated from a normal distribution in the previous subsection, testing \(H_0: M = 1\) against \(H_1: M = 2\) with \texttt{p\ =\ 0} since the series has no autoregressive dynamics. Because the data are single-regime, we expect no rejection. We set \texttt{eps\ =\ 0.3}, \texttt{CI\_union\ =\ FALSE}, and use simulated annealing via \texttt{type\ =\ "GenSA"}, with \texttt{threshold\_stop\ =\ 0.05\ +\ 1e-6} so the search stops once the null fails to be rejected. Parallel computation can be enabled by setting \texttt{workers} to the number of cores to use (for example, \texttt{workers\ =\ 8}), distributing the null distribution simulation across them. Here the MMC-LRT fails to reject the null, as indicated by the reported Monte Carlo \(p\)-value, whose resolution again depends on the number of simulations \texttt{N}. Even so, the MMC-LRT remains the most general likelihood ratio--based test currently available for Markov switching models, maximizing over the nuisance parameters while retaining finite-sample validity even when identification fails.
+
+\subsubsection{Moment-based tests}\label{moment-based-tests-1}
+
+The Monte Carlo moment-based test proposed by \citet{dufourluger17} is implemented in \pkg{MSTest} via the functions \texttt{DLMCTest()} (local version) and \texttt{DLMMCTest()} (maximized version). As with the other testing procedures, the user supplies the series \(y_t\) and the number of autoregressive lags \(p\), and \texttt{N} sets the number of Monte Carlo replications used to compute the test (default \(N = 99\)). The procedure additionally approximates the distribution of the \(p\)-value of each moment-based statistic through an auxiliary simulation, with the number of replications set by \texttt{simdist\_N} (default \(10{,}000\)).
+
+Below we illustrate the moment-based local Monte Carlo test on the previously simulated Markov switching autoregressive process. The test is computationally inexpensive and completes almost instantaneously. Because we set \texttt{getSE\ =\ TRUE}, the \texttt{summary()} method reports the estimated restricted model, here an AR(1) with autoregressive coefficient \(\phi_1\), together with standard errors for its coefficients, followed by the test statistics for each of the four moments (mean, variance, skewness, and excess kurtosis), the combined statistic \(F(\varepsilon)\), the corresponding critical values (quantiles of the simulated distribution), and the Monte Carlo \(p\)-values. The value of \(\phi_1\) reported in the test block equals the restricted-model estimate above, because the local test simulates the null distribution at this consistent point estimate. As expected, the null hypothesis of linearity is clearly rejected, since the data were generated from a Markov switching process with \(M = 2\) regimes.
+
+\begin{verbatim}
+lmc_control = list(N = 99,
+                   simdist_N = 10000,
+                   getSE = TRUE)
+lmcmoment <- DLMCTest(simu_msar[["y"]], p = 1, control = lmc_control)
+\end{verbatim}
+
+\begin{verbatim}
+summary(lmcmoment)
+\end{verbatim}
+
+\begin{verbatim}
+#> Restricted Model
+#>          coef     s.e.
+#> mu    6.76700 0.450970
+#> phi_1 0.84667 0.023987
+#> sig   2.38540 0.151020
+#> 
+#> log-likelihood =  -924.9604
+#> AIC =  1855.921
+#> BIC =  1868.559
+#> 
+#> Dufour & Luger (2017) Moment-Based Local Monte Carlo Test
+#>            phi_1 M(eps) V(eps)  S(eps) K(eps) F(eps)   0.90%   0.95%   0.99%
+#> LMC_min  0.84667 1.3431 16.942 0.37429  3.473      1 0.96333 0.97859 0.99455
+#> LMC_prod 0.84667 1.3431 16.942 0.37429  3.473      1 0.99822 0.99932 0.99977
+#>          p-value
+#> LMC_min     0.01
+#> LMC_prod    0.01
+\end{verbatim}
+
+This computational efficiency carries over to the maximized moment-based test, implemented via \texttt{DLMMCTest()}, which maximizes the Monte Carlo \(p\)-value over the nuisance parameter space while remaining fast in practice. The optimization algorithm is selected via \texttt{optim\_type} (the analogue of \texttt{type} in \texttt{MMCLRTest()}), and, as with \texttt{MMCLRTest()}, \texttt{eps} and \texttt{CI\_union} define the consistent set over which the maximization is performed. Many of the other optimization options available there also apply here.
+
+\begin{verbatim}
+mmc_control <- list(N = 99,
+                    getSE = TRUE,
+                    eps = 0,
+                    CI_union = TRUE,
+                    optim_type = "GenSA",
+                    silence = TRUE,
+                    threshold_stop = 0.05 + 1e-6,
+                    maxit = 100)
+mmcmoment <- DLMMCTest(simu_msar[["y"]], p = 1, control = mmc_control)
+\end{verbatim}
+
+\begin{verbatim}
+summary(mmcmoment)
+\end{verbatim}
+
+\begin{verbatim}
+#> Restricted Model
+#>          coef     s.e.
+#> mu    6.76700 0.450970
+#> phi_1 0.84667 0.023987
+#> sig   2.38540 0.151020
+#> 
+#> log-likelihood =  -924.9604
+#> AIC =  1855.921
+#> BIC =  1868.559
+#> 
+#> Dufour & Luger (2017) Moment-Based Maximized Monte Carlo Test
+#>            phi_1 M(eps) V(eps)  S(eps) K(eps) F(eps) p-value
+#> MMC_min  0.84667 1.3431 16.942 0.37429  3.473      1    0.01
+#> MMC_prod 0.84667 1.3431 16.942 0.37429  3.473      1    0.01
+\end{verbatim}
+
+In the example above, we again apply the test to the simulated Markov switching autoregressive process. We set the stopping threshold to \(0.05 + 1\text{e-}6\), so that the optimization terminates once the null hypothesis fails to be rejected, although this does not occur in this case. We also set \texttt{eps\ =\ 0}, restricting the search to the confidence interval--based consistent set, as in \citet{dufourluger17}. The test block also reports the value of \(\phi_1\) that maximizes the Monte Carlo \(p\)-value over this set, which here coincides with the point estimate from the restricted model, although in general the two need not be equal. Once again, the null hypothesis of a linear model is rejected, in line with the results obtained from the other testing procedures.
+
+\subsubsection{Parameter stability test}\label{parameter-stability-test}
+
+The parameter stability test proposed by \citet{chp14} is implemented in \pkg{MSTest} via the function \texttt{CHPTest()}. As with the other testing procedures, the user must provide the series \(y_t\) and the number of autoregressive lags \(p\). Here the parameter \(N\) specifies the number of bootstrap replications used to obtain critical values and is set to \(3000\) by default, following \citet{chp14}. The parameter \(\rho_b\) bounds the autocorrelation nuisance parameter \(\rho\) and is set to \(0.7\) by default, again as in their study, so that the grid search is performed over \(\rho \in [-\rho_b, \rho_b] = [-0.7, 0.7]\).
+
+\begin{verbatim}
+chp_control = list(N = 1000,
+                   rho_b = 0.7,
+                   msvar = FALSE)
+pstabilitytest <- CHPTest(simu_ar[["y"]], p = 1, control = chp_control)
+summary(pstabilitytest)
+\end{verbatim}
+
+\begin{verbatim}
+#> Restricted Model
+#>          coef     s.e.
+#> mu    4.91830 0.182520
+#> phi_1 0.74989 0.029756
+#> sig   1.03960 0.065817
+#> 
+#> log-likelihood =  -717.7421
+#> AIC =  1441.484
+#> BIC =  1454.122
+#> 
+#> Carrasco, Hu, & Ploberger (2014) Parameter Stability Test 
+#> 
+#> - Switch in Mean only
+#>       test-stat  0.90%  0.95%  0.99% p-value
+#> supTS   0.37868 1.8429 2.5673 4.1247   0.574
+#> expTS   0.77573 1.3717 1.8293 3.4564   0.541
+\end{verbatim}
+
+Above, we apply the parameter stability test to the linear autoregressive process simulated earlier. We set \texttt{N\ =\ 1000} to keep the example fast and \texttt{msvar\ =\ FALSE}, so that the variance is held constant and the test focuses on potential instability in the mean. The \texttt{summary()} method reports the parameter estimates of the restricted model, which is the only model that needs to be estimated for this test, along with the results for both the supTS and expTS versions of the test statistic. As expected, the test fails to reject the null hypothesis of parameter stability, consistent with the fact that the data were generated from a linear autoregressive model without regime switching.
+
+\subsubsection{Stochastic likelihood ratio test}\label{stochastic-likelihood-ratio-test}
+
+The stochastic likelihood ratio test proposed by \citet{hansen92} is implemented in \pkg{MSTest} via the function \texttt{HLRTest()}. As with \texttt{DLMCTest()}, \texttt{DLMMCTest()}, and \texttt{CHPTest()}, the user need only provide the series \(y_t\) and the number of autoregressive lags \(p\), since this test likewise assesses only the null hypothesis of linearity, that is, a single regime, in an autoregressive model.
+
+This procedure performs a grid search over the nuisance parameters of the unrestricted model, so most options control the construction of that grid. The argument \texttt{gridsize} sets the number of grid points, and \texttt{mugrid\_from} and \texttt{mugrid\_by} give the starting value and step size for the mean grid, with analogous arguments for the variance grid. For each point on this grid, the test estimates the restricted model over a bounded region defined by \texttt{theta\_null\_low} and \texttt{theta\_null\_upp}. Setting \texttt{msvar\ =\ TRUE} additionally allows regime-dependent variances, but this enlarges the nuisance parameter space and can substantially raise the computational cost.
+
+\begin{verbatim}
+hlrt_control  <- list(msvar          = FALSE,
+                      gridsize       = 20,
+                      mugrid_from    = 0,
+                      mugrid_by      = 1,
+                      theta_null_low = c(0,-0.99,0.01),
+                      theta_null_upp = c(20,0.99,20))
+hlrt <- HLRTest(simu_msar[["y"]], p = 1, control = hlrt_control)
+summary(hlrt)
+\end{verbatim}
+
+\begin{verbatim}
+#> Restricted Model
+#>          coef     s.e.
+#> mu    6.76700 0.450970
+#> phi_1 0.84667 0.023987
+#> sig   2.38540 0.151020
+#> 
+#> log-likelihood =  -924.9604
+#> AIC =  1855.921
+#> BIC =  1868.559
+#> 
+#> Hansen (1992) Likelihood Ratio Bound Test -  Switch in Mean only
+#>       test-stat 0.90 % 0.95 % 0.99 % p-value
+#> M = 0     6.972 2.6900 2.9419 3.4479       0
+#> M = 1     6.972 2.7282 2.9612 3.4493       0
+#> M = 2     6.972 2.7860 3.0960 3.5397       0
+#> M = 3     6.972 2.8679 3.1516 3.6352       0
+#> M = 4     6.972 2.8962 3.2368 3.8034       0
+\end{verbatim}
+
+Above, we illustrate the stochastic likelihood ratio test using the previously simulated Markov switching autoregressive process. The \texttt{summary()} method reports parameter estimates for the restricted model, which is the only model that needs to be estimated for this test, together with the standardized likelihood ratio statistic and its Monte Carlo critical values and \(p\)-values for each bandwidth used in the heteroskedasticity-robust procedure of \citet{hansen96}. Across all bandwidths, the null hypothesis of linearity is strongly rejected, with Monte Carlo \(p\)-values effectively equal to zero, consistent with the data having been generated from a Markov switching process with two regimes.
+
+\section{Conclusion}\label{conclusion}
+
+The importance of testing the number of regimes in Markov switching models has motivated a substantial body of research, reflecting the statistical and computational challenges inherent in this problem. Seminal contributions such as \citet{hansen92}, \citet{chp14}, and \citet{dufourluger17} focus on testing the null hypothesis of a single regime (i.e., a linear model) against the alternative of two regimes. More recently, \citet{rodrondufour_mcmstest} introduced a class of Monte Carlo likelihood ratio tests that allow one to test a null of \(M_0\) regimes against an alternative of \(M_0 + m\) regimes, for any \(M_0 \geq 1\) and \(m \geq 1\) and for a broad class of models, including multivariate and non-stationary ones, substantially expanding the scope of feasible hypothesis testing.
+
+The \pkg{MSTest} package makes these procedures readily available by implementing the methods of these four studies within a unified, user-friendly framework, and it additionally provides tools for simulating and estimating a wide range of Markov switching and hidden Markov models to support the testing procedures. This paper has reviewed the underlying methodology and illustrated how \pkg{MSTest} is used in practice to conduct inference on the number of regimes. By lowering the computational and implementation barriers to regime testing and offering multiple complementary procedures with differing assumptions and robustness properties, the package lets users select methods well suited to their empirical setting and make informed decisions about model specification.
+
+\section*{Computational details}\label{computational-details}
+\addcontentsline{toc}{section}{Computational details}
+
+All results in this paper were obtained using R 4.4.0 \citep{r2024} and version 0.1.9 of the package \pkg{MSTest}, available from the Comprehensive R Archive Network (CRAN). For computational efficiency, \pkg{MSTest} depends on \pkg{Rcpp} 1.1.1 \citep{eddetal2018} and \pkg{RcppArmadillo} 15.2.4.1 \citep{eddsan2024}, and it uses \pkg{GenSA} 1.1.14.1 \citep{xiaetal2013}, \pkg{GA} 3.2.4 \citep{scrucca2013}, and \pkg{pso} 1.0.4 \citep{psopack} for numerical optimization.
+
+All tables and figures can be reproduced with the file \texttt{article.R}, distributed with the \pkg{MSTest} package (\texttt{inst/examples/article.R}) and also available from the package's public GitHub repository. Because the Monte Carlo procedures are simulation-based, exact reproduction requires the random seed set in \texttt{article.R}. On an Apple MacBook with an M1 processor running macOS Sonoma 14.2.1 and 16 GB of RAM, the full script runs in approximately three minutes of elapsed time, which varies with hardware and parallelization settings.
+
+\bibliography{refs.bib}
+
+\address{%
+Gabriel Rodriguez-Rondon\\
+Bank of Canada\\%
+Canadian Economic Analysis Department\\ Ottawa, ON, Canada\\
+%
+\url{https://grodriguezrondon.com}\\%
+\textit{ORCiD: \href{https://orcid.org/0009-0005-3769-9921}{0009-0005-3769-9921}}\\%
+\href{mailto:grodriguezrondon@bankofcanada.ca}{\nolinkurl{grodriguezrondon@bankofcanada.ca}}%
+}
+
+\address{%
+Jean-Marie Dufour\\
+McGill University\\%
+Department of Economics\\ Montreal, QC, Canada\\
+%
+\url{http://www.jeanmariedufour.com}\\%
+\textit{ORCiD: \href{https://orcid.org/0000-0002-7731-2278}{0000-0002-7731-2278}}\\%
+\href{mailto:jean-marie.dufour@mcgill.ca}{\nolinkurl{jean-marie.dufour@mcgill.ca}}%
+}
