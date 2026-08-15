@@ -1,5 +1,4 @@
 ---
-title: 'ODRF: An R Package for Oblique Decision Tree and Its Random Forest'
 abstract: |
   The classification and regression tree (CART) and Random Forest (RF)
   are popular machine learning methods that involve selecting one
@@ -23,66 +22,26 @@ abstract: |
   ODRF was compared with other packages of decision trees and forests,
   showing a clear overall improvement in classification and regression
   tasks.
+address:
+- |
+  Yu Liu\
+  Sichuan Normal University\
+  School of Mathematical Sciences\
+  China\
+  [liuy8stat@sicnu.edu.cn](liuy8stat@sicnu.edu.cn){.uri}
+- |
+  Yingcun Xia\
+  University of Electronic Science and Technology of China\
+  School of Mathematical Sciences\
+  China\
+  [staxyc@nus.edu.sg](staxyc@nus.edu.sg){.uri}
 author:
-- name: Yu Liu
-  affiliation: Sichuan Normal University
-  address:
-  - School of Mathematical Sciences
-  - China
-  - |
-    [liuy8stat@sicnu.edu.cn](liuy8stat@sicnu.edu.cn){.uri}
-- name: Yingcun Xia
-  affiliation: University of Electronic Science and Technology of China
-  address:
-  - School of Mathematical Sciences
-  - China
-  - |
-    [yingcun.xia@uestc.edu.cn](yingcun.xia@uestc.edu.cn){.uri}
-date: '2026-09-30'
-date_received: '2023-04-20'
-journal:
-  firstpage: ~
-  lastpage: []
-volume: 18
-issue: 3
-slug: RJ-2026-041
-citation_url: https://rjournal.github.io/
-packages:
-  cran:
-  - ODRF
-  - Rcpp
-  - hhcartr
-  - rpart
-  - randomForest
-  - rerf
-  - PPforest
-  - obliqueRF
-  - partykit
-  - MASS
-  - PPtreeViz
-  - PPtreereg
-  - oblique.tree
-  - RLT
-  - evtree
-  - rotationForest
-  - grf
-  - xgboost
-  - aorsf
-  bioc: []
-bibliography: ODRF.bib
-CTV: ~
-legacy_pdf: yes
-legacy_converted: yes
-output:
-  rjtools::rjournal_web_article:
-    self_contained: yes
-    toc: no
-    mathjax: https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js
-    md_extension: -tex_math_single_backslash
-draft: no
-
+- by Yu Liu and Yingcun Xia
+bibliography:
+- ODRF.bib
+title: "ODRF: An R Package for Oblique Decision Tree and Its Random
+  Forest"
 ---
-
 
 ::::::::: article
 ## Introduction {#sec:intro}
@@ -189,7 +148,7 @@ projections. On the other hand, most of the existing R packages for such
 types of random forests can only be used for classification. Some of the
 R packages have been removed from the Comprehensive R Archive Network
 (CRAN) at <https://CRAN.R-project.org/>. For comprehensive details, see
-Table [1](#tab:Rpackage), which
+Table [1](#tab:T1){reference-type="ref" reference="Rpackage"}, which
 presents a comparative analysis of nine R packages implementing oblique
 tree methods. The evaluation assesses their support for six specific
 functionalities and determines whether they remain available on CRAN.
@@ -228,19 +187,36 @@ of **ODRF** are as follows.
   separating the sets of variables used for node splitting and model
   fitting.
 
-| Package | classification | regression | forests | boosting | custom splits | online updating | CRAN |
-|:--------|:--------------:|:----------:|:--------:|:--------:|:-------------:|:----------------:|:----:|
-| oblique.tree | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| pptreeviz | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| PPtreereg | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| rotationForest | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| rerf | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| PPforest | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| obliqueRF | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| aorsf | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| ODRF | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+:::: minipage
+::: {#Rpackage}
+  ---------------- ---------------- ------------ --------- ---------- -------- ---------- ------
+                    classification   regression   forests   boosting   custom    online    CRAN
 
-Table: (\#tab:Rpackage) A comprehensive overview of the R package for oblique tree methods.
+                                                                       splits   updating  
+
+  oblique.tree                                                                            
+
+  pptreeviz                                                                               
+
+  PPtreereg                                                                               
+
+  rotationForest                                                                          
+
+  rerf                                                                                    
+
+  PPforest                                                                                
+
+  obliqueRF                                                                               
+
+  aorsf                                                                                   
+
+  ODRF                                                                                    
+  ---------------- ---------------- ------------ --------- ---------- -------- ---------- ------
+
+  : (#tab:T1) A comprehensive overview of the R package for oblique
+  tree methods
+:::
+::::
 
 The remainder of this paper is organized as follows: Section
 [2](#sec:models){reference-type="ref" reference="sec:models"} describes
@@ -796,15 +772,10 @@ as.party(obj, data, ...)
 ```
 
 <figure id="fig:tree.structure" data-latex-placement="h!">
-<figure style="width:49%;display:inline-block;">
-<img src="ODRF-plot-the-tree-structure-of-class-ODT.png">
-<figcaption>(a) The tree structure of class of ODT.</figcaption>
-</figure>
-<figure style="width:49%;display:inline-block;">
-<img src="ODRF-plot-the-tree-structure-of-class-part.png">
-<figcaption>(b) The tree structure of class party of ODT.</figcaption>
-</figure>
-<figcaption>Figure 2: Two types of the tree structure.</figcaption>
+
+<figcaption> <span id="fig:tree.structure"
+data-label="fig:tree.structure"></span>Two types of the tree
+structure.</figcaption>
 </figure>
 
 Below is one example, while the two types of tree plots are shown in
@@ -865,15 +836,9 @@ plot(varimp, nvar = 10)
 ```
 
 <figure id="fig:forest.error" data-latex-placement="h!">
-<figure style="width:49%;display:inline-block;">
-<img src="ODRF-plot-the-error-graph-of-ODRF.png">
-<figcaption>(a) Fitting errors of ODRF.</figcaption>
-</figure>
-<figure style="width:49%;display:inline-block;">
-<img src="ODRF-plot-the-dotchart-of-variable-importance-about-ODRF.png">
-<figcaption>(b) Dotchart of variable's importance.</figcaption>
-</figure>
-<figcaption>Figure 3: The error of ODRF for
+
+<figcaption> <span id="fig:forest.error"
+data-label="fig:forest.error"></span> The error of ODRF for
 classification and variable’s importance.</figcaption>
 </figure>
 
@@ -1029,15 +994,9 @@ vertebrae involved; (3) $start$: the number of the first (uppermost)
 vertebra operated on. Below is the code and analysis.
 
 <figure id="fig:tree of kyphosis" data-latex-placement="h!">
-<figure style="width:49%;display:inline-block;">
-<img src="ODRF-The-ODT-tree-structure-of-kyphosis.png">
-<figcaption>(a) The ODT tree structure of kyphosis.</figcaption>
-</figure>
-<figure style="width:49%;display:inline-block;">
-<img src="ODRF-The-rpart-tree-structure-of-kyphosis.png">
-<figcaption>(b) The \CRANpkg{rpart} tree structure of kyphosis.</figcaption>
-</figure>
-<figcaption>Figure 4: The tree structure of kyphosis
+
+<figcaption> <span id="fig:tree of kyphosis"
+data-label="fig:tree of kyphosis"></span> The tree structure of kyphosis
 of ODT and the conventional CART respectively.</figcaption>
 </figure>
 
@@ -1091,10 +1050,11 @@ performance by Ein-Dor & Feldmesser). This data (`cpus`) is available in
 predict the $perf$ using $syct$, $mmin$, $mmax$, $cach$, $chmin$ and
 $chmax$. The logarithm transformation is made to $perf$.
 
-<figure id="fig:ODT-of-cpus" data-latex-placement="h!">
+<figure id="fig:ODT of cpus" data-latex-placement="h!">
 <img src="ODRF-The-ODT-tree-structure-of-cpus.png" style="width:100.0%"
 alt="graphic without alt text" />
-<figcaption>Figure 5: ODT tree structure of
+<figcaption>Figure 2: <span id="fig:ODT of cpus"
+data-label="fig:ODT of cpus"></span> ODT tree structure of
 cpus</figcaption>
 </figure>
 
@@ -1130,9 +1090,9 @@ proj6 -0.012 -0.351 0.920 -0.156 0.061 -0.049
 ```
 
 The ODT and CART trees are depicted in Figure
-[5](#fig:ODT-of-cpus){reference-type="ref" reference="fig:ODT-of-cpus"}
-and Figure [6](#fig:rpart-of-cpus){reference-type="ref"
-reference="fig:rpart-of-cpus"}, respectively. Once again, it is evident
+[5](#fig:ODT of cpus){reference-type="ref" reference="fig:ODT of cpus"}
+and Figure [6](#fig:rpart of cpus){reference-type="ref"
+reference="fig:rpart of cpus"}, respectively. Once again, it is evident
 that ODT has fewer leaves and a lower fitting error than CART.
 Interestingly, the first, second, and fourth projections primarily
 relate to a computer's memory and the time required to fetch data from
@@ -1147,27 +1107,18 @@ projections correspond to the common understanding of the performance of
 a computer and its hardware settings. These examples show that ODT has
 better interpretability than CART.
 
-<figure id="fig:rpart-of-cpus" data-latex-placement="h!">
+<figure id="fig:rpart of cpus" data-latex-placement="h!">
 <img src="ODRF-The-rpart-tree-structure-of-cpus.png"
 style="width:100.0%" alt="graphic without alt text" />
-<figcaption>Figure 6: The conventional tree structure
+<figcaption>Figure 3: <span id="fig:rpart of cpus"
+data-label="fig:rpart of cpus"></span> The conventional tree structure
 of cpus using <strong>rpart</strong>.</figcaption>
 </figure>
 
 <figure id="fig:var.imp.mtcars" data-latex-placement="h!">
-<figure style="width:32%;display:inline-block;">
-<img src="ODRF-plot-the-importance-of-variables-for-mtcars-with-LASSO.png">
-<figcaption>(a) LASSO</figcaption>
-</figure>
-<figure style="width:32%;display:inline-block;">
-<img src="ODRF-plot-the-importance-of-variables-for-mtcars-with-RF.png">
-<figcaption>(b) RF</figcaption>
-</figure>
-<figure style="width:32%;display:inline-block;">
-<img src="ODRF-plot-the-importance-of-variables-for-mtcars-with-ODRF.png">
-<figcaption>(c) ODRF</figcaption>
-</figure>
-<figcaption> Figure 7: Plots of the importance of
+
+<figcaption> <span id="fig:var.imp.mtcars"
+data-label="fig:var.imp.mtcars"></span> Plots of the importance of
 variables for data “mtcars” using three methods.</figcaption>
 </figure>
 
@@ -1197,60 +1148,8 @@ least influencing factor. Further comparison of the other variable
 rankings shows that our ODRF rankings of variable importance are
 generally consistent with LASSO, while RF differs more.
 
-
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-|                                |       |       |          Axis-aligned                       |                 Oblique                      |
-+================================+=======+=======+===========+=========+===========+===========+===========+==========+===========+===========+
-| **Dataset**                    | **n** | **p** | **CART**  | **ERT** | **EVT**   | **CT**    | **RotT**  | **SPOT** | **PPT**   | **ODT**   |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Servo (C)                      | 166   | 4     | 0.298     | 0.812   | **0.257** | 0.300     | 0.770     | 0.563    | 0.387     | 0.306     |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| AutoMpg (C)                    | 391   | 7     | 0.213     | 0.314   | 0.217     | 0.192.    | 0.281     | 0.245    | 0.184     | **0.175** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Concrete Compressive (A)       | 1030  | 8     | 0.314     | 0.513   | 0.308     | 0.248     | 0.539     | 0.446    | 0.502     | **0.202** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Boston house price (A)         | 506   | 13    | 0.275     | 0.458   | 0.294     | 0.275     | 0.439     | 0.379    | 0.262     | **0.261** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Wild blueberry yield (B)       | 777   | 13    | 0.228     | 0.347   | 0.224.    | 0.189     | 0.319     | 0.265    | **0.099** | 0.113     |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Body fat (B)                   | 252   | 14    | 0.073     | 0.418   | 0.085     | **0.061** | 0.446     | 0.402    | 0.096     | 0.072     |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Paris housing price (B)        | 10000 | 16    | 0.021     | 0.370   | 0.005     | **0.000** | 0.761     | 0.662    | 0.006.    | **0.000** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| House sales in King County (B) | 21613 | 18    | 0.327     | 0.482   | 0.324     | 0.287     | 0.442     | 0.360    | 0.314     | **0.256** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Bar crawl (B)                  | 7590  | 21    | 0.323     | 0.498   | 0.326     | 0.297     | 0.499     | 0.429    | 0.326     | **0.280** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Auto 93 (C)                    | 81    | 22    | 0.620     | 0.927   | 0.706     | 0.602     | 0.753     | 0.683    | 0.707     | **0.599** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Auto horsepower (C)            | 159   | 24    | 0.236     | 0.340   | 0.255     | 0.238     | 0.487     | 0.384    | 0.230     | **0.189** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Facebook comment volume (A)    | 18370 | 52    | **0.700** | 1.210   | 0.756     | 0.717     | 0.971     | 0.846    | 0.841     | 0.743.    |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Gold price prediction (B)      | 1718  | 74    | 0.043     | 0.023   | 0.023     | 0.016     | 0.136     | 0.029    | 0.027     | **0.010** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Baseball player statistics (B) | 4535  | 74    | 0.039     | 0.225   | 0.017     | 0.010     | 0.646     | 0.470    | 0.054     | **0.007** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| CNNpred (A)                    | 1441  | 76    | 0.032     | 0.016   | 0.010     | 0.003     | 0.124     | 0.068    | 0.019     | **0.002** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Superconductivity (A)          | 21263 | 81    | 0.296     | 0.387   | 0.293.    | 0.287     | 0.332     | 0.309    | 0.323.    | **0.271** |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Warsaw flat rent price (B)     | 3472  | 78    | 0.447     | 0.750   | 0.462     | **0.425** | 0.965     | 0.624    | 0.518     | 0.469     |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Buzz in social media (A)       | 28179 | 96    | 0.206     | 0.347   | 0.234     | **0.201** | 0.489     | 0.349    | 0.378     | 0.344.    |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Communities and Crime (A)      | 1994  | 101   | 0.475     | 0.746   | 0.480     | **0.445** | 0.568     | 0.526    | 0.617     | 0.545.    |
-+--------------------------------+-------+-------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| Residential building-Sales (A) | 372   | 103   | 0.060     | 0.231   | 0.060     | **0.040** | 0.356     | 0.285    | 0.176     | 0.046     |
-+================================+=======+=======+===========+=========+===========+===========+===========+==========+===========+===========+
-| **Average RPE across all 20 datasets**         | 0.261     | 0.471   | 0.267     | 0.242.    | 0.516     | 0.416    | 0.303     | 0.245.    |
-+------------------------------------------------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-| **No.~of bests in 20 datasets**                | 1         | 0       | 1         | 6         | 0         | 0        | 1         | 11        |
-+------------------------------------------------+-----------+---------+-----------+-----------+-----------+----------+-----------+-----------+
-
-
-Table: (\#tab:Table1) Regression: average RPE based on 100 random partitions of each data set into training and test sets. The alphabetic notation in the brackets of each dataset represents the data source. 
-
+::: minipage
+:::
 
 ### Prediction performance
 
@@ -1280,39 +1179,8 @@ point. The logistic regression function is used to find projections for
 each combination of predictors, but other alternatives are also provided
 in the package.
 
-
-
-|  |  |  | **Axis-aligned** |  |  |  | **Oblique** |  |  |  |  |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Dataset** | **n** | **p** | **CART** | **ERT** | **EVT** | **CT** | **RotT** | **SPOT** | **PPT** | **OT** | **ODT** |
-| Iris (A, 3) | 149 | 4 | 6.96 | 21.58 | 7.08 | 5.98 | 14.74 | 15.20 | **2.66** | 4.24 | 5.70 |
-| Seeds (C, 3) | 209 | 7 | 9.66 | 16.24 | 10.94 | 12.39 | 13.29 | 14.26 | **4.27** | 5.30 | 6.93 |
-| Milk Quality (B, 3) | 1059 | 7 | 2.05 | 37.92 | 6.29 | 1.31 | 4.87 | 8.64 | 29.56 | **0.80** | 2.22 |
-| Breast tissue (C, 6) | 105 | 9 | 36.37 | 47.23 | 38.74 | 42.66 | 57.69 | 59.23 | **33.63** | 39.23 | 55.26 |
-| Penguin (B, 3) | 333 | 9 | 6.61 | 12.47 | 3.96 | 6.50 | 7.25 | 14.12 | **0.63** | 0.97 | 2.14 |
-| Wine (A, 3) | 177 | 13 | 12.53 | 18.49 | 10.10 | 12.00 | 18.86 | 18.56 | **2.27** | 4.42 | 7.02 |
-| Mobile Price (B, 4) | 2000 | 20 | 20.60 | 46.89 | 21.91 | 17.34 | 64.98 | 62.51 | 16.14 | 4.16 | **3.89** |
-| Waveform (C, 3) | 4999 | 21 | 26.52 | 31.89 | 26.62 | 26.27 | 28.68 | 27.96 | 22.28 | 21.06 | **18.22** |
-| Gamma telescope (A,2) | 579 | 10 | 32.01 | 33.90 | 30.41 | **29.64** | 30.33 | 30.65 | 37.30 | 33.50 | 32.24 |
-| Indian liver patient (A,2) | 19020 | 10 | **18.19** | 26.44 | 19.50 | 19.21 | 22.00 | 21.45 | 20.92 | 21.02 | 18.83 |
-| Heart disease (A,2) | 270 | 13 | 21.91 | 28.38 | 23.04 | 25.28 | 25.39 | 25.22 | **16.20** | 23.34 | 20.61 |
-| EEG eye state (A,2) | 14980 | 14 | 29.98 | 36.15 | 30.90 | 36.27 | 34.36 | 33.29 | 38.19 | 27.44 | **25.76** |
-| Seismic-bumps (A,2) | 2584 | 15 | 7.61 | 9.60 | 6.64 | **6.62** | 6.93 | 6.88 | 18.35 | 10.43 | 8.34 |
-| Retinopathy debrecen (A,2) | 1151 | 19 | 35.89 | 40.55 | 35.43 | 37.03 | 38.25 | 35.40 | **29.37** | 32.71 | 30.20 |
-| Parkinson multiple sound (B,2) | 1208 | 26 | **34.39** | 38.69 | 34.81 | 37.10 | 36.49 | 35.74 | 35.23 | 36.84 | 34.88 |
-| Pistachio (B,2) | 2148 | 28 | 13.73 | 18.10 | 14.20 | 14.38 | 16.64 | 15.38 | 11.75 | 12.16 | **10.55** |
-| Breast cancer (B,2) | 569 | 30 | 7.07 | 9.28 | 6.62 | 6.34 | 8.55 | 8.23 | 4.41 | 6.16 | **3.91** |
-| Ionosphere (A,2) | 351 | 33 | 12.40 | 18.38 | 11.14 | **10.22** | 17.01 | 16.27 | 13.92 | 16.26 | 12.21 |
-| QSAR biodegradation (A,2) | 1055 | 41 | 17.88 | 20.61 | 18.10 | 19.65 | 20.41 | 19.41 | **15.52** | 19.64 | 17.14 |
-| Mice protein expression (A,2) | 1047 | 70 | 13.60 | 18.31 | 16.80 | 13.93 | 20.68 | 19.03 | **3.58** | 4.62 | 6.03 |
-| Ozone level detection (A,2) | 1847 | 72 | 8.16 | 9.94 | **7.00** | 7.51 | 8.15 | 8.28 | 19.40 | 11.85 | 8.43 |
-| Hill valley (C,2) | 1212 | 100 | 48.22 | 46.07 | 48.43 | 51.41 | 41.56 | 22.53 | 29.90 | 13.84 | **0.04** |
-| Musk (A,2) | 6598 | 166 | 8.61 | 12.02 | 11.48 | 9.39 | 13.18 | 11.49 | **7.73** | 10.96 | 9.34 |
-| **Average MR (%) across all 23 datasets** |  |  | 18.74 | 26.05 | 19.14 | 19.50 | 23.93 | 23.03 | 17.97 | 15.69 | 14.78 |
-| **No. of bests in 23 datasets** |  |  | 2 | 0 | 1 | 3 | 0 | 0 | 10 | 1 | 6 |
-
-
-Table: (\#tab:Table2) Classification: average MR (%) based on 100 random partitions of each data set into training and test sets. The alphabetic notation in the brackets of each dataset represents the data source; and the numbers are the number of classes.
+::: minipage
+:::
 
 We compare two different random rotation oblique tree methods: the
 Random Rotation Random Forest (RotRF) proposed by (Blaser and Fryzlewicz
@@ -1376,8 +1244,8 @@ $$MR=\sum_{i\in \text{test set}} 1(\hat{y}_i \neq y_i) /(N-n),$$
 is used to measure the performance. For each data set, the random
 partition is repeated 100 times, and averages of the RPEs or MRs are
 calculated using different methods. The calculation results are listed
-in Table [1](#tab:Table1){reference-type="ref" reference="Table1"}
-and Table [2](#tab:Table2){reference-type="ref"
+in Table [\[Table1\]](#Table1){reference-type="ref" reference="Table1"}
+and Table [\[Table2\]](#Table2){reference-type="ref"
 reference="Table2"}. The smallest RPE or MR for each data set is
 highlighted in font.
 
@@ -1388,8 +1256,8 @@ classification tasks, ODT achieves competitive misclassification rates
 (MR) on certain datasets, though its performance varies relative to
 other approaches such as PPT. ODT consistently demonstrates stability
 across all data sets, as shown in Table
-[1](#tab:Table1){reference-type="ref" reference="Table1"} and Table
-[2](#tab:Table2){reference-type="ref" reference="Table2"}. In
+[\[Table1\]](#Table1){reference-type="ref" reference="Table1"} and Table
+[\[Table2\]](#Table2){reference-type="ref" reference="Table2"}. In
 contrast, other oblique trees may fail; for instance, RotT and SPOT fail
 in the body fat data and Paris housing price data, while all other
 oblique trees fail in the Hill Valley data. The efficacy of ODT is
@@ -1398,31 +1266,8 @@ data sets among all methods. Here, the term \"no. of bests\" refers to
 the number of data sets in which a particular method outperforms all
 competitors.
 
-
-|  |  | **Classification** |  |  | **Regression** |  |  |
-|---|---|---:|---:|---:|---:|---:|---:|
-| **Type** | **Method** | **MR (%)** | **Time** | **Complexity** | **RPE** | **Time** | **Complexity** |
-| Axis-aligned tree | CART | 21.32 (0) | 0.11 (0) | 11.40 (0) | 0.241 (0) | 0.08 (1) | 8.20 (9) |
-|  | ERT | 23.05 (0) | 0.00 (13) | 91.67 (0) | 0.514 (0) | 0.00 (18) | 185.90 (0) |
-|  | EVT | 20.24 (2) | 0.57 (0) | 6.33 (1) | 0.262 (0) | 0.78 (0) | 10.35 (10) |
-|  | CT | 21.75 (2) | 0.16 (0) | 9.00 (1) | 0.224 (7) | 0.42 (0) | 24.45 (1) |
-| Oblique tree | RotT | 15.49 (4) | 0.13 (1) | 9.53 (0) | -- | -- | -- |
-|  | SPOT | 20.70 (0) | 0.05 (1) | 63.20 (0) | -- | -- | -- |
-|  | OT | 18.41 (2) | 11.19 (0) | 25.60 (2) | -- | -- | -- |
-|  | PPT | 21.39 (1) | 0.16 (0) | 2.00 (11) | 0.274 (1) | 1.580 (0) | 14.45 (1) |
-|  | ODT | 16.36 (4) | 0.14 (0) | 14.13 (0) | 0.210 (13) | 0.32 (1) | 40.30 (0) |
-| Axis-aligned forest | RF | 16.60 (1) | 0.14 (1) | -- | 0.156 (2) | 0.59 (1) | -- |
-|  | GRF | 17.97 (2) | 0.06 (12) | -- | 0.196 (0) | 0.03 (17) | -- |
-|  | ERT | 16.62 (0) | 0.17 (2) | -- | 0.191 (1) | 0.24 (2) | -- |
-|  | XGB | 18.70 (0) | 0.17 (0) | -- | 0.142 (9) | 0.35 (0) | -- |
-| Oblique forest | RotRF | 13.43 (1) | 10.24 (0) | -- | -- | -- | -- |
-|  | SPORF | 13.29 (3) | 2.71 (0) | -- | -- | -- | -- |
-|  | PPF | 21.27 (2) | 1.16 (0) | -- | -- | -- | -- |
-|  | ORF | 12.60 (3) | 11.84 (0) | -- | -- | -- | -- |
-|  | ORSF | 13.02 (0) | 2.51 (0) | -- | 0.178 (3) | 0.14 (0) | -- |
-|  | ODRF | 12.90 (3) | 9.90 (0) | -- | 0.142 (8) | 38.86 (0) | -- |
-
-Table: (\#tab:camp) Performance comparison of different methods for classification and regression. The numbers in brackets are the number of datasets in which a method performs best among all competitors, and `--` means the method is not applicable.
+::: minipage
+:::
 
 We also provide a comprehensive summary of three performance aspects for
 all competing methods: prediction error (MR for classification tasks or
@@ -1440,10 +1285,10 @@ relying on single-variable splits without linear operations.
 
 Due to rotationForest and obliqueRF packages only supporting binary
 classification problems, Table
-[4](#tab:camp){reference-type="ref" reference="tab:camp"}
+[\[tab:camp\]](#tab:camp){reference-type="ref" reference="tab:camp"}
 presents the average values for these three aspects based on 15 binary
 classification datasets and 20 regression datasets. As shown in Table
-[4](#tab:camp){reference-type="ref" reference="tab:camp"},
+[\[tab:camp\]](#tab:camp){reference-type="ref" reference="tab:camp"},
 after removing the five multinomial datasets, our ODT and ODRF generally
 exhibit smaller errors compared to their competitors. For ODT, its
 complexity and calculation time are approximately average among the
@@ -1496,24 +1341,13 @@ conditions are defined as follows:
   multiple correlated features could be considered for further analysis.
 
 We have computed the corresponding results as detailed in
-Table [5](#tab:Table3){reference-type="ref" reference="Table3"}. It
+Table [\[Table3\]](#Table3){reference-type="ref" reference="Table3"}. It
 can be observed that our ODRF is less sensitive to noisy data compared
 to other methods and even demonstrates enhanced performance in the
 presence of noise, as illustrated by the Patient and QSAR datasets.
 
-
-|  |  |  | **Without noise** |  |  |  |  | **With noise** |  |  |  |  |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Dataset** | **n** | **p** | **CART** | **SPOT** | **PPT** | **OT** | **ODT** | **CART** | **SPOT** | **PPT** | **OT** | **ODT** |
-| Iris (A, 3) | 149 | 4 | 6.96 | 14.74 | 2.66 | 4.24 | 5.76 | 6.96 | 31.42 | 3.90 | 7.24 | 6.18 |
-| Penguin (B, 3) | 333 | 9 | 6.61 | 13.18 | 0.63 | 0.97 | 2.11 | 6.61 | 15.29 | 0.70 | 1.39 | 2.59 |
-| Patient (A, 2) | 19020 | 10 | 18.19 | 21.44 | 20.92 | 21.05 | 25.46 | 28.15 | 27.11 | 32.03 | 27.76 | 18.94 |
-| Retinopathy (A, 2) | 1151 | 19 | 35.89 | 35.35 | 29.37 | 32.76 | 29.88 | 39.51 | 39.61 | 33.90 | 39.59 | 36.57 |
-| QSAR (A, 2) | 1055 | 41 | 17.89 | 19.52 | 15.52 | 19.69 | 17.11 | 18.00 | 19.64 | 15.62 | 19.92 | 16.99 |
-| Musk (A, 2) | 6598 | 166 | 8.61 | 11.71 | 7.73 | 10.96 | 9.53 | 8.60 | 11.53 | 7.72 | 11.07 | 9.67 |
-
-Table: (\#tab:Table3) Classification: average MR (%) based on 100 random partitions of each data set into training and test sets. The alphabetic notation in the brackets of each dataset represents the data source; and the numbers are the number of classes.
-
+::: minipage
+:::
 
 ## Conclusion {#sec:conclusion}
 
@@ -1558,8 +1392,7 @@ supported by the National Natural Science Foundation of China (12501377)
 and Sichuan Science and Technology Program (2026NSFSC0788). Yingcun Xia
 is supported by the National Natural Science Foundation of China
 (72033002 and 12271081).
-
-
+:::::::::
 
 :::::::::::::::::::::::::::::::::::::::::::::::::: {#refs .references .csl-bib-body .hanging-indent}
 ::: {#ref-athey2019generalized .csl-entry}
