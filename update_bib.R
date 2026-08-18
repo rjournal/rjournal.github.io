@@ -65,10 +65,11 @@ parse_doi_xml <- function(xml_file) {
         NA_character_
       ),
       year = year,
-      pages = pages,
+      pages = ifelse(stringr::str_count(pages, "-") == 1, stringr::str_replace(pages, "-", "--"), pages),
       doi = doi_val,
-      url = url,
-      journal = "{The R Journal}",
+      #url = url,
+      journal = "The R Journal",
+      publisher = "The R Foundation for Statistical Computing",
       volume = volume,
       number = number,
       category = "article"
@@ -85,7 +86,24 @@ new_issues <- fs::dir_ls("_issues") |>
   stringr::str_remove("_issues/")
 new_issues <- new_issues[new_issues > last_issue]
 
-for (iss in new_issues) {
+for (iss in new_issues[1]) {
   df <- parse_doi_xml(paste0("_issues/", iss, "/doi.xml"))
   bib2df::df2bib(df, "RJournal.bib", append = TRUE)
 }
+
+readr::read_lines("RJournal.bib") |>
+  stringr::str_replace_all(
+    c("TITLE" = "title",
+      "AUTHOR" = "author",
+      "YEAR" = "year",
+      "MONTH" = "month",
+      "PAGES" = "pages",
+      "DOI" = "doi",
+      "URL" = "url",
+      "JOURNAL" = "journal",
+      "VOLUME" = "volume",
+      "NUMBER" = "number",
+      "PUBLISHER" = "publisher",
+      "CATEGORY" = "category")
+  ) |>
+  readr::write_lines("RJournal.bib")

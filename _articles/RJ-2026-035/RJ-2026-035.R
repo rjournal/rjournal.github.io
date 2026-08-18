@@ -8,6 +8,119 @@ library(ggplot2)
 library(tidyverse)
 
 
+#> :::{.unnumbered}
+#> ::: {=html}
+#> <div id="tab:pseudoT">
+#> 
+#> |            **Algorithm:** DNN-estimated T-learner                                                                                       |
+#> |-----------------------------------------------------------------------------------------------------------------------------------------|
+#> |   **Input:** **X**, *Y*, *W*; **Output:** $\widehat{\tau}$                                                                              |
+#> | 1: $\widehat{\mu}_{0}=NN_{1}\left(Y^{0}\sim\mathbf{X}^{0}\right)$  $\triangleright$ Estimate POs surfaces                               |
+#> | 2: $\widehat{\mu}_{1}=NN_{2}\left(Y^{1}\sim\mathbf{X}^{1}\right)$                                                                       |
+#> | 3: $\widehat{\tau}\left(\mathbf{x}\right)=\widehat{\mu}_{1}(\mathbf{x})-\widehat{\mu}_{0}(\mathbf{x})$  $\triangleright$ Estimate CATE  |
+#> 
+#> </div>
+#> :::
+#> :::
+#> 
+
+#> :::{.unnumbered}
+#> ::: {=html}
+#> <div id="tab:pseudoS">
+#> 
+#> |            **Algorithm:** DNN-estimated S-learner                                                                                          |
+#> |--------------------------------------------------------------------------------------------------------------------------------------------|
+#> |   **Input:** **X**, *Y*, *W*; **Output:** $\widehat{\tau}$                                                                                 |
+#> | 1: $\widehat{\mu}=NN_{1}\left(Y\sim \left(X,W\right)\right)$    $\triangleright$ Estimate response surface                                 |
+#> | 2: $\widehat{\tau}\left(\mathbf{x}\right)=\widehat{\mu}\left(x,1\right)-\widehat{\mu}\left(x,0\right)$    $\triangleright$ Estimate CATE   |
+#> 
+#> </div>
+#> :::
+#> :::
+#> 
+
+#> :::{.unnumbered}
+#> ::: {=html}
+#> <div id="tab:ites">
+#> 
+#> |           **Algorithm**: Weighted split CQR procedure for S-learner's ITEs                                                                                |
+#> |-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+#> | **Step 1.** Randomly split training data into two parts:                                                                                                  |
+#> | $\triangleright$ A model training subset to fit the predictive model $\widehat{f}(x,w)$.                                                                  |
+#> | $\triangleright$ A calibration subset to compute nonconformity scores and determine the  empirical error distribution. Denote the calibration subset as $\mathcal{C}.$ |
+#> | **Step 2.** Compute Nonconformity Scores:                                                                                                                 |
+#> | $\triangleright$ For each $i\in\mathcal{C}$, compute the absolute residual (nonconformity score) as $r_{i}=\big|y_{i}-\widehat{Y}_{i}(w_{i})\big|$.   $\widehat{Y}_{i}(w_{i})$ is the model's predicted outcome given treatment $w_{i}$.|
+#> | **Step 3.** Assign Propensity-Based Weights:                                                                                                              |
+#> | $\triangleright$  Since some calibration units are more informative than others, assign *overlap weights* $g_{i}=\widehat{p}_{i}\,(1-\widehat{p}_{i})$    |
+#> | $\triangleright$ These overlap weights (which emphasize units in the regions of covariate overlap) are based on the estimated propensity score $\widehat{p}_{i}=P(W_{i}=1\mid X_{i})$                          |
+#> |$\triangleright$ Normalize the weights: $\tilde{g}_{i}=\frac{g_{i}}{\sum_{j\in\mathcal{C}}g_{j}}$                                                          |
+#> | **Step 4.** Compute the weighted quantile of calibration residuals:                                                                                       |
+#> | $\triangleright$ Compute the weighted $(1-\alpha)$ quantile of the calibration residuals:   $q_{1-\alpha} = \min\{\, q : \sum_{i : r_i \le q} \tilde{w}_i \ge 1-\alpha \,\}$                                                                          |
+#> | $\triangleright$ $q_{1-\alpha}$ represents the smallest residual threshold                                                                                |
+#> | **Step 5.** Construct conformal prediction intervals:                                                                                                     |
+#> | $\triangleright$ Construct a two-sided conformal interval around the estimated treatment effect for each $x_{i}$:                                         |
+#> | $\widehat{C}_{1-\alpha}(x_{i})=\left[\widehat{\tau}(x_{i})-q_{1-\alpha},\;\widehat{\tau}(x_{i})+q_{1-\alpha}\right]$                                      |
+#> 
+#> </div>
+#> :::
+#> :::
+#> 
+
+#> 
+#> :::{.unnumbered}
+#> ::: {=html}
+#> <div id="tab:pseudoX">
+#> 
+#> |                                              **Algorithm:** DNN-estimated X-learner                                                   |
+#> |---------------------------------------------------------------------------------------------------------------------------------------|
+#> |                                     **Input:** **X**, *Y*, *W*, *g; **Output:** $\widehat{\tau}$                                      |
+#> | 1:$\widehat{\mu}_{0}=NN_{1}\left(Y^{0}\sim\mathbf{X}^{0}\right)$         $\triangleright$ Estimate response surfaces                |
+#> | 2:$\widehat{\mu}_{1}=NN_{2}\left(Y^{1}\sim\mathbf{X}^{1}\right)$                                                                      |
+#> | 3:$\tilde{D}^{1}=Y^{1}-\widehat{\mu}_{0}\left(\mathbf{X}^{1}\right)$    $\triangleright$ Compute imputed treatment effects            |
+#> | 4:$\tilde{D}^{0}=\widehat{\mu}_{1}\left(\mathbf{X}^{0}\right)-Y^{0}$                                                                  |
+#> | 5:$\widehat{\tau}_{1}=NN_{3}\left(\tilde{D}^{1}\sim\mathbf{X}^{1}\right)$   $\triangleright$ Estimate group-specific CATEs          |
+#> | 6: $\widehat{\tau}_{0}=NN_{4}\left(\tilde{D}^{0}\sim\mathbf{X}^{0}\right)$                                                            |
+#> | 7: $\hat{\tau}(\mathbf{x})=g(\mathbf{x})\hat{\tau}_0(\mathbf{x})+\left(1-g(\mathbf{x})\right)\hat{\tau}_1(\mathbf{x})$ $\triangleright$ Average estimates                                                                                          |
+#> </div>
+#> :::
+#> :::
+#> 
+
+#> 
+#> :::{.unnumbered}
+#> ::: {=html}
+#> <div id="tab:pseudoR">
+#> 
+#> |            **Algorithm:** DNN-estimated R-learner                                                                                                             |
+#> |---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+#> |   **Input:** **X**, *Y*, *W*; **Output:** $\widehat{\tau}$                                                                                                    |
+#> | 1: $\widehat{m}=NN_{1}(Y\sim\mathbf{X})$   $\triangleright$ Estimate *nuisance* parameters                                                                    |
+#> | 2: $\widehat{\pi}=NN_{2}(W\sim\mathbf{X})$                                                                                                                    |
+#> | 3: $\widehat{\psi}_{R}\left(\mathbf{X}_{i}\right)=\frac{Y_{i}-\widehat{m}\left(\mathbf{X}_{i}\right)}{(W_{i}-\widehat{\pi}\left(\mathbf{X}_{i}\right)}$ $\triangleright$ Compute pseudo-outcome         |
+#> | 4: $\hat{\tau}=NN_{3}(\widehat{\psi}_{R}\sim\mathbf{X}_{i})$   $\triangleright$ Estimate CATE                                                                 |
+#> </div>
+#> :::
+#> :::
+#> 
+
+#> 
+#> :::{.unnumbered}
+#> ::: {=html}
+#> <div id="tab:pseudopatt">
+#> 
+#> |            **Algorithm:** DNN-estimated PATT                                                                                                        |
+#> |-----------------------------------------------------------------------------------------------------------------------------------------------------|
+#> | **Input:** **X**, *Y*, *W*; **Output:** $\widehat{\tau}_{P}$                                                                                        |
+#> | 1: $\widehat{C}_{i}=NN_{1}\left(C\sim\left(X,W\right)\right)$ $\triangleright$ Train Models                                                          |
+#> | 2:$\widehat{Y}_{iGR}=NN_{2}(Y\sim(X,R))$                                                                                                            |
+#> | 3: $E\left(Y_{i1R}|G_{i}=1;R_{i},X_{i}\right)$ for $R_{i}\in\{0,1\}$   $\triangleright$ Predict outcome response using $X_{i}$ and $R_{i}$          |
+#> | 4: $\widehat{\tau}_{P}=E(Y_{i11}|G_{i}=1;R_{i}=1,X_{i})-E\left(Y_{i10}|G_{i}=1;R_{i}=0,C_{i}=1,X_{i}\right)$  $\triangleright$ Estimate PATT        |
+#> 
+#> </div>
+#> :::
+#> :::
+#> 
+
 ## ----cate-net, out.width="70%", fig.align="center", fig.pos="!ht", fig.cap = "Estimating CATE Using Deep Neural Networks"----
 knitr::include_graphics(normalizePath("figures/CATE_network.png"))
 
@@ -78,7 +191,7 @@ print(slearner_deep)
 print(tlearner_deep)
 
 
-## ----conformal, eval=FALSE----------------------------------------------------
+## ----conformal, eval=FALSE, echo = TRUE---------------------------------------
 # slearner_deep <- metalearner_deeplearning(... , meta.learner.type = "S.Learner", ..., conformal = TRUE,
 #                                           alpha = 0.1, calib_frac = 0.5, prob_bound = TRUE,
 #                                           ... , seed = 1234)
@@ -106,7 +219,7 @@ xlearner_deep <- metalearner_deeplearning(cov.formula = response_formula,
 print(xlearner_deep)
 
 
-## ----hte_s, eval=FALSE--------------------------------------------------------
+## ----hte_s, eval=FALSE, echo = TRUE-------------------------------------------
 # hte_plot(slearner_deep, selected_vars = c( "employed", "female", "political_ideology"),
 #          cut_points = c(.5,.5,5),  custom_labels= c( "Employed", "Unemployed",
 #                       "Male", "Female", "Centrist", "Right-wing Partisan"))
