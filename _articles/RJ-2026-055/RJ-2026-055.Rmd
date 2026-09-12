@@ -1,0 +1,1748 @@
+---
+title: 'metafrontier: Unified Metafrontier Analysis for Efficiency and Productivity
+  in R'
+date: '2026-09-30'
+abstract: |
+  Comparing the technical efficiency of groups of firms that face different restrictions of a common production technology requires a metafrontier framework that envelops the group-specific frontiers. Existing R packages cover parts of this workflow, but none combines SFA- and DEA-based metafrontier estimation with inference for technology gap ratios and the metafrontier Malmquist decomposition. We introduce metafrontier, a package that provides a unified interface for three complementary approaches: the deterministic metafrontier of Battese, Rao, and O'Donnell (2004) under both of its identification criteria, the stochastic metafrontier of Huang, Huang, and Liu (2014), and DEA-based metafrontier models with radial, directional, hyperbolic, and FDH technologies. The package estimates group-specific frontiers, constructs the metafrontier envelope, and decomposes efficiency into group technical efficiency and the technology gap ratio. Additional features include the metafrontier Malmquist productivity index with three-way decomposition, bootstrap confidence intervals for technology gap ratios, Murphy--Topel corrected standard errors, poolability tests for both SFA and DEA fits, convergence diagnostics, latent class metafrontier estimation via the EM algorithm, panel stochastic frontier models with time-varying inefficiency on balanced or unbalanced panels, and ggplot2 visualisation methods. Pre-fitted group frontiers from sfaR and frontier are accepted directly, and estimation can be delegated to sfaR, frontier, or Benchmarking as backends. We illustrate the package with simulated and real data and a Monte Carlo study covering parameter and efficiency recovery, small samples, and unbalanced group sizes. All examples and simulations are fully reproducible and complete in under ten minutes on a standard laptop.
+draft: no
+author:
+- name: Erik Enstad
+  affiliation: NHH Norwegian School of Economics
+  address:
+  - Department of Business and Management Science
+  - Bergen, Norway
+  orcid: 0009-0006-1053-3849
+  email: erik.enstad@nhh.no
+type: package
+output:
+  rjtools::rjournal_article:
+    self_contained: yes
+    toc: no
+header-includes:
+- \providecommand{\proglang}[1]{\textsf{#1}}
+- \makeatletter\setlength{\@fptop}{0pt}\setlength{\@fpsep}{2.5em plus 2pt}\setlength{\@fpbot}{0pt
+  plus 1fil}\makeatother
+- \renewcommand{\topfraction}{0.85}
+- \renewcommand{\bottomfraction}{0.7}
+- \renewcommand{\textfraction}{0.1}
+- \renewcommand{\floatpagefraction}{0.8}
+- \setcounter{topnumber}{3}
+- \setcounter{bottomnumber}{2}
+- \setcounter{totalnumber}{5}
+- \makeatletter\renewcommand*{\fps@figure}{htbp}\renewcommand*{\fps@table}{htbp}\makeatother
+bibliography: RJreferences.bib
+date_received: '2026-04-22'
+volume: 18
+issue: 3
+slug: RJ-2026-055
+
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  cache = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  collapse = TRUE,
+  comment = "#>",
+  out.width = "100%"
+)
+options(width = 72)
+library(metafrontier)
+library(ggplot2)
+
+# Helper: apply R Journal booktabs styling for PDF (avoids double-caption in HTML)
+ktbl <- function(x) {
+  if (knitr::is_latex_output()) {
+    kableExtra::kable_styling(x,
+      latex_options = "scale_down",
+      position      = "center")
+  } else {
+    x
+  }
+}
+```
+
+```{r css-fix, echo=FALSE, results='asis'}
+if (knitr::is_html_output()) {
+  cat('<style>
+  d-article pre { overflow-x: auto; max-width: 100%; }
+  </style>')
+}
+```
+
+# Introduction {#sec:intro}
+
+Firms within the same industry often face different restrictions on the set
+of production plans available to them. In microeconomic terms the industry
+technology set contains all technically feasible input-output combinations,
+but regulation, environmental conditions, resource endowments, and the cost
+of switching production techniques can prevent particular groups of firms
+from accessing every point in it. Steel producers, for example, operate
+either the capital-intensive blast furnace--basic oxygen furnace (BF-BOF)
+route or the scrap-based electric arc furnace (EAF) route; both belong to
+the same industry technology set, but capital vintage and scrap availability
+restrict which points an individual producer can reach. Similarly, dairy
+farms in different countries face distinct climatic conditions and input
+markets that restrict their feasible production plans [@moreira2010]. When
+groups of producers face different restricted technology sets, pooling all
+observations into a single stochastic frontier or data envelopment analysis
+model conflates within-group inefficiency with between-group differences in
+the accessible technology, potentially yielding misleading efficiency
+rankings.
+
+The metafrontier framework, introduced by @battese2004 and extended by
+@odonnell2008 and @huang2014, addresses this problem by defining an
+overarching production frontier, the *metafrontier*, that envelops the
+group-specific frontiers. This framework decomposes a firm's distance from
+the metafrontier into two components:
+
+\begin{equation}
+\text{TE}^*_i = \text{TE}_i \times \text{TGR}_i
+(\#eq:decomposition)
+\end{equation}
+
+where $\text{TE}_i$ is the firm's *technical efficiency* relative to its own
+group frontier, measuring managerial performance within the available
+technology, and $\text{TGR}_i$ is the *technology gap ratio*, measuring how
+close the group's frontier lies to the best-practice metafrontier. The product
+$\text{TE}^*_i$ is the firm's *metafrontier technical efficiency*, that is,
+its performance measured against the industry-wide best practice.
+Figure \@ref(fig:conceptual) in Section `r if(knitr::is_latex_output()) "\\@ref(sec:methodology)" else "[2](#sec:methodology)"` illustrates this decomposition for
+the single-input case.
+
+The package is designed for applied economists, regulators, and
+operations researchers who need to compare technical efficiency across
+groups operating under different production technologies.
+
+Several \proglang{R} [@R] packages address parts of the efficiency analysis
+workflow. The \CRANpkg{frontier} package [@frontier], the \CRANpkg{sfaR}
+package [@sfaR], and the newer \CRANpkg{sfa} package [@sfa] provide
+stochastic frontier estimation across a wide set of specifications but
+include no metafrontier layer. The \CRANpkg{Benchmarking} package [@bogetoft2011] implements a wide
+range of DEA models; its `XREF`/`YREF` arguments score observations against
+an externally supplied reference technology, so pooled-frontier DEA scores
+can be assembled manually, but the user must orchestrate the per-group runs,
+form and summarise the technology gap ratios, and forgo inference on them:
+its bootstrap targets Farrell scores with respect to a single technology,
+and its Malmquist functions compute the standard index rather than the
+metafrontier decomposition. The \CRANpkg{deaR} package [@deaR] offers a
+general DEA toolkit, including directional distance functions via
+`model_dir()`, but no metafrontier workflow. The \CRANpkg{smfa} package
+[@smfa], the CRAN release of the earlier GitHub package \pkg{metafrontieR}
+[@metafrontieR], wraps \CRANpkg{sfaR} to estimate deterministic (LP and QP),
+stochastic, latent class, and sample selection [@greene2010] metafrontiers,
+but it is SFA-only: it provides no DEA-based metafrontier, no productivity
+decomposition, no bootstrap or Murphy--Topel inference for technology gap
+ratios, and no panel or visualisation support. No package, on CRAN or
+elsewhere, combines SFA- and DEA-based metafrontier estimation with
+inference for technology gap ratios and the metafrontier Malmquist
+decomposition of @odonnell2008.
+
+The \CRANpkg{metafrontier} package fills this gap. Its principal contributions
+are:
+
+- **Unified estimation framework.** A single function, `metafrontier()`,
+  dispatches across SFA and DEA methods with deterministic or stochastic
+  metafrontier formulations through the `method` and `meta_type` arguments.
+- **Malmquist productivity decomposition.** The `malmquist_meta()` function
+  computes the metafrontier Malmquist total factor productivity index with
+  the three-way decomposition of @odonnell2008.
+- **Bootstrap confidence intervals.** The `boot_tgr()` function provides
+  parametric and nonparametric bootstrap inference for technology gap ratios,
+  with parallel computation support.
+- **Murphy--Topel corrected standard errors.** The stochastic metafrontier
+  accounts for the generated-regressor problem using the variance correction
+  of @murphy1985.
+- **Latent class metafrontier.** The `latent_class_metafrontier()` function
+  estimates group membership endogenously when technology classes are
+  unobserved.
+- **Interoperability.** Pre-fitted group frontiers from \CRANpkg{sfaR} and
+  \CRANpkg{frontier} are accepted directly via the `models` argument, and
+  the `engine` argument delegates group-frontier estimation to
+  \CRANpkg{sfaR}, \CRANpkg{frontier}, or (for DEA) \CRANpkg{Benchmarking}.
+- **Diagnostics and user safety.** Every estimation stage records its
+  convergence status, inspectable via `check_convergence()` and
+  `summary()`; poolability of the group frontiers is testable for both SFA
+  (likelihood ratio) and DEA (permutation) fits.
+
+The remainder of this article is organised as follows. Section `r if(knitr::is_latex_output()) "\\@ref(sec:methodology)" else "[2](#sec:methodology)"` reviews the
+metafrontier methodology. Section `r if(knitr::is_latex_output()) "\\@ref(sec:package-design)" else "[3](#sec:package-design)"` describes the package design. Section `r if(knitr::is_latex_output()) "\\@ref(sec:basic-usage)" else "[4](#sec:basic-usage)"`
+demonstrates basic usage with simulated data. Section `r if(knitr::is_latex_output()) "\\@ref(sec:advanced-features)" else "[5](#sec:advanced-features)"` covers advanced
+features. Section `r if(knitr::is_latex_output()) "\\@ref(sec:monte-carlo)" else "[6](#sec:monte-carlo)"` presents Monte Carlo evidence on estimator performance.
+Section `r if(knitr::is_latex_output()) "\\@ref(sec:comparison)" else "[7](#sec:comparison)"` compares \CRANpkg{metafrontier} with related packages, and Section `r if(knitr::is_latex_output()) "\\@ref(sec:summary)" else "[8](#sec:summary)"`
+concludes.
+
+# Metafrontier methodology {#sec:methodology}
+
+Readers already familiar with stochastic frontier analysis and
+metafrontier models may wish to proceed directly to Section `r if(knitr::is_latex_output()) "\\@ref(sec:package-design)" else "[3](#sec:package-design)"`.
+
+Throughout, we use the term *technology* in the sense of the metafrontier
+literature. The industry *metatechnology* $T^*$ is the technology set of
+microeconomic production theory: the set of all input-output combinations
+that are technically feasible given the current state of knowledge in the
+industry [@odonnell2008]. Group-specific *technologies* $T_j \subset T^*$
+are restricted subsets of the metatechnology, arising because regulation,
+environmental conditions, resource endowments, or the cost of switching
+production techniques prevent the firms in group $j$ from choosing every
+point of $T^*$. Following the convention of @battese2004 and @odonnell2008,
+we refer to these restricted sets simply as group technologies; the
+metafrontier is the boundary of $T^*$, and the group frontiers are the
+boundaries of the sets $T_j$.
+
+## Group-specific stochastic frontiers {#sec:group-frontiers}
+
+Consider $J$ groups of firms, where group $j$ ($j = 1, \ldots, J$) has
+access to a potentially restricted technology set $T_j$. The
+stochastic frontier production function for group $j$ is
+
+\begin{equation}
+y_{ij} = \mathbf{x}_{ij}'\boldsymbol{\beta}_j + v_{ij} - u_{ij},
+\quad i = 1, \ldots, N_j
+(\#eq:sfa)
+\end{equation}
+
+where $y_{ij}$ is the log output of firm $i$ in group $j$,
+$\mathbf{x}_{ij}$ is a vector of log inputs (including a constant),
+$\boldsymbol{\beta}_j$ is the group-specific parameter vector,
+$v_{ij} \sim N(0, \sigma^2_{v,j})$ is a symmetric noise term, and
+$u_{ij} \geq 0$ is a one-sided inefficiency term [@aigner1977]. The composed
+error is $\varepsilon_{ij} = v_{ij} - u_{ij}$.
+
+The \CRANpkg{metafrontier} package supports three distributional assumptions
+for $u_{ij}$: the half-normal
+($u_{ij} \sim |N(0, \sigma^2_{u,j})|$), the truncated normal
+($u_{ij} \sim N^+(\mu_j, \sigma^2_{u,j})$), and the exponential
+($u_{ij} \sim \text{Exp}(\lambda_j)$). Two estimators of technical
+efficiency from the composed error are in common use, and the package
+computes both. The default is the conditional expectation of @battese1988
+(BC88),
+
+\begin{equation}
+\text{TE}_{ij} = E\!\left[\exp(-u_{ij}) \mid \varepsilon_{ij}\right]
+= \frac{\Phi\!\left(\mu^*_{ij}/\sigma^*_j - \sigma^*_j\right)}
+       {\Phi\!\left(\mu^*_{ij}/\sigma^*_j\right)}
+  \exp\!\left(-\mu^*_{ij} + \tfrac{1}{2}\sigma^{*2}_j\right)
+(\#eq:te)
+\end{equation}
+
+where $\mu^*_{ij}$ and $\sigma^*_j$ are the mean and standard deviation of
+the conditional distribution of $u_{ij}$ given $\varepsilon_{ij}$, and
+$\Phi(\cdot)$ is the standard normal distribution function. BC88 provides
+consistent estimates of technical efficiency scores. The alternative
+estimator $\exp(-\widehat{u}_{ij})$ with
+$\widehat{u}_{ij} = E[u_{ij} \mid \varepsilon_{ij}]$ [@jondrow1982, JLMS]
+does not account for Jensen's inequality; the difference is negligible when
+$\sigma_u$ is small relative to $\sigma_v$ but grows for highly inefficient
+samples. The `estimator` argument of `metafrontier()` selects between the
+two (`"bc88"`, the default, or `"jlms"`); both are stored on the fitted
+object, and `efficiencies()` can switch between them without refitting. For
+a book-length treatment of stochastic frontier analysis, see
+@kumbhakar2000.
+
+## Deterministic metafrontier {#sec:det-metafrontier}
+
+@battese2004 [building on @battese2002] define the metafrontier as the deterministic envelope of the
+group-specific frontiers. The metafrontier production function satisfies
+$f^*(\mathbf{x}) \geq f_j(\mathbf{x})$ for all $\mathbf{x}$ and all $j$,
+meaning that it represents the output that would be attainable if all firms
+had access to the most productive technology available in the industry.
+
+Let $\widehat{\boldsymbol{\beta}}_j$ denote the maximum likelihood estimate from
+group $j$, and let $\widehat{f}_{ij} = \mathbf{x}_{ij}'\widehat{\boldsymbol{\beta}}_j$
+denote the fitted group frontier value for observation $i$ in group $j$.
+The \CRANpkg{metafrontier} package obtains $\boldsymbol{\beta}^*$ by solving
+the linear program
+
+\begin{equation}
+\min_{\boldsymbol{\beta}^*} \sum_{i=1}^{N}
+\mathbf{x}_{i}'\boldsymbol{\beta}^*
+\quad \text{s.t.} \quad
+\mathbf{x}_{ij}'\boldsymbol{\beta}^* \geq \widehat{f}_{ij}
+\quad \forall\, i, j
+(\#eq:deterministic)
+\end{equation}
+
+which minimises the total metafrontier output subject to the envelope
+constraint, producing the tightest feasible metafrontier. @battese2004
+propose two criteria for identifying $\boldsymbol{\beta}^*$ under the same
+envelope constraints: minimising the sum of absolute deviations, which
+reduces to the linear program in Equation \@ref(eq:deterministic) because the
+constraints force every deviation to be non-negative [@odonnell2008,
+Eqs. 23--25], and minimising the sum of squared deviations, a convex
+quadratic program. The two share the same constraint set but differ in
+objective and can yield different $\boldsymbol{\beta}^*$ when not all
+constraints are binding; Section `r if(knitr::is_latex_output()) "\\@ref(sec:monte-carlo)" else "[6](#sec:monte-carlo)"` reports their maximum absolute TGR
+difference on the simulation designs. The package implements both:
+`objective = "lp"` (the default) is solved via \CRANpkg{lpSolveAPI}
+[@lpSolveAPI], and `objective = "qp"` is solved exactly via
+\CRANpkg{quadprog} [@quadprog], with an adaptive-barrier fallback via
+`constrOptim()` when \CRANpkg{quadprog} is unavailable. The technology gap
+ratio under the deterministic metafrontier is
+
+\begin{equation}
+\text{TGR}_{ij} =
+\frac{\exp(\mathbf{x}_{ij}'\widehat{\boldsymbol{\beta}}_j)}
+     {\exp(\mathbf{x}_{ij}'\widehat{\boldsymbol{\beta}}^*)}
+(\#eq:tgr-det)
+\end{equation}
+
+which lies in $[0, 1]$ by construction. Because the metafrontier is
+deterministic, no standard errors are available for $\boldsymbol{\beta}^*$
+without resampling methods.
+
+## Stochastic metafrontier {#sec:stoch-metafrontier}
+
+@huang2014 propose an alternative in which the metafrontier itself is
+stochastic. Define the fitted group frontier value
+$\widehat{y}_{ij} = \mathbf{x}_{ij}'\widehat{\boldsymbol{\beta}}_j$. The stochastic
+metafrontier is estimated as a second-stage SFA:
+
+\begin{equation}
+\widehat{y}_{ij} = \mathbf{x}_{ij}'\boldsymbol{\beta}^* + v^*_{ij} - u^*_{ij}
+(\#eq:stochastic)
+\end{equation}
+
+where $v^*_{ij}$ captures approximation noise and $u^*_{ij} \geq 0$ represents
+the technology gap. This formulation provides standard errors and hypothesis
+tests for $\boldsymbol{\beta}^*$, overcoming a key limitation of the
+deterministic approach. Note that because the stochastic metafrontier need
+not envelop the group frontiers at every point (due to the noise term
+$v^*_{ij}$), the resulting TGR can exceed 1 for some observations: at those points
+the group frontier locally surpasses the estimated metafrontier.
+How often this occurs is sample-dependent: in the Monte Carlo design used
+below no observation reaches $\text{TGR} > 1$, whereas on the
+`sfaR::utility` example used later around 40\% of observations do,
+with values up to about 1.25. Such excess values reflect noise rather
+than superior-to-best-practice technology. For group-level means or
+ranking applications we recommend leaving them untruncated so the noise
+averages out; for firm-level interpretation we recommend truncating at
+one (`pmin(tgr, 1)`) and reporting the truncated share as a
+diagnostic.
+
+However, because the dependent variable $\widehat{y}_{ij}$ is itself estimated
+from the first stage, the standard errors of $\boldsymbol{\beta}^*$ are
+understated unless corrected for the generated-regressor problem. The
+\CRANpkg{metafrontier} package addresses this with the variance correction of
+@murphy1985, as described in Section `r if(knitr::is_latex_output()) "\\@ref(sec:advanced-features)" else "[5](#sec:advanced-features)"`.
+
+## DEA-based metafrontier {#sec:dea-metafrontier}
+
+The metafrontier framework extends naturally to nonparametric methods
+[@odonnell2008; @charnes1978]. For each group $j$, a data envelopment analysis
+(DEA) frontier is estimated using only the observations in that group, yielding
+group-specific efficiency scores $\text{TE}^{\text{group}}_{ij}$. A second DEA
+problem pools all observations across groups, producing metafrontier scores
+$\text{TE}^{\text{pool}}_{ij}$. In the output orientation (the default), the
+score of observation $(\mathbf{x}_i, \mathbf{y}_i)$ against a reference set
+$R$ is $\text{TE}_i = 1/\phi^*_i$, where $\phi^*_i$ solves the envelopment
+linear program
+
+\begin{equation}
+\max_{\phi_i, \boldsymbol{\lambda}} \phi_i
+\quad \text{s.t.} \quad
+\sum_{j \in R} \lambda_j \mathbf{x}_j \leq \mathbf{x}_i, \quad
+\sum_{j \in R} \lambda_j \mathbf{y}_j \geq \phi_i \mathbf{y}_i, \quad
+\boldsymbol{\lambda} \in \Lambda,
+(\#eq:dea-lp)
+\end{equation}
+
+and in the input orientation the score is $\theta^*_i$ from
+$\min \theta_i$ subject to
+$\sum_j \lambda_j \mathbf{x}_j \leq \theta_i \mathbf{x}_i$,
+$\sum_j \lambda_j \mathbf{y}_j \geq \mathbf{y}_i$,
+$\boldsymbol{\lambda} \in \Lambda$. The set $\Lambda$ encodes the returns to
+scale: $\lambda_j \geq 0$ unrestricted (CRS), adding
+$\sum_j \lambda_j = 1$ (VRS), $\sum_j \lambda_j \leq 1$ (DRS),
+$\sum_j \lambda_j \geq 1$ (IRS), or $\lambda_j \in \{0, 1\}$ with
+$\sum_j \lambda_j = 1$ (FDH, dropping convexity). The group-frontier
+problem restricts the reference set $R$ to the observations of group $j$;
+the metafrontier problem pools all $N$ observations into $R$. This
+distinction is the entire metafrontier construction: the same LP is solved
+twice per observation against nested reference sets. The technology gap
+ratio is then
+
+\begin{equation}
+\text{TGR}_{ij} =
+\frac{\text{TE}^{\text{pool}}_{ij}}{\text{TE}^{\text{group}}_{ij}}
+(\#eq:tgr-dea)
+\end{equation}
+
+which lies in $(0, 1]$ because the pooled reference set contains the group
+reference set. Beyond radial measures, the DEA path exposes directional
+distance functions (DDF) via `type = "directional"`, with `direction`
+either a preset (`"proportional"`, `"output"`, `"input"`), a common numeric
+direction vector, or a matrix of firm-specific directions, and hyperbolic
+(graph) efficiency via `type = "hyperbolic"`, which contracts inputs and
+expands outputs simultaneously and remains feasible in cross-period
+comparisons where radial cross-period programs may not be. Second-stage
+slack maximisation is available via `slack = TRUE`, flagging observations
+that are radially efficient but not Koopmans-efficient. The resulting
+object carries the same `metafrontier` class and supports the standard
+extractor and plotting methods. Because DEA is nonparametric, it avoids
+functional form assumptions, but it does not account for statistical noise:
+positive noise realisations shift the estimated frontier upwards, while
+negative realisations are attributed to inefficiency. SFA, by contrast,
+accounts for noise through the composed error, although neither approach
+can separate the unobserved noise and inefficiency realisations for an
+individual observation; SFA efficiency scores are conditional expectations
+(Section `r if(knitr::is_latex_output()) "\\@ref(sec:group-frontiers)" else "[2.1](#sec:group-frontiers)"`).
+
+## Efficiency decomposition {#sec:efficiency-decomp}
+
+Regardless of the estimation method, the fundamental identity holds:
+
+\begin{equation}
+\text{TE}^*_{ij} = \text{TE}_{ij} \times \text{TGR}_{ij}
+(\#eq:identity)
+\end{equation}
+
+where $\text{TE}_{ij}$ measures how efficiently firm $i$ uses its own group's
+technology, $\text{TGR}_{ij}$ measures how close that group's technology is to
+the best-practice metafrontier, and $\text{TE}^*_{ij}$ measures overall
+performance relative to the industry-wide frontier.
+
+Figure \@ref(fig:conceptual) illustrates this decomposition for a single-input
+production function. The vertical distance from a firm's observed output to its
+group frontier measures technical inefficiency, while the distance from the
+group frontier to the metafrontier measures the technology gap. A firm can be
+technically efficient within its group ($\text{TE}_i = 1$) yet still fall short
+of the metafrontier if its group's technology is inferior
+($\text{TGR}_i < 1$).
+
+```{r conceptual, echo=FALSE, fig.width=7, fig.height=4.2, fig.cap="Metafrontier decomposition for a single-input production function (diagram drawn with ggplot2; code in the supplementary materials). For Firm A, technical efficiency (TE) is the distance from observed output to the group frontier, the technology gap ratio (TGR) the distance from the group frontier to the metafrontier (solid black), and TE* = TE x TGR.", fig.alt="A line plot showing two group-specific production frontiers as upward-sloping dashed lines and a metafrontier as a solid black line above both. A point labelled Firm A sits below the Group 1 frontier. Two vertical segments from the firm to the group frontier (labelled TE) and from the group frontier to the metafrontier (labelled TGR) illustrate the efficiency decomposition."}
+# Conceptual diagram of metafrontier decomposition
+f_g1 <- function(x) 0.5 + 0.7 * x
+f_g2 <- function(x) 1.3 + 0.45 * x
+f_meta <- function(x) 1.4 + 0.58 * x
+
+x_firm <- 2.5
+y_firm <- 2.0
+y_g1 <- f_g1(x_firm)
+y_meta <- f_meta(x_firm)
+
+ggplot(data.frame(x = c(0.5, 4.5)), aes(x = x)) +
+  stat_function(fun = f_g1, aes(colour = "Group 1 frontier"),
+                linetype = "dashed", linewidth = 0.8) +
+  stat_function(fun = f_g2, aes(colour = "Group 2 frontier"),
+                linetype = "dashed", linewidth = 0.8) +
+  stat_function(fun = f_meta, aes(colour = "Metafrontier"),
+                linetype = "solid", linewidth = 1) +
+  geom_point(aes(x = x_firm, y = y_firm), size = 3, shape = 16) +
+  geom_segment(aes(x = x_firm + 0.02, y = y_firm,
+                   xend = x_firm + 0.02, yend = y_g1),
+               colour = "#2166AC", linewidth = 0.7,
+               arrow = arrow(length = unit(0.12, "cm"), ends = "both")) +
+  geom_segment(aes(x = x_firm + 0.02, y = y_g1,
+                   xend = x_firm + 0.02, yend = y_meta),
+               colour = "#B2182B", linewidth = 0.7,
+               arrow = arrow(length = unit(0.12, "cm"), ends = "both")) +
+  annotate("text", x = x_firm + 0.18, y = (y_firm + y_g1) / 2,
+           label = "TE", fontface = "italic", size = 4, hjust = 0) +
+  annotate("text", x = x_firm + 0.18, y = (y_g1 + y_meta) / 2,
+           label = "TGR", fontface = "italic", size = 4, hjust = 0) +
+  annotate("text", x = x_firm - 0.15, y = y_firm - 0.08,
+           label = "Firm A", size = 3.5, hjust = 1) +
+  scale_colour_manual(
+    values = c("Group 1 frontier" = "#2166AC",
+               "Group 2 frontier" = "#D6604D",
+               "Metafrontier" = "black"),
+    guide = guide_legend(override.aes = list(
+      linetype = c("dashed", "dashed", "solid")))
+  ) +
+  labs(x = "Input (log)", y = "Output (log)", colour = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank())
+```
+
+Table \@ref(tab:approaches) summarises the key properties of the three
+metafrontier approaches.
+
+```{r approaches, echo=FALSE}
+approaches <- data.frame(
+  Property = c("Functional form", "Statistical noise",
+               "Inference for metafrontier",
+               "TGR bounds", "Key reference"),
+  `Deterministic MF` = c("Parametric", "First stage only",
+                          "None (resample)",
+                          "[0, 1]", "BRO (2004)"),
+  `Stochastic MF` = c("Parametric", "Both stages",
+                       "Yes (with M--T correction)",
+                       "Can exceed 1", "HHL (2014)"),
+  DEA = c("Nonparametric", "None",
+          "None (bootstrap)",
+          "[0, 1]", "ORB (2008)"),
+  check.names = FALSE
+)
+knitr::kable(approaches, caption = "Comparison of metafrontier approaches.",
+             align = "llll", booktabs = TRUE, linesep = "") |>
+  ktbl()
+```
+
+## Malmquist productivity decomposition {#sec:malmquist-methodology}
+
+For panel data, the metafrontier Malmquist total factor productivity (TFP)
+index extends the standard Malmquist index to incorporate technology gap
+dynamics [@odonnell2008]. The index between periods $t$ and $t+1$ decomposes
+as
+
+\begin{equation}
+M^*_{i,t,t+1} = \text{TEC}_{i,t,t+1} \times \text{TGC}_{i,t,t+1}
+\times \text{TC}^*_{i,t,t+1}
+(\#eq:malmquist)
+\end{equation}
+
+where $\text{TEC}$ is the *technical efficiency change* (catching up to the
+group frontier), $\text{TGC}$ is the *technology gap change* (movement of the
+group frontier relative to the metafrontier), and $\text{TC}^*$ is the
+*metafrontier technical change* (shift in the metafrontier itself). This
+three-way decomposition allows researchers to distinguish productivity growth
+driven by improved managerial practice from gains attributable to technology
+adoption or frontier innovation.
+
+One interpretive caveat applies. The Malmquist index is not a *proper*
+productivity index in the sense of @odonnell2012: except under restrictive
+conditions on the technology, it is not multiplicatively complete and fails
+the transitivity axiom of index theory, so chained multi-period or
+cross-firm comparisons of index levels are not generally valid
+[@odonnell2018]. Interpretation should be confined to binary
+period-to-period comparisons, which is how the package reports the index.
+Multiplicatively complete alternatives such as the Färe-Primont and Lowe
+indexes are planned extensions (Section `r if(knitr::is_latex_output()) "\\@ref(sec:summary)" else "[8](#sec:summary)"`).
+
+# Package design and architecture {#sec:package-design}
+
+## Design principles and S3 interface {#sec:design-principles}
+
+The \CRANpkg{metafrontier} package is designed around two principles: a unified
+interface and a consistent S3 method suite. The package exports 13 standalone
+functions and registers 38 S3 methods across five object classes:
+`metafrontier` (the primary estimation result), `malmquist_meta` (productivity
+decomposition), `boot_tgr` (bootstrap inference), `lc_metafrontier`
+(latent class models), and `metafrontier_convergence` (diagnostics).
+Table \@ref(tab:functions) lists all 16 user-facing
+functions grouped by category, including 3 `autoplot` methods that are
+registered as S3 methods of the \CRANpkg{ggplot2} generic rather than
+standalone exports.
+
+```{r functions, echo=FALSE}
+funs <- data.frame(
+  Category = c(rep("Estimation", 3),
+               rep("Analysis", 5),
+               rep("Inference", 3),
+               rep("Visualisation", 3),
+               rep("Simulation", 2)),
+  Function = c("`metafrontier()`", "`malmquist_meta()`",
+               "`latent_class_metafrontier()`",
+               "`efficiencies()`", "`technology_gap_ratio()`",
+               "`tgr_summary()`", "`poolability_test()`",
+               "`check_convergence()`",
+               "`boot_tgr()`", "`select_n_classes()`",
+               "`as_metafrontier_model()`",
+               "`autoplot.metafrontier()`",
+               "`autoplot.malmquist_meta()`",
+               "`autoplot.boot_tgr()`",
+               "`simulate_metafrontier()`",
+               "`simulate_panel_metafrontier()`"),
+  Description = c("Main metafrontier estimation (SFA or DEA)",
+                   "Metafrontier Malmquist TFP index",
+                   "EM algorithm for latent class metafrontier",
+                   "Extract TE, TGR, or TE* scores",
+                   "Technology gap ratios by group",
+                   "Summary statistics for TGR",
+                   "Poolability test (LR for SFA, permutation for DEA)",
+                   "Convergence diagnostics for all estimation stages",
+                   "Bootstrap CIs for technology gap ratios",
+                   "BIC-based selection of latent classes",
+                   "Convert external models to metafrontier format",
+                   "TGR density, efficiency, decomposition, frontier plots",
+                   "Malmquist decomposition, TGR evolution, MPI trend plots",
+                   "Bootstrap distribution and CI plots",
+                   "Cross-sectional simulation with known DGP",
+                   "Panel simulation with time-varying inefficiency")
+)
+knitr::kable(funs, caption = "User-facing functions in the metafrontier package.",
+             align = "lll", booktabs = TRUE, linesep = "") |>
+  ktbl()
+```
+
+A single `metafrontier()` entry point was chosen over separate functions
+for each method--meta-type combination because users frequently compare
+estimators on the same data; a unified interface guarantees that the
+returned objects share the same S3 class and methods regardless of the
+estimation path. S3 was preferred over S4 and R6 because it provides
+the lightest-weight dispatch mechanism, requires no additional
+dependencies, and matches the class system used by the upstream packages
+(\CRANpkg{frontier}, \CRANpkg{Benchmarking}) with which \CRANpkg{metafrontier}
+interoperates.
+
+All primary estimation is accessed through `metafrontier()`, which dispatches
+via its `method` argument (`"sfa"` or `"dea"`) and `meta_type` argument
+(`"deterministic"` or `"stochastic"`). The returned `metafrontier` object
+supports the standard \proglang{R} model interface: `summary()`, `coef()`,
+`vcov()`, `confint()`, `fitted()`, `residuals()`, `logLik()`, `nobs()`,
+`predict()`, and `plot()`, so fitted objects work with the standard
+model-handling idiom without adaptation.
+
+## Estimation workflow {#sec:estimation-workflow}
+
+The package supports three paths to metafrontier estimation. In the
+**formula path**, the user supplies raw data, a formula, and a group
+identifier; the package estimates all group-specific frontiers internally
+before constructing the metafrontier. In the **pre-fitted model path**, the
+user first estimates group frontiers using external packages (\CRANpkg{sfaR}
+or \CRANpkg{frontier}) and passes the fitted objects directly to
+`metafrontier()` via the `models` argument; conversion to the internal
+format happens automatically. In the **engine path**, the user stays in the
+formula interface but delegates the group-frontier estimation to an
+external backend via the `engine` argument: `engine = "sfaR"` or
+`engine = "frontier"` for SFA group frontiers, and
+`engine = "Benchmarking"` for the DEA path, where both the group frontiers
+and the pooled metafrontier are computed by `Benchmarking::dea()` using its
+`XREF`/`YREF` external-reference facility.
+
+The formula path is the simplest workflow. A single call to `metafrontier()`
+handles all estimation steps: parsing the formula, splitting data by group,
+estimating group-specific frontiers, constructing the metafrontier envelope,
+and computing the TGR decomposition. The pre-fitted model and engine paths
+are useful when the user requires fine-grained control over individual group
+frontier specifications or needs features of the specialised packages
+that the internal estimators lack. The metafrontier stage of the SFA methods is always
+estimated internally, because the Murphy--Topel variance correction
+(Section `r if(knitr::is_latex_output()) "\\@ref(sec:advanced-features)" else "[5](#sec:advanced-features)"`) differentiates the internal stage-2 likelihood.
+
+## Interoperability {#sec:interoperability}
+
+Fitted model objects from \CRANpkg{sfaR} (class `sfacross`) and
+\CRANpkg{frontier} (class `frontier`) can be passed directly to the
+`models` argument of `metafrontier()`; the conversion to the internal
+format is performed automatically by the `as_metafrontier_model()` generic,
+which users only need to call explicitly for hand-built list models (the
+conversion is idempotent, so pre-converting is harmless). Farrell objects
+from \CRANpkg{Benchmarking} store neither coefficients nor the underlying
+data, so they cannot be used with `models`; the `engine = "Benchmarking"`
+path covers that use case instead. The following example illustrates the
+pre-fitted model path (not evaluated):
+
+```{r interop-example, eval=FALSE}
+library(sfaR)
+# Estimate group frontiers externally
+mod1 <- sfacross(log_y ~ log_x1 + log_x2,
+                 data = subset(dat, group == "G1"))
+mod2 <- sfacross(log_y ~ log_x1 + log_x2,
+                 data = subset(dat, group == "G2"))
+
+# Pass the fitted objects directly; conversion is automatic
+fit <- metafrontier(models = list(G1 = mod1, G2 = mod2))
+```
+
+## Computational details {#sec:computational-details}
+
+The package implements its own maximum likelihood estimator for group-specific
+stochastic frontiers, using BFGS optimisation with Nelder--Mead fallback for
+robustness. Variance parameters are log-transformed to ensure unconstrained
+optimisation over the positive real line. The deterministic metafrontier of Equation \@ref(eq:deterministic)
+is solved via linear programming using the
+\CRANpkg{lpSolveAPI} package [@lpSolveAPI], with LP object reuse across
+observations for improved performance on large datasets. The squared-deviations
+variant (`objective = "qp"`) is solved exactly by the dual method of
+Goldfarb and Idnani as implemented in \CRANpkg{quadprog} [@quadprog], which
+is listed in `Suggests` to keep the import footprint unchanged. Numerical
+stability is maintained through a safe Mills ratio computation
+(`.safe_mills()`) that prevents `NaN` values in extreme tail regions of the
+normal distribution, relevant for both panel SFA and latent class models.
+
+The package keeps its dependency footprint minimal. The seven `Imports`
+(`stats`, `graphics`, `grDevices`, and `methods` from base \proglang{R};
+`Formula` for multi-part formula parsing; `numDeriv` for Hessian
+computation; and `lpSolveAPI` for LP solving) are each exercised by core
+functionality. \CRANpkg{lpSolveAPI} was chosen over alternatives such as
+\CRANpkg{Rglpk} because it is a self-contained C library with no external
+system dependencies, so it installs without additional system libraries
+on all supported platforms. Packages used
+only in optional features (\CRANpkg{ggplot2} for `autoplot()` methods,
+\pkg{parallel} for bootstrap parallelisation, \CRANpkg{quadprog} for the QP
+objective, and the three upstream SFA/DEA engines for interoperability and
+backend delegation) are listed as `Suggests` and loaded conditionally.
+
+Correctness is supported by a test suite of 22 \CRANpkg{testthat} files
+(over 125 test blocks) covering core SFA/DEA estimation, Monte Carlo
+recovery, bootstrap, Murphy--Topel correction, panel SFA, latent class,
+DDF, and ggplot2 `autoplot` methods, plus snapshot tests of S3
+outputs. Continuous integration runs the suite on Ubuntu, Windows, and
+macOS under R-devel, release, and oldrel. The custom MLE is
+additionally benchmarked against \CRANpkg{frontier}
+(`test-frontier-equivalence.R`): on a 3-group dataset from
+`simulate_metafrontier()` with 150 firms per group and technology gaps of
+0, 0.3, and 0.5 (seed 42), similar to the simulation introduced in
+Section `r if(knitr::is_latex_output()) "\\@ref(sec:simulating-data)" else "[4.1](#sec:simulating-data)"`, the maximum absolute coefficient difference against
+`frontier::sfa()` is $1.2 \times 10^{-5}$ for group 2 and
+$5.0 \times 10^{-6}$ for group 3. The two estimators use different
+internal parameterisations but deliver numerically equivalent slope and
+intercept estimates.
+
+**Computational environment.** All timings reported in this article were
+obtained on a laptop with an Intel Core Ultra 5 125U processor and 32 GB
+of RAM running Windows 11 x64, using `r R.version.string` and
+\CRANpkg{metafrontier} `r as.character(utils::packageVersion("metafrontier"))`.
+The complete article code, including the Monte Carlo study of Section `r if(knitr::is_latex_output()) "\\@ref(sec:monte-carlo)" else "[6](#sec:monte-carlo)"`,
+runs in under ten minutes in this environment.
+
+# Basic usage {#sec:basic-usage}
+
+All examples in this section use simulated data for full reproducibility. The
+\CRANpkg{metafrontier} package includes data-generating functions that produce
+data with known true parameters, so estimator accuracy can be assessed
+directly.
+
+## Simulating metafrontier data {#sec:simulating-data}
+
+The `simulate_metafrontier()` function creates cross-sectional data with
+`n_groups` technology groups, each containing `n_per_group` firms. The
+data-generating process uses a Cobb--Douglas production function with
+group-specific intercepts that induce known technology gaps.
+
+```{r simulate}
+sim <- simulate_metafrontier(n_groups = 3, n_per_group = 200, seed = 42)
+dat <- sim$data
+head(dat[, c("log_y", "log_x1", "log_x2", "group",
+             "true_te", "true_tgr")])
+```
+
+The returned list contains `$data` (the simulated data frame) and `$params`
+(the true parameter values). The data frame includes the true technical
+efficiency (`true_te`), true technology gap ratio (`true_tgr`), and true
+metafrontier efficiency (`true_te_star`), so estimates can be compared
+directly with
+estimated values.
+
+## Deterministic metafrontier {#sec:det-metafrontier-usage}
+
+The deterministic metafrontier of @battese2004 is estimated by specifying
+`meta_type = "deterministic"`:
+
+```{r deterministic}
+fit_det <- metafrontier(log_y ~ log_x1 + log_x2, data = dat,
+                        group = "group", method = "sfa",
+                        meta_type = "deterministic", dist = "hnormal")
+summary(fit_det)
+```
+
+The `summary()` method reports the group-specific frontier coefficients, the
+metafrontier coefficients obtained from the constrained optimisation of
+Equation \@ref(eq:deterministic), and summary statistics for the technology gap ratios
+by group.
+
+## Stochastic metafrontier {#sec:stoch-metafrontier-usage}
+
+The stochastic metafrontier of @huang2014 replaces the deterministic envelope
+with a second-stage SFA:
+
+```{r stochastic}
+fit_sto <- metafrontier(log_y ~ log_x1 + log_x2, data = dat,
+                        group = "group", method = "sfa",
+                        meta_type = "stochastic", dist = "hnormal")
+coef(fit_sto)
+confint(fit_sto)
+```
+
+Unlike the deterministic approach, the stochastic metafrontier provides
+standard errors, $z$-statistics, and confidence intervals for the metafrontier
+coefficients directly.
+
+## DEA-based metafrontier {#sec:dea-metafrontier-usage}
+
+The DEA-based metafrontier computes group-specific and pooled DEA frontiers
+without parametric assumptions. Because DEA requires strictly positive inputs
+and outputs, we use level-scale variables rather than the log-transformed
+variables used for SFA:
+
+```{r dea}
+dat_lev <- within(dat, {
+  y  <- exp(log_y)
+  x1 <- exp(log_x1)
+  x2 <- exp(log_x2)
+})
+fit_dea <- metafrontier(y ~ x1 + x2, data = dat_lev,
+                        group = "group", method = "dea", rts = "vrs")
+tgr_summary(fit_dea)
+```
+
+## Extracting results and diagnostics {#sec:extracting-results}
+
+The `efficiencies()` function extracts efficiency scores. Three types are
+available: group technical efficiency (`"group"`), metafrontier efficiency
+(`"meta"`), and technology gap ratios (`"tgr"`). The fundamental identity
+of Equation \@ref(eq:identity) can be verified numerically:
+
+```{r identity-check}
+te <- efficiencies(fit_det, type = "group")
+tgr <- efficiencies(fit_det, type = "tgr")
+te_star <- efficiencies(fit_det, type = "meta")
+all.equal(te_star, te * tgr, tolerance = 1e-10)
+```
+
+The `tgr_summary()` function provides descriptive statistics for the TGR by
+group:
+
+```{r tgr-summary}
+tgr_summary(fit_det)
+```
+
+The `poolability_test()` function tests the null hypothesis that all groups
+share a common frontier against the alternative of group-specific
+frontiers. For SFA fits it conducts a likelihood ratio test; for DEA fits,
+where no likelihood exists, it dispatches to a permutation test that
+exploits the exchangeability of group labels under the pooled-technology
+null [@simar2007; @kneip2016]:
+
+```{r poolability}
+poolability_test(fit_det)
+```
+
+Convergence of every estimation stage can be verified with
+`check_convergence()`, which reports one row per group frontier plus the
+metafrontier stage. The same information is printed by `summary()`, and a
+warning is issued at fit time whenever an optimiser stops at a non-zero
+code. Estimation aborts with an error only when no usable estimate exists;
+otherwise the codes are recorded so that users can inspect them before
+interpreting TGRs, confidence intervals, or productivity decompositions:
+
+```{r convergence-check}
+check_convergence(fit_det)
+```
+
+The \CRANpkg{ggplot2} [@ggplot2]-based `autoplot()` method provides four plot types.
+Figure \@ref(fig:tgr-density) shows the distribution of technology gap ratios
+by group, and Figure \@ref(fig:decomposition) displays the efficiency
+decomposition.
+
+```{r tgr-density, fig.width=7, fig.height=4.5, fig.cap="Distribution of technology gap ratios by group from the deterministic metafrontier (generated with the package autoplot() method, view: TGR density). Group G1 defines the metafrontier (TGR = 1.000 for all observations, annotated separately); groups G2 and G3 show increasing technology gaps.", fig.alt="A density plot showing two smooth distributions of technology gap ratios: Group G2 centred near 0.74 and Group G3 centred near 0.62. An annotation marks Group G1 as having TGR identically equal to one."}
+autoplot(fit_det, which = "tgr")
+```
+
+```{r decomposition, fig.width=7, fig.height=4.5, fig.cap="Mean efficiency decomposition by group (generated with the package autoplot() method, view: decomposition). The three bars per group show mean technical efficiency (TE), technology gap ratio (TGR), and metafrontier efficiency TE* = TE x TGR.", fig.alt="A grouped bar chart with three bars per group showing mean TE, TGR, and TE star. TE is similar across groups around 0.75, while TGR decreases from 1.0 in Group 1 to about 0.7 in Group 3, driving the decrease in TE star."}
+autoplot(fit_det, which = "decomposition")
+```
+
+## Real-data illustration {#sec:real-data}
+
+The examples above use simulated data with known parameters. To demonstrate
+the package on empirical data, we use the `utility` dataset from
+\CRANpkg{sfaR}, which contains 791 observations on US fossil-fuel steam
+electric generating plants over 1986--1996. The binary variable `regu`
+equals one for plants in states that enacted retail-access (restructuring)
+legislation during the sample period and zero for plants that remained
+under traditional regulation. This gives a natural grouping of plants. The
+production function relates output (`y`) to capital (`k`), labour (`labor`),
+and fuel (`fuel`).
+
+```{r real-data, cache = FALSE}
+data("utility", package = "sfaR")
+utility$group <- ifelse(utility$regu == 1, "Retail access", "Regulated")
+utility$log_y     <- log(utility$y)
+utility$log_k     <- log(utility$k)
+utility$log_labor <- log(utility$labor)
+utility$log_fuel  <- log(utility$fuel)
+
+fit_util <- metafrontier(log_y ~ log_k + log_labor + log_fuel,
+                         data = utility, group = "group",
+                         method = "sfa", meta_type = "deterministic")
+tgr_summary(fit_util)
+```
+
+The traditionally regulated group exhibits a slightly higher mean TGR
+(0.946) than the group of plants in retail-access states (0.892); the
+regulated plants lie closer to the pooled metafrontier on average in this
+sample. We attach no structural interpretation to this
+illustrative comparison. In the metafrontier framework, a technology gap
+reflects restrictions on the feasible input-output set; regulatory
+constraints that only affect the choice of input mix would manifest as
+allocative rather than technical inefficiency and would not, by
+themselves, generate a technology gap.
+
+Because all three estimators share the same interface and object class,
+cross-method robustness checks require no additional plumbing. The
+following chunk re-estimates the same model with the stochastic
+metafrontier and with DEA, then compares group-mean TGRs and the Spearman
+rank correlations of the plant-level TGRs across estimators:
+
+```{r real-data-robustness, cache = FALSE}
+fit_util_st  <- metafrontier(log_y ~ log_k + log_labor + log_fuel,
+                             data = utility, group = "group",
+                             method = "sfa", meta_type = "stochastic")
+fit_util_dea <- metafrontier(log_y ~ log_k + log_labor + log_fuel,
+                             data = utility, group = "group",
+                             method = "dea", rts = "vrs")
+
+tgr_by <- function(fit) tapply(efficiencies(fit, type = "tgr"),
+                               utility$group, mean)
+round(rbind(Deterministic = tgr_by(fit_util),
+            Stochastic    = tgr_by(fit_util_st),
+            DEA           = tgr_by(fit_util_dea)), 3)
+round(c(det_vs_stoch = cor(fit_util$tgr, fit_util_st$tgr,
+                           method = "spearman"),
+        det_vs_dea   = cor(fit_util$tgr, fit_util_dea$tgr,
+                           method = "spearman")), 3)
+```
+
+Agreement in the group ranking across a deterministic envelope, a
+distributional second stage, and a nonparametric pooled frontier indicates
+that the technology gap is a feature of the data rather than an artefact
+of any single method; this kind of triangulation is the main practical
+payoff of a unified interface.
+
+# Advanced features {#sec:advanced-features}
+
+## Bootstrap confidence intervals {#sec:bootstrap-ci}
+
+Because the deterministic metafrontier provides no standard errors for the
+technology gap ratios, the `boot_tgr()` function implements bootstrap inference.
+Both parametric (residual resampling) and nonparametric (case resampling)
+approaches are supported, with percentile and bias-corrected accelerated (BCa)
+interval types.
+
+```{r bootstrap}
+boot <- boot_tgr(fit_det, R = 199, type = "parametric",
+                 ci_type = "percentile", seed = 1, progress = FALSE)
+boot_ci <- confint(boot)
+head(boot_ci, 5)
+```
+
+We use $R = 199$ here to keep the article reproducible in minutes; in
+applied work, $R \geq 999$ is recommended for reliable percentile
+intervals, and $R \geq 1999$ for BCa intervals.
+
+The `confint()` method returns observation-level confidence intervals;
+Figure \@ref(fig:boot-ci) displays the bootstrap distribution of the
+group-level means of the TGRs, and Table \@ref(tab:boot-ci-tab) summarises
+the intervals by group. Parallel computation is available via the `ncores`
+argument, which uses the \pkg{parallel} package for distributing
+replications across cores. Table \@ref(tab:boot-ci-tab) is produced by the
+following (echoed) chunk.
+
+```{r boot-ci, fig.width=7, fig.height=4.5, fig.cap="Bootstrap distribution of the group-level mean technology gap ratios, from 199 parametric replications (generated with the package autoplot() method for bootstrap objects, default view). Dashed vertical lines mark the 95 percent percentile confidence intervals for the group means.", fig.alt="A set of histograms showing the bootstrap distribution of mean TGR for each group. Vertical dashed lines mark the 95 percent confidence interval bounds for each group mean. Group G1 has the narrowest interval near 1, while Group G3 has the widest interval at lower values."}
+autoplot(boot)
+```
+
+```{r boot-ci-tab}
+ci_df <- data.frame(
+  Group = dat$group,
+  Lower = boot_ci[, 1],
+  Upper = boot_ci[, 2],
+  TGR = efficiencies(fit_det, type = "tgr")
+)
+ci_summary <- aggregate(cbind(TGR, Lower, Upper) ~ Group,
+                        data = ci_df, FUN = mean)
+names(ci_summary) <- c("Group", "Mean TGR", "Mean lower bound",
+                       "Mean upper bound")
+cap <- paste("Bootstrap 95\\% confidence intervals for TGR by group",
+             "(group-level means of observation-level intervals).")
+knitr::kable(ci_summary, caption = cap, digits = 4,
+             align = "lccc", booktabs = TRUE, linesep = "") |>
+  ktbl()
+```
+
+## Murphy--Topel variance correction {#sec:murphy-topel}
+
+The stochastic metafrontier of @huang2014 uses fitted values from the
+first-stage group SFA models as the dependent variable in a second-stage SFA.
+This two-step procedure understates the standard errors of the metafrontier
+coefficients because it ignores the sampling variability from the first
+stage (the generated-regressor problem). The `vcov()` method implements the
+correction of @murphy1985, which inflates the second-stage
+variance--covariance matrix to account for first-stage estimation
+uncertainty.
+
+```{r murphy-topel}
+se_uncorrected <- sqrt(diag(vcov(fit_sto)))
+se_corrected <- sqrt(diag(vcov(fit_sto, correction = "murphy-topel")))
+comparison <- data.frame(
+  Uncorrected = se_uncorrected,
+  `Murphy-Topel` = se_corrected,
+  `Ratio` = se_corrected / se_uncorrected,
+  check.names = FALSE
+)
+knitr::kable(comparison, digits = 4, booktabs = TRUE, linesep = "",
+  caption = paste("Comparison of uncorrected and",
+    "Murphy--Topel corrected standard errors",
+    "for the stochastic metafrontier coefficients.")
+) |> ktbl()
+```
+
+The corrected standard errors in Table \@ref(tab:murphy-topel) are
+uniformly larger; the increase is the sampling uncertainty contributed by
+the generated regressors. Confidence intervals computed with
+`confint(fit_sto, correction = "murphy-topel")` use the corrected standard
+errors. The correction is computed via numerical differentiation of the
+second-stage log-likelihood with respect to the first-stage parameters,
+requiring $O(p_1 \times p_2)$ likelihood evaluations per group, where
+$p_1$ is the number of first-stage parameters of that group's frontier
+(frontier coefficients plus variance parameters) and $p_2$ is the number
+of second-stage metafrontier parameters. For typical metafrontier
+specifications (3--5 regressors) this completes in seconds, but the cost
+scales quadratically and may become noticeable with high-dimensional
+translog models.
+
+## Heteroscedastic SFA {#sec:heteroscedastic-sfa}
+
+The package supports heteroscedastic group frontiers through the formula
+interface. A two-part formula `y ~ x1 + x2 | z1` models the mean of
+$\sigma_{u,i}$ (for half-normal and exponential) or $\mu_i$ (for
+truncated-normal) as a function of environmental variables:
+
+```{r heteroscedastic}
+fit_het <- metafrontier(log_y ~ log_x1 + log_x2 | log_x1, data = dat,
+                        group = "group", method = "sfa",
+                        meta_type = "deterministic", dist = "hnormal")
+coef(fit_het)
+```
+
+This specification allows the degree of inefficiency to vary with observable
+firm characteristics within each group, which is relevant when the variance
+of inefficiency is not constant across producers. Heteroscedasticity enters
+only the group TE scores: the metafrontier envelope depends on
+$\mathbf{x}'\widehat{\boldsymbol{\beta}}_j$, not on variance parameters, so
+TGRs are unaffected while TE and TE* reflect firm-specific inefficiency.
+
+## Latent class metafrontier {#sec:latent-class}
+
+When group membership is unobserved, the `latent_class_metafrontier()` function
+discovers technology classes endogenously and estimates the metafrontier
+simultaneously using an EM algorithm. Unlike `metafrontier()`, this function
+does not accept a `group` argument: class membership is determined entirely by
+the data. The number of latent classes can be selected using BIC via
+`select_n_classes()`.
+
+```{r latent-class}
+lc <- latent_class_metafrontier(log_y ~ log_x1 + log_x2, data = dat,
+                                n_classes = 3, n_starts = 5, seed = 42)
+coef(lc)
+```
+
+As with all latent class stochastic frontier models, estimation may be
+sensitive to starting values and local optima. The EM algorithm terminates
+when the relative change in marginal log-likelihood between iterations
+falls below a user-controllable tolerance (`tol`, default $10^{-6}$) or
+after `max_iter` iterations (default 200). The package therefore supports
+multiple random starts via the `n_starts` argument (default 10) and
+information-criteria-based model selection via `select_n_classes()`, which
+fits models for each class count in `n_classes_range` and returns the
+BIC-optimal specification. For applied work we recommend at least $n\_starts = 10$ for
+two or three classes, increased to 20--30 for four or more classes or when
+the likelihood surface is known to be multimodal.
+
+## Panel SFA with time-varying inefficiency {#sec:panel-sfa}
+
+For panel data, the package supports the time-varying inefficiency
+specifications of @battese1992 (BC92) and @battese1995 (BC95). The BC92 model
+parameterises inefficiency as
+$u_{it} = u_i \cdot \exp\!\left[-\eta(t - T)\right]$, where $u_i$ is a
+firm-specific truncated-normal draw, $T$ is the final period of the panel,
+$\eta > 0$ implies declining inefficiency over time, and $\eta < 0$ implies
+increasing inefficiency. Unbalanced panels are supported: each firm
+contributes its own set of periods $\mathcal{T}_i$ to the likelihood, and
+the decay term is still measured from the panel-wide final period $T$,
+following the unbalanced formulation of @battese1992.
+
+The BC95 model instead specifies observation-specific inefficiency
+$u_{it} \sim N^+(\mathbf{z}_{it}'\boldsymbol{\delta}, \sigma_u^2)$, where
+$\mathbf{z}_{it}$ is a vector of inefficiency determinants and
+$\boldsymbol{\delta}$ is estimated jointly with the frontier in a single
+stage by maximum likelihood. Unlike BC92, the BC95 model treats
+observations as independent draws (no within-firm time dependence). It is
+selected with `panel_dist = "bc95"` and requires the two-part formula
+syntax `y ~ x1 + x2 | z1 + z2` introduced for the heteroscedastic models
+above.
+
+```{r panel-simulate}
+psim <- simulate_panel_metafrontier(
+  n_groups = 2, n_firms_per_group = 30, n_periods = 5,
+  eta = 0.05, seed = 42
+)
+pdat <- psim$data
+```
+
+```{r panel-estimate}
+fit_panel <- metafrontier(log_y ~ log_x1 + log_x2, data = pdat,
+                          group = "group", method = "sfa",
+                          meta_type = "deterministic",
+                          panel = list(id = "firm", time = "year"),
+                          panel_dist = "bc92")
+coef(fit_panel)
+tgr_summary(fit_panel)
+```
+
+All estimated parameters, including the decay parameter $\eta$ and the
+variance parameters, are available with
+`coef(fit_panel, which = "group", extraPar = TRUE)`, and the group tables
+printed by `summary()` report $\eta$ with its standard error.
+
+Panel SFA can be combined with either `meta_type = "deterministic"` (as
+above) or `meta_type = "stochastic"`; in the latter case the group-specific
+time-varying fits are fed into the second-stage stochastic metafrontier
+exactly as in the cross-sectional case.
+
+## Malmquist productivity decomposition {#sec:malmquist-usage}
+
+The `malmquist_meta()` function computes the metafrontier Malmquist TFP index
+with the three-way decomposition of Equation \@ref(eq:malmquist). Firms are matched
+across periods by the identifier supplied through the `id` argument;
+observations without a match in the adjacent period (unbalanced panels,
+entry and exit, or firms that switch groups) are dropped from the affected
+transition with a warning that reports the count. When `id` is omitted the
+function falls back to matching by row position within each group, which is
+only valid for balanced panels sorted identically in every period, and says
+so in a message. Under variable, decreasing, or increasing returns to
+scale, cross-period DEA programs can be genuinely infeasible when an
+observation lies outside the comparison technology; such cases yield `NA`
+(never infinite values), are excluded from reported means, and are counted
+in a consolidated warning and in the printed output. Constant returns to
+scale (used below) avoids the issue. The SFA path (`method = "sfa"`)
+approximates metafrontier distances by the pointwise maximum over the
+estimated group frontiers and announces this in a message; the DEA path
+computes exact distances to the pooled frontier and is the default. The
+identity $M^* = \text{TEC} \times \text{TGC} \times \text{TC}^*$ can be
+verified numerically.
+
+```{r malmquist}
+pdat_lev <- within(pdat, {
+  y  <- exp(log_y)
+  x1 <- exp(log_x1)
+  x2 <- exp(log_x2)
+})
+malm <- malmquist_meta(y ~ x1 + x2, data = pdat_lev,
+                       group = "group", time = "year", id = "firm",
+                       method = "dea", rts = "crs")
+print(malm)
+```
+
+Figure \@ref(fig:malmquist-plot) displays the Malmquist decomposition over
+time. Each point is plotted at the end period of its transition, so the
+first point, at period 2, is the change from period 1 to period 2.
+
+```{r malmquist-plot, fig.width=7, fig.height=4.5, fig.cap="Mean metafrontier Malmquist productivity index (MPI) by period and group (generated with the package autoplot() method, view: MPI trend). Each point sits at the end period of its transition; values above the dashed line indicate improvement relative to the previous period.", fig.alt="A line plot showing the mean MPI over periods 2 to 5 for each group, with a dashed reference line at 1. Points are marked at each period, with separate coloured lines for each group."}
+autoplot(malm, which = "mpi_trend")
+```
+
+# Monte Carlo evidence {#sec:monte-carlo}
+
+A simulation study evaluates the finite-sample performance of the
+deterministic, stochastic, and DEA metafrontier estimators.
+
+## Design {#sec:mc-design}
+
+We study two data-generating processes. **Scenario A** follows the group
+SFA specification of Equation \@ref(eq:sfa) with two groups ($J = 2$), 100 firms per
+group, and known true parameters:
+$\boldsymbol{\beta}^* = (1.0, 0.5, 0.3)'$ (intercept, $\beta_1$, $\beta_2$),
+technology gap $\delta = (0, 0.4)$, inefficiency standard deviations
+$\sigma_u = (0.2, 0.3)$, and noise standard deviation $\sigma_v = 0.15$.
+Log inputs are drawn independently and uniformly on $[0, 5]$, identically
+across groups, and the groups differ only in their frontier intercepts, so
+a common log-linear metafrontier exists and coefficient recovery is well
+defined. **Scenario B** relaxes the features of Scenario A that are
+unrealistic in applications: the three groups have group-specific *slope*
+coefficients (not merely intercept shifts), log inputs are correlated
+within firm (correlation 0.6, a firm-size effect), and the group input
+distributions differ in location (one group is intensive in each input).
+Under group-specific slopes no single log-linear frontier tightly envelops
+all groups; the true envelope is the pointwise maximum
+$\max_j \mathbf{x}_i'\boldsymbol{\beta}_j$, the true TGR
+$\exp(\mathbf{x}_i'\boldsymbol{\beta}_g - \max_j
+\mathbf{x}_i'\boldsymbol{\beta}_j)$ varies across observations within a
+group, and the estimated metafrontier coefficients converge to a
+pseudo-true tightest linear envelope that depends on the input
+distribution. Scenario B is therefore evaluated on the recovery of the
+efficiency quantities (TE, TE$^*$, TGR) rather than on coefficient bias.
+Each scenario is replicated 500 times, and in each replication we estimate
+the deterministic SFA, stochastic SFA, and DEA metafrontiers. The complete
+simulation code for this section, including both scenario loops and the
+table construction, is provided in the supplementary replication script
+(Targets 3 and 7 to 10).
+
+```{r monte-carlo, cache=TRUE, echo=FALSE}
+set.seed(123)
+n_reps <- 500
+beta_true <- c(1.0, 0.5, 0.3)
+mc_results <- vector("list", n_reps)
+mc_eff <- vector("list", n_reps)
+
+# Efficiency-recovery statistics for one fitted metafrontier object
+eff_stats <- function(fit, dat, method_label) {
+  te  <- efficiencies(fit, type = "group")
+  tes <- efficiencies(fit, type = "meta")
+  tgr <- efficiencies(fit, type = "tgr")
+  data.frame(
+    method = method_label,
+    te_true = mean(dat$true_te),   te_est = mean(te),
+    rho_te = cor(te, dat$true_te, method = "spearman"),
+    tes_true = mean(dat$true_te_star), tes_est = mean(tes),
+    rho_tes = cor(tes, dat$true_te_star, method = "spearman"),
+    tgr_true = mean(dat$true_tgr), tgr_est = mean(tgr),
+    rho_tgr = suppressWarnings(
+      cor(tgr, dat$true_tgr, method = "spearman"))
+  )
+}
+
+for (r in seq_len(n_reps)) {
+  sim_mc <- simulate_metafrontier(
+    n_groups = 2, n_per_group = 100,
+    beta_meta = beta_true,
+    tech_gap = c(0, 0.4),
+    sigma_u = c(0.2, 0.3),
+    sigma_v = 0.15,
+    seed = r * 1000
+  )
+
+  fit_d <- tryCatch(
+    metafrontier(log_y ~ log_x1 + log_x2, data = sim_mc$data,
+                 group = "group", method = "sfa",
+                 meta_type = "deterministic"),
+    error = function(e) NULL
+  )
+  fit_s <- tryCatch(
+    metafrontier(log_y ~ log_x1 + log_x2, data = sim_mc$data,
+                 group = "group", method = "sfa",
+                 meta_type = "stochastic"),
+    error = function(e) NULL
+  )
+  fit_dea <- tryCatch(
+    metafrontier(log_y ~ log_x1 + log_x2, data = sim_mc$data,
+                 group = "group", method = "dea",
+                 orientation = "output", rts = "vrs"),
+    error = function(e) NULL
+  )
+
+  if (!is.null(fit_d) && !is.null(fit_s)) {
+    beta_d <- coef(fit_d)
+    beta_s <- coef(fit_s)
+    tgr_d <- efficiencies(fit_d, type = "tgr")
+    tgr_s <- efficiencies(fit_s, type = "tgr")
+    true_tgr <- sim_mc$data$true_tgr
+
+    mc_results[[r]] <- data.frame(
+      rep = r,
+      method = rep(c("Deterministic", "Stochastic"), each = 3),
+      parameter = rep(c("Intercept", "beta_1", "beta_2"), 2),
+      true = rep(beta_true, 2),
+      estimate = c(beta_d[1:3], beta_s[1:3]),
+      mean_tgr_est = rep(c(mean(tgr_d), mean(tgr_s)), each = 3),
+      mean_tgr_true = rep(mean(true_tgr), 6),
+      tgr_corr = rep(c(cor(tgr_d, true_tgr, method = "spearman"),
+                        cor(tgr_s, true_tgr, method = "spearman")), each = 3)
+    )
+  }
+  if (!is.null(fit_d) && !is.null(fit_s) && !is.null(fit_dea)) {
+    mc_eff[[r]] <- rbind(
+      eff_stats(fit_d,   sim_mc$data, "Deterministic SFA"),
+      eff_stats(fit_s,   sim_mc$data, "Stochastic SFA"),
+      eff_stats(fit_dea, sim_mc$data, "DEA (VRS)")
+    )
+  }
+}
+
+mc_df <- do.call(rbind, mc_results)
+mc_df$bias <- mc_df$estimate - mc_df$true
+mc_eff_df <- do.call(rbind, mc_eff)
+```
+
+## Parameter recovery {#sec:parameter-recovery}
+
+Table \@ref(tab:mc-results) reports the bias, Monte Carlo standard error
+(MC SE), standard deviation, and root mean squared error (RMSE) of the
+metafrontier coefficient estimates across the 500 replications.
+
+```{r mc-results, echo=FALSE}
+n_successful <- length(unique(mc_df$rep))
+mc_summary <- aggregate(
+  cbind(bias, estimate) ~ method + parameter,
+  data = mc_df,
+  FUN = function(x) c(mean = mean(x), sd = sd(x))
+)
+mc_tab <- data.frame(
+  Parameter = mc_summary$parameter,
+  Method = mc_summary$method,
+  True = beta_true[match(mc_summary$parameter,
+                         c("Intercept", "beta_1", "beta_2"))],
+  Bias = mc_summary$bias[, "mean"],
+  `MC SE` = mc_summary$estimate[, "sd"] / sqrt(n_successful),
+  SD = mc_summary$estimate[, "sd"],
+  RMSE = sqrt(mc_summary$bias[, "mean"]^2 + mc_summary$estimate[, "sd"]^2),
+  check.names = FALSE
+)
+mc_tab <- mc_tab[order(mc_tab$Parameter, mc_tab$Method), ]
+knitr::kable(mc_tab, digits = 4, row.names = FALSE,
+             caption = paste0("Monte Carlo results for metafrontier coefficient estimation (", n_successful, " successful replications out of 500). MC SE is the Monte Carlo standard error of the mean estimate; RMSE is the root mean squared error."),
+             align = "llccccc",
+             booktabs = TRUE, linesep = "") |>
+  ktbl()
+```
+
+```{r mc-lpqp, cache=TRUE, echo=FALSE}
+# LP vs QP objective: max abs TGR difference across Scenario A designs
+lpqp_reps <- 50
+lpqp_diff <- numeric(lpqp_reps)
+for (r in seq_len(lpqp_reps)) {
+  sim_lq <- simulate_metafrontier(
+    n_groups = 2, n_per_group = 100, beta_meta = c(1.0, 0.5, 0.3),
+    tech_gap = c(0, 0.4), sigma_u = c(0.2, 0.3), sigma_v = 0.15,
+    seed = r * 1000
+  )
+  f_lp <- metafrontier(log_y ~ log_x1 + log_x2, data = sim_lq$data,
+                       group = "group", objective = "lp")
+  f_qp <- metafrontier(log_y ~ log_x1 + log_x2, data = sim_lq$data,
+                       group = "group", objective = "qp")
+  lpqp_diff[r] <- max(abs(f_lp$tgr - f_qp$tgr))
+}
+max_lpqp_diff <- max(lpqp_diff)
+```
+
+All 500 replications complete without error and with optimiser convergence
+code zero at every stage, which is expected given the well-behaved
+Cobb--Douglas DGP with moderate noise levels; convergence failures are more
+likely with empirical data featuring collinear regressors or very small
+samples. In applied work, the `check_convergence()` function and the
+convergence block printed by `summary()` let users verify all estimation
+stages before interpreting TGRs, confidence intervals, or productivity
+decompositions. Figure \@ref(fig:mc-bias) displays the distribution of
+coefficient bias across replications for both estimators.
+
+Because the `objective` argument offers both identification criteria of
+@battese2004, we also refit the deterministic metafrontier under the
+squared-deviations QP objective on the first 50 Scenario A designs. The
+maximum absolute difference between LP- and QP-based TGRs is
+`r signif(max_lpqp_diff, 2)`: on this design the binding-constraint
+pattern coincides and the two criteria are numerically indistinguishable,
+although they can diverge at extreme input mixes.
+
+```{r mc-bias, echo=FALSE, fig.width=7, fig.height=4.5, fig.cap="Distribution of metafrontier coefficient bias across 500 Monte Carlo replications for the deterministic and stochastic estimators (drawn with ggplot2; code in the supplementary materials). Boxes show the interquartile range and median; whiskers extend to 1.5 times the IQR.", fig.alt="A grouped boxplot showing the distribution of bias for three metafrontier coefficients (intercept, beta 1, beta 2) under both deterministic and stochastic estimation. Both methods show bias centred near zero, with the stochastic method showing slightly wider dispersion for the intercept."}
+ggplot(mc_df, aes(x = parameter, y = bias, fill = method)) +
+  geom_boxplot(position = position_dodge(0.8), alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+  scale_fill_manual(values = c("Deterministic" = "#2166AC",
+                                "Stochastic" = "#D6604D")) +
+  labs(x = "Parameter", y = "Bias (estimate - true)",
+       fill = "Metafrontier method") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+Both estimators recover the true slope coefficients ($\beta_1$, $\beta_2$)
+with negligible bias. The stochastic metafrontier intercept shows a
+persistent downward bias because the composed error $v^* - u^*$ has
+non-zero mean $-\sigma^*\sqrt{2/\pi}$ under a half-normal specification,
+so the second-stage SFA absorbs part of the intercept into the
+inefficiency term. This is a structural feature of the two-step
+stochastic metafrontier [@huang2014]: slope coefficients remain
+consistent as $n \to \infty$, but the intercept does not. Applied users
+interested in level-unit intercept interpretation should add back
+$\hat\sigma^*\sqrt{2/\pi}$ or rely on the deterministic metafrontier,
+whose intercept is unbiased in our Monte Carlo.
+
+## Efficiency recovery {#sec:efficiency-recovery}
+
+Table \@ref(tab:mc-eff) reports, for each of the three estimators under
+Scenario A, the mean estimated technical efficiency against the own-group
+frontier (TE), the mean metafrontier efficiency (TE$^*$), and the mean
+technology gap ratio (TGR), together with the corresponding true means and
+the Spearman rank correlations between estimated and true values.
+
+```{r mc-eff, echo=FALSE}
+eff_agg <- aggregate(cbind(te_true, te_est, rho_te,
+                           tes_true, tes_est, rho_tes,
+                           tgr_true, tgr_est, rho_tgr) ~ method,
+                     data = mc_eff_df, FUN = mean)
+eff_agg <- eff_agg[match(c("Deterministic SFA", "Stochastic SFA",
+                           "DEA (VRS)"), eff_agg$method), ]
+names(eff_agg) <- c("Estimator",
+                    "TE (true)", "TE (est)", "Corr(TE)",
+                    "TE* (true)", "TE* (est)", "Corr(TE*)",
+                    "TGR (true)", "TGR (est)", "Corr(TGR)")
+knitr::kable(eff_agg, digits = 3, row.names = FALSE,
+             caption = "Efficiency recovery under Scenario A (means over 500 replications). TE is efficiency against the own-group frontier, TE* against the metafrontier, and TGR the technology gap ratio; Corr denotes the Spearman rank correlation between estimated and true values within a replication.",
+             align = "lccccccccc",
+             booktabs = TRUE, linesep = "") |>
+  ktbl()
+```
+
+Two features of Table \@ref(tab:mc-eff) require care in interpretation.
+First, the DEA rows should be read as robustness of the framework under a
+noisy DGP: with $\sigma_v > 0$, observations with favourable noise draws
+define the DEA frontiers, so DEA efficiency levels are contaminated by
+construction and only their rankings are informative. Second, under the
+intercept-only Scenario A the true TGR takes only two distinct values (one
+per group), so the TGR rank correlation mostly reflects the between-group
+ordering; Scenario B below provides within-group TGR variation and hence a
+sharper test.
+
+```{r mc-scenario-b, cache=TRUE, echo=FALSE}
+set.seed(321)
+beta_G <- rbind(G1 = c(1.0, 0.55, 0.25),
+                G2 = c(0.9, 0.40, 0.40),
+                G3 = c(0.8, 0.30, 0.55))
+input_mu <- rbind(G1 = c(3.5, 2.0),
+                  G2 = c(2.5, 2.5),
+                  G3 = c(2.0, 3.5))
+input_R <- matrix(c(1, 0.6, 0.6, 1), 2, 2)
+
+mc_eff_b <- vector("list", n_reps)
+n_b_fail <- 0L
+for (r in seq_len(n_reps)) {
+  sim_b <- simulate_metafrontier(
+    n_groups = 3, n_per_group = 100,
+    beta_groups = beta_G,
+    input_means = input_mu,
+    input_corr = input_R,
+    sigma_u = c(0.2, 0.25, 0.3),
+    sigma_v = 0.15,
+    seed = r * 3000
+  )
+  fit_bd <- tryCatch(
+    metafrontier(log_y ~ log_x1 + log_x2, data = sim_b$data,
+                 group = "group", method = "sfa",
+                 meta_type = "deterministic"),
+    error = function(e) NULL
+  )
+  fit_bs <- tryCatch(
+    metafrontier(log_y ~ log_x1 + log_x2, data = sim_b$data,
+                 group = "group", method = "sfa",
+                 meta_type = "stochastic"),
+    error = function(e) NULL
+  )
+  fit_bdea <- tryCatch(
+    metafrontier(log_y ~ log_x1 + log_x2, data = sim_b$data,
+                 group = "group", method = "dea",
+                 orientation = "output", rts = "vrs"),
+    error = function(e) NULL
+  )
+  if (!is.null(fit_bd) && !is.null(fit_bs) && !is.null(fit_bdea)) {
+    mc_eff_b[[r]] <- rbind(
+      eff_stats(fit_bd,   sim_b$data, "Deterministic SFA"),
+      eff_stats(fit_bs,   sim_b$data, "Stochastic SFA"),
+      eff_stats(fit_bdea, sim_b$data, "DEA (VRS)")
+    )
+  } else {
+    n_b_fail <- n_b_fail + 1L
+  }
+}
+mc_eff_b_df <- do.call(rbind, mc_eff_b)
+n_b_success <- sum(!vapply(mc_eff_b, is.null, logical(1)))
+```
+
+Table \@ref(tab:mc-eff-b) reports the same statistics under Scenario B
+(three groups with group-specific slopes, correlated inputs, and
+group-specific input distributions), where the true TGR varies across
+observations within every group. Of the 500 replications,
+`r n_b_success` complete successfully for all three estimators.
+
+```{r mc-eff-b, echo=FALSE}
+eff_agg_b <- aggregate(cbind(te_true, te_est, rho_te,
+                             tes_true, tes_est, rho_tes,
+                             tgr_true, tgr_est, rho_tgr) ~ method,
+                       data = mc_eff_b_df, FUN = mean)
+eff_agg_b <- eff_agg_b[match(c("Deterministic SFA", "Stochastic SFA",
+                               "DEA (VRS)"), eff_agg_b$method), ]
+names(eff_agg_b) <- c("Estimator",
+                      "TE (true)", "TE (est)", "Corr(TE)",
+                      "TE* (true)", "TE* (est)", "Corr(TE*)",
+                      "TGR (true)", "TGR (est)", "Corr(TGR)")
+knitr::kable(eff_agg_b, digits = 3, row.names = FALSE,
+             caption = "Efficiency recovery under Scenario B: three groups with group-specific slopes, correlated log inputs, and group-specific input means (means over successful replications). The true TGR is computed against the pointwise maximum over the group frontiers; column definitions follow the Scenario A table.",
+             align = "lccccccccc",
+             booktabs = TRUE, linesep = "") |>
+  ktbl()
+```
+
+Under Scenario B the estimated metafrontier coefficients converge to a
+pseudo-true tightest linear envelope rather than to a data-generating
+parameter vector, so no coefficient-bias table is reported. The efficiency
+rows in Table \@ref(tab:mc-eff-b) show what this implies in practice. A
+single log-linear envelope cannot bend around three crossing group
+frontiers, so it lies above the pointwise-maximum envelope over much of
+the input space, and the deterministic TGR levels are understated by
+construction (mean 0.608 against a true mean of 0.925); the residual-based
+stochastic TGR centres near one regardless of the truth (mean 1.010).
+Rankings survive in both cases, with TGR rank correlations between 0.76
+and 0.79. DEA imposes no functional form and recovers the TGR levels
+almost without bias (mean 0.902) at similar rank correlations. This
+contrast is the practical content of Scenario B: when group frontiers
+differ in slope and not merely in level, the DEA-based metafrontier is the
+safer choice for TGR levels, while the SFA-based variants still order
+firms and groups reliably.
+
+## Small-sample and unbalanced-group robustness {#sec:robustness}
+
+To assess performance under more challenging conditions, we repeat the
+Scenario A simulation with 30 firms per group (vs.\ 100 in the baseline),
+keeping all other DGP parameters unchanged.
+
+```{r mc-small-n, cache=TRUE, echo=FALSE}
+set.seed(456)
+n_reps_small <- 500
+mc_small <- vector("list", n_reps_small)
+
+for (r in seq_len(n_reps_small)) {
+  sim_s <- simulate_metafrontier(
+    n_groups = 2, n_per_group = 30,
+    beta_meta = c(1.0, 0.5, 0.3),
+    tech_gap = c(0, 0.4),
+    sigma_u = c(0.2, 0.3),
+    sigma_v = 0.15,
+    seed = r * 2000
+  )
+  fit_ds <- tryCatch(
+    metafrontier(log_y ~ log_x1 + log_x2, data = sim_s$data,
+                 group = "group", method = "sfa",
+                 meta_type = "deterministic"),
+    error = function(e) NULL
+  )
+  if (!is.null(fit_ds)) {
+    mc_small[[r]] <- list(
+      det_coef = coef(fit_ds),
+      det_tgr_cor = cor(efficiencies(fit_ds, type = "tgr"),
+                        sim_s$data$true_tgr, method = "spearman")
+    )
+  }
+}
+mc_small <- mc_small[!sapply(mc_small, is.null)]
+n_small_ok <- length(mc_small)
+det_bias_small <- rowMeans(sapply(mc_small, function(x) x$det_coef)) - beta_true
+det_tgr_small <- mean(sapply(mc_small, function(x) x$det_tgr_cor))
+```
+
+With only 30 observations per group, `r n_small_ok` of 500 replications
+complete successfully (here and below, "successfully" means the estimation
+finished without error; non-zero optimiser codes are recorded separately
+and can be inspected with `check_convergence()`). The deterministic
+estimator shows slope biases of
+`r round(det_bias_small[2], 3)` ($\beta_1$) and
+`r round(det_bias_small[3], 3)` ($\beta_2$), modestly larger than the
+baseline. The TGR rank correlation remains high at
+`r round(det_tgr_small, 3)`. The framework ranks group technologies
+reliably even with small samples.
+
+Empirical metafrontier applications frequently involve groups of markedly
+different sizes, and the group frontiers are estimated separately, so a
+small group's frontier (and hence its TGR) can be unstable even when the
+total sample is large. To assess this, we simulate a strongly unbalanced
+design with 200 firms in the frontier-defining group and only 20 firms in
+the lagging group (a 10:1 ratio, with the technology gap on the small
+group), keeping all other Scenario A parameters unchanged.
+
+```{r mc-unbalanced, cache=TRUE, echo=FALSE}
+set.seed(789)
+n_reps_unb <- 500
+mc_unb <- vector("list", n_reps_unb)
+
+for (r in seq_len(n_reps_unb)) {
+  sim_u <- simulate_metafrontier(
+    n_groups = 2, n_per_group = c(200, 20),
+    beta_meta = c(1.0, 0.5, 0.3),
+    tech_gap = c(0, 0.4),
+    sigma_u = c(0.2, 0.3),
+    sigma_v = 0.15,
+    seed = r * 4000
+  )
+  fit_u <- tryCatch(
+    metafrontier(log_y ~ log_x1 + log_x2, data = sim_u$data,
+                 group = "group", method = "sfa",
+                 meta_type = "deterministic"),
+    error = function(e) NULL
+  )
+  if (!is.null(fit_u)) {
+    small_idx <- sim_u$data$group == "G2"
+    tgr_u <- efficiencies(fit_u, type = "tgr")
+    codes <- c(vapply(fit_u$group_models,
+                      function(m) m$convergence, integer(1)),
+               fit_u$meta_convergence)
+    mc_unb[[r]] <- list(
+      coef = coef(fit_u),
+      all_zero = all(codes == 0L),
+      tgr_cor = cor(tgr_u, sim_u$data$true_tgr, method = "spearman"),
+      tgr_bias_small = mean(tgr_u[small_idx]) -
+        mean(sim_u$data$true_tgr[small_idx])
+    )
+  }
+}
+mc_unb <- mc_unb[!sapply(mc_unb, is.null)]
+n_unb_ok <- length(mc_unb)
+n_unb_zero <- sum(sapply(mc_unb, function(x) x$all_zero))
+unb_bias <- rowMeans(sapply(mc_unb, function(x) x$coef)) - c(1.0, 0.5, 0.3)
+unb_tgr_cor <- mean(sapply(mc_unb, function(x) x$tgr_cor))
+unb_tgr_bias_small <- mean(sapply(mc_unb, function(x) x$tgr_bias_small))
+```
+
+Of the 500 replications, `r n_unb_ok` complete without error and
+`r n_unb_zero` additionally have optimiser convergence code zero at every
+stage. The deterministic estimator's slope biases
+(`r round(unb_bias[2], 3)` for $\beta_1$, `r round(unb_bias[3], 3)` for
+$\beta_2$) remain modest, and the overall TGR rank correlation is
+`r round(unb_tgr_cor, 3)`. The instability concentrates where expected: the
+mean TGR bias in the 20-firm group is `r round(unb_tgr_bias_small, 3)`.
+The small group's own frontier estimate drives this bias, since the pooled
+metafrontier is estimated from all 220 observations. The large group shows no comparable bias.
+Applied users with severely unbalanced groups should therefore interpret
+the small groups' TGRs with caution and lean on the bootstrap intervals of
+`boot_tgr()`, which reflect the group-specific sample sizes.
+
+# Comparison with related packages {#sec:comparison}
+
+Table \@ref(tab:comparison) provides a feature-level comparison of
+\CRANpkg{metafrontier} with related \proglang{R} packages for efficiency
+analysis. All compared packages are on CRAN; \CRANpkg{smfa} is the CRAN
+release (April 2026) of the GitHub package \pkg{metafrontieR} cited in the
+introduction. The table deliberately includes rows on which
+\CRANpkg{metafrontier} offers nothing: the standard (single-technology)
+Malmquist index, the smoothed DEA score bootstrap of Simar and Wilson, and
+the sample selection metafrontier are all better served elsewhere.
+
+```{r comparison, echo=FALSE}
+comp <- data.frame(
+  Feature = c("Deterministic metafrontier",
+              "Stochastic metafrontier",
+              "DEA-based metafrontier",
+              "Latent class metafrontier",
+              "Metafrontier Malmquist (O'Donnell et al. 2008)",
+              "Standard Malmquist index",
+              "Bootstrap TGR inference",
+              "DEA score bootstrap (Simar--Wilson)",
+              "Murphy--Topel correction",
+              "Panel SFA (time-varying)",
+              "Unbalanced panel SFA",
+              "Sample selection MF",
+              "Directional distance functions",
+              "Hyperbolic (graph) efficiency",
+              "FDH technology",
+              "Slack analysis",
+              "ggplot2 visualisation",
+              "External model import",
+              "S3 model methods"),
+  metafrontier = c("LP + QP", "Yes", "Yes", "Yes", "Yes", "No",
+                   "Yes", "No", "Yes", "Yes", "Yes", "No",
+                   "Yes (b)", "Yes", "Yes", "Yes", "Yes",
+                   "SFA fits", "38"),
+  smfa = c("LP + QP", "Yes", "No", "Yes", "No", "No",
+           "No", "No", "No", "No", "No", "Yes",
+           "No", "No", "No", "No", "No", "sfaR only", "10"),
+  deaR = c("No", "No", "Manual (a)", "No", "No", "Yes",
+           "No", "Yes", "No", "No", "No", "No",
+           "Yes", "No", "Yes", "Yes", "Yes", "No", "Yes"),
+  Benchmarking = c("No", "No", "Manual (a)", "No", "No", "Yes",
+                   "No", "Yes", "No", "No", "No", "No",
+                   "Yes", "Yes", "Yes", "Yes", "No", "No", "Yes"),
+  frontier = c("No", "No", "No", "No", "No", "No",
+               "No", "No", "No", "Yes", "Yes", "No",
+               "No", "No", "No", "No", "No", "N/A", "Yes"),
+  sfaR = c("No", "No", "No", "No", "No", "No",
+           "No", "No", "No", "No", "No", "No",
+           "No", "No", "No", "No", "No", "N/A", "Yes"),
+  sfa = c("No", "No", "No", "No", "No", "No",
+          "No", "No", "No", "Yes", "Yes", "No",
+          "No", "No", "No", "No", "No", "N/A", "Basic"),
+  check.names = FALSE
+)
+knitr::kable(comp,
+             caption = "Feature comparison across R packages for efficiency and metafrontier analysis. N/A means not applicable (the package is a model engine, not a metafrontier framework); notes (a) and (b) are explained in the text below.",
+             align = "lccccccc",
+             booktabs = TRUE, linesep = "") |>
+  ktbl()
+```
+
+Two cells of Table \@ref(tab:comparison) carry notes. Note (a): pooled-reference
+scoring can be assembled manually in \CRANpkg{deaR} and \CRANpkg{Benchmarking}
+by scoring against a user-supplied reference set, but neither package forms,
+summarises, or provides inference for technology gap ratios. Note (b): custom
+direction vectors and firm-specific direction matrices are supported;
+\CRANpkg{deaR} (`model_dir()`) and \CRANpkg{Benchmarking} (`DIRECT`) also
+accept custom directions.
+
+The \CRANpkg{metafrontier} package is, to our knowledge, the only \proglang{R}
+package that combines SFA-based and DEA-based metafrontier analysis with
+the metafrontier Malmquist decomposition and TGR-specific inference in a
+single framework. Several complementary strengths of the other packages
+deserve acknowledgement. The \CRANpkg{smfa} package [@smfa] offers both
+deterministic criteria and two stochastic formulations, implements latent
+class group frontiers via \CRANpkg{sfaR}'s `sfalcmcross()`, and uniquely
+provides the sample selection metafrontier of @greene2010 for non-random
+group composition. The \CRANpkg{deaR} package [@deaR] provides a broad DEA
+toolkit (including fuzzy DEA and the Simar--Wilson bootstrap) that extends
+well beyond metafrontier analysis. The \CRANpkg{sfaR} [@sfaR] and
+\CRANpkg{frontier} [@frontier] packages remain leading engines for
+stochastic frontier estimation, with \CRANpkg{sfaR} in particular
+supporting ten inefficiency distributions against the three implemented
+here; the newer \CRANpkg{sfa} package [@sfa] provides a recent alternative
+with flexible panel specifications. The \CRANpkg{metafrontier} package's
+interoperability and engine layers are designed to complement rather than
+replace these estimators.
+
+What does unification add beyond convenience? Two things. First, the three
+estimators return identical S3 objects, so cross-method robustness checks,
+as demonstrated in the real-data illustration of Section `r if(knitr::is_latex_output()) "\\@ref(sec:real-data)" else "[4.6](#sec:real-data)"`, require no
+glue code; discrepancies between a deterministic envelope, a stochastic
+second stage, and a nonparametric pooled frontier are themselves
+diagnostic. Second, and more fundamentally, the technology gap ratio is a
+*generated* quantity: it compares two estimated frontiers, so its sampling
+uncertainty is not available from any single-frontier package. The
+inference layer built around it (the TGR bootstrap of `boot_tgr()` and the
+Murphy--Topel correction for the stochastic metafrontier's
+generated-regressor problem) exists, to our knowledge, in no other
+\proglang{R} package, and is the part of the workflow that cannot be
+assembled from the engines in Table \@ref(tab:comparison).
+
+# Summary and future directions {#sec:summary}
+
+The \CRANpkg{metafrontier} package provides a unified \proglang{R} framework
+for metafrontier production function analysis. Its principal contribution
+is the integration of three metafrontier approaches (deterministic,
+stochastic, and DEA) with the metafrontier Malmquist decomposition,
+bootstrap inference, Murphy--Topel correction, and latent class estimation
+under a consistent S3 interface. All simulations complete in under ten
+minutes in the computational environment described in Section `r if(knitr::is_latex_output()) "\\@ref(sec:computational-details)" else "[3.4](#sec:computational-details)"`, and
+Section `r if(knitr::is_latex_output()) "\\@ref(sec:basic-usage)" else "[4](#sec:basic-usage)"` demonstrates the package on real data from \CRANpkg{sfaR};
+additional empirical examples are provided in the package vignette
+(`vignette("metafrontier")`).
+
+Three limitations should be noted. First, the SFA-based metafrontiers
+require the researcher to commit to a parametric functional form (for
+example Cobb--Douglas or translog) through the model formula, and the same
+form is imposed on every group frontier and on the metafrontier envelope;
+the package performs no specification search, so a misspecified form
+propagates from the group frontiers into the estimated technology gap
+ratios. The DEA-based estimators avoid this choice, at the cost of
+ignoring statistical noise. Second, the package estimates production
+frontiers only ($\varepsilon = v - u$); cost frontier support
+($\varepsilon = v + u$) is planned. Third, in the SFA-based Malmquist
+decomposition (`method = "sfa"` in `malmquist_meta()`), the distance of
+each observation to the metafrontier is approximated by evaluating all
+estimated group frontiers at that observation's inputs and taking the
+largest predicted output, rather than by re-estimating the enveloping
+metafrontier of Equation \@ref(eq:deterministic) in each period. This
+pointwise maximum coincides with the metafrontier of @odonnell2008
+wherever one group frontier dominates all others, but can understate it
+where group frontiers cross, so the resulting TGC and TC$^*$ components
+are approximate; the DEA-based Malmquist (the default) computes exact
+distances to the pooled frontier and should be preferred when an exact
+decomposition is required. The function documents this approximation and
+announces it at run time. Planned extensions include a sample selection
+metafrontier, spatial SFA metafrontiers, a Bayesian estimator propagating
+first-stage uncertainty, and multiplicatively complete, transitive
+(proper) TFP indexes such as the Färe--Primont and Lowe indexes
+[@odonnell2012; @odonnell2018].
+
+The package is available on CRAN
+(\url{https://CRAN.R-project.org/package=metafrontier}) and is developed
+on GitHub at \url{https://github.com/iik1/metafrontier}.
+
+# Acknowledgements and declaration of tool use {-}
+
+The author thanks the editor and three anonymous reviewers for comments
+that substantially improved both the package and this article. Large
+language model tools (Anthropic Claude) were used to assist with drafting
+portions of the manuscript text and package documentation and with code
+review. All methods, code, results, and the final wording were written
+and verified by the author and remain the author's sole responsibility.
