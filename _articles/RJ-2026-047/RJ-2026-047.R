@@ -13,7 +13,8 @@ library(GET)
 set.seed(90210)
 
 # Set LDMPPR_RJ_USE_PRECOMPUTED=false to force full recomputation.
-use_precomputed <- !tolower(Sys.getenv("LDMPPR_RJ_USE_PRECOMPUTED", "true")) %in% c("false", "0", "no", "n")
+#use_precomputed <- !tolower(Sys.getenv("LDMPPR_RJ_USE_PRECOMPUTED", "true")) %in% c("false", "0", "no", "n")
+use_precomputed <- TRUE
 
 xref <- function(label) {
   if (knitr::is_html_output()) {

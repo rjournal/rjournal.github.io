@@ -2,7 +2,7 @@
 # Please edit RJ-2026-052.Rmd to modify this file
 
 ## ----setup, include=FALSE-----------------------------------------------------
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, 
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE,
                       dev = "png",
                       dpi = if (knitr::is_latex_output()) 600 else 96,
                       out.width = if (knitr::is_latex_output()) "1\\linewidth" else "100%")
