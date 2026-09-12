@@ -1,0 +1,988 @@
+---
+title: 'xplainfi: Feature Importance and Statistical Inference for Machine Learning
+  in R'
+date: '2026-09-30'
+abstract: |
+  We introduce xplainfi, an R package built on top of the mlr3 ecosystem for global, loss-based feature importance methods for machine learning models. Various feature importance methods exist in R, but significant gaps remain, particularly regarding conditional importance methods and associated statistical inference procedures. The package implements permutation feature importance, conditional feature importance, relative feature importance, leave-one-covariate-out, and generalizations thereof, and both marginal and conditional Shapley additive global importance methods. It provides a modular conditional sampling architecture based on Gaussian distributions, adversarial random forests, conditional inference trees, and knockoff-based samplers, which enable conditional importance analysis for continuous and mixed data. Statistical inference is available through multiple approaches, including variance-corrected confidence intervals and the conditional predictive impact framework. We demonstrate that xplainfi produces importance scores consistent with existing implementations across multiple simulation settings and learner types, while offering competitive runtime performance. The package is available on CRAN and provides researchers and practitioners with a comprehensive toolkit for feature importance analysis and model interpretation in R.
+draft: no
+author:
+- name: Lukas Burk
+  affiliation: 1) Leibniz Institute for Prevention Research and Epidemiology - BIPS
+    2) LMU Munich, Department of Statistics 3) Munich Center for Machine Learning
+    (MCML) 4) University of Bremen
+  address: Achterstraße 30, 28359 Bremen, Germany
+  url: https://lukasburk.de
+  orcid: 0000-0001-7528-3795
+  email: burk@leibniz-bips.de
+- name: Fiona Katharina Ewald
+  affiliation: 1) LMU Munich, Department of Statistics 2) Munich Center for Machine
+    Learning (MCML)
+  address:
+  - Department of Statistics
+  - Chair of Statistical Learning and Data Science
+  orcid: 0009-0002-6372-3401
+  email: fiona.ewald@lmu.de
+- name: Giuseppe Casalicchio
+  affiliation: 1) LMU Munich, Department of Statistics 2) Munich Center for Machine
+    Learning (MCML)
+  address:
+  - Department of Statistics
+  - Chair of Statistical Learning and Data Science
+  orcid: 0000-0001-5324-5966
+- name: Marvin N. Wright
+  affiliation: 1) Leibniz Institute for Prevention Research and Epidemiology - BIPS
+    2) University of Bremen
+  address: Achterstraße 30, 28359 Bremen, Germany
+  orcid: 0000-0002-8542-6291
+- name: Bernd Bischl
+  affiliation: 1) LMU Munich, Department of Statistics 2) Munich Center for Machine
+    Learning (MCML)
+  address:
+  - Department of Statistics
+  - Chair of Statistical Learning and Data Science
+  orcid: 0000-0001-6002-6980
+type: package
+output:
+  rjtools::rjournal_article:
+    self_contained: yes
+    toc: no
+bibliography: RJreferences.bib
+header-includes: \usepackage{pifont}
+date_received: '2026-03-08'
+volume: 18
+issue: 3
+slug: RJ-2026-054
+
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  cache = TRUE,
+  out.width = "95%"
+)
+# Reduce mlr3 log output
+lgr::get_logger("mlr3")$set_threshold("warn")
+# Final render: disable chunk caching so execution runs top-to-bottom from the
+# seeded example chunk, making results reproducible on identical package versions.
+# Author with caching on; render final with XPLAINFI_PRODUCTION=true.
+if (Sys.getenv("XPLAINFI_PRODUCTION") == "true") {
+  knitr::opts_hooks$set(cache = function(o) { o$cache <- FALSE; o })
+}
+```
+
+# Introduction 
+
+In machine learning (ML), understanding feature-target relationships is increasingly valued alongside predictive accuracy.
+Complex models can capture nonlinear patterns but are typically considered "black box" models due to their opaque internal mechanisms, which has motivated the development of interpretable machine learning (IML) methods [@molnar2020interpretable; @murdoch2019definitions].
+Among these, feature importance (FI) methods aim to quantify the relevance of input features for a given prediction target, such as a fixed model, the learning algorithm that produced it, or the underlying data-generating process, thereby providing insight into what drives predictive behavior [@murdoch2019definitions; @fisher2019allmodelsg].
+The applications range from increasing our understanding of a given data-generating process (DGP) to practical issues such as feature selection [@guyon2003introductionvariablea; @guidotti2018survey].
+
+We present \CRANpkg{xplainfi}, an R package that provides a unified interface for computing and comparing global, loss-based FI methods, which measure the change in predictive performance when features are removed, perturbed, or marginalized [@ewald2024guidefeatureb].
+Alternative approaches out of scope include local FI methods (i.e., FI values for individual predictions such as Shapley values [see @shapley1953value; @rozemberczki2022shapleyvalue]) and variance-based sensitivity measures, such as Sobol indices [@sobol2001globalsensitivitya].
+When we refer to FI methods from here on, we mean global, loss-based FI methods unless otherwise stated.
+Various FI methods are implemented across packages in both the R and Python ecosystems, but in the R ecosystem, some methods are completely absent.
+\CRANpkg{xplainfi} aims to fill this gap by providing a larger collection of FI methods than previously available, along with p-values and confidence intervals for FI uncertainty quantification, which are often needed in applications.
+The package is built on top of the \CRANpkg{mlr3} ecosystem [@lang2019mlr3moderna], which allows development to focus on the FI methods themselves without re-implementing common building blocks such as abstractions for learning algorithms, resampling, tuning, and pipelines [@binder2021mlr3pipelinesflexible].
+
+Because many real-world datasets exhibit dependent features, marginal, perturbation-based FI methods suffer from two distinct issues.
+First, breaking the dependence structure forces the model to extrapolate to implausible feature combinations, potentially yielding unreliable predictions and hence FI values [@hooker2021unrestrictedpermutationb].
+Second, importance is often distributed across dependent predictors (if they are reflected in the model), which is not necessarily a problem, but users need to be aware of it at the very least [@nicodemus2010behaviour; @debeer2020conditionalpermutation].
+Conditional importance methods address this by assessing performance changes under interventions that preserve feature dependencies [@watson2021testingconditional], yet remain underrepresented in available implementations.
+One challenge with these methods is the need for suitable conditional sampling methods, which is why \CRANpkg{xplainfi} provides multiple methods for continuous and mixed data.
+Both conditional importance methods and the ability to handle mixed data are motivated by common issues arising in practical statistical work and data analysis, and they are also areas of active research [see also @blesch2024conditionalfeature; @redelmeier2020explainingpredictive].
+To that end, we offer \CRANpkg{xplainfi} as a comprehensive, extensible tool to support these efforts.
+
+### Contributions
+
+\CRANpkg{xplainfi} provides a unified framework for FI methods built on the \CRANpkg{mlr3} ecosystem.
+Key contributions include:
+1) Implementation of many standard FI methods, including permutation feature importance (PFI) [@breiman2001randomforests], conditional feature importance (CFI) [@strobl2008conditionalvariablec; @debeer2020conditionalpermutation], leave-one-covariate-out (LOCO) [@lei2018distributionfreepredictivec], relative feature importance (RFI) [@konig2021relativefeatured], and both marginal and conditional SAGE (Shapley Additive Global importancE) [@covert2020understandingglobalb];
+2) Seamless integration with \CRANpkg{mlr3}'s learners, tasks, measures, and resampling strategies;
+3) A modular conditional sampling interface supporting Gaussian, adversarial random forests (ARF) [@watson2023adversarialrandom], conditional inference trees [@hothorn2006unbiasedrecursive], and knockoff-based samplers [@candes2018panninggoldd];
+4) The option to target model, learner, or DGP importance by leveraging \CRANpkg{mlr3}'s support for resampling, ensembling, and tuning;
+5) Uncertainty quantification via variance-corrected confidence intervals [@nadeau2003inferencegeneralization], observation-level LOCO inference [@lei2018distributionfreepredictivec], and the CPI testing framework [@watson2021testingconditional].
+
+<!-- Workaround for HTML + PDF linked section references based on suggestions by Achim Zeilleis https://github.com/rjournal/rjtools/issues/53#issuecomment-1459117691 -->
+
+The paper is structured as follows: First, we give a brief overview of the implemented global, loss-based FI methods and ways to quantify their uncertainty in Section&nbsp;[2](#sec-fi-methods).
+In Section&nbsp;[3](#sec-related), we present other R and Python packages that implement FI methods.
+Section&nbsp;[4](#sec-intro-xplainfi) gives an introduction to \CRANpkg{xplainfi} and showcases core functionality.
+Example scenarios, along with comparisons to existing implementations based on FI values and runtime, are provided in Section&nbsp;[5](#sec-benchmark).
+We conclude with a discussion and outlook on \CRANpkg{xplainfi} in Section&nbsp;[6](#sec-discussion).
+
+Reproducibility and availability: \CRANpkg{xplainfi} is on CRAN and maintained on [GitHub](https://github.com/mlr-org/xplainfi).
+The [GitHub repository](https://github.com/slds-lmu/paper_2025_xplainfi_benchmark) contains all the code required to reproduce the results. The code and results are also included in the online supplement.
+
+
+# Implemented feature importance methods {#sec-fi-methods}
+
+We briefly review the FI methods implemented in \CRANpkg{xplainfi}, drawing on the comprehensive overview in @ewald2024guidefeatureb, to which we refer for a broader discussion and additional references.
+We also summarize the statistical inference procedures supported by the package.
+Rather than providing a full theoretical treatment, we focus on the estimands and quantities that are required for computation and implementation.
+
+**Notation**: We assume the supervised learning setting with $n$ observations of $p$ features $X = (X_1, \ldots, X_p)$ and a target $Y$.
+A model $\hat{f}$ is trained to predict $Y$ from $X$, and its performance is evaluated using a loss function $L(Y, \hat{f}(X))$.
+The *feature of interest* (FOI) is denoted $X_j$, with $X_{-j}$ representing all remaining features.
+More generally, $X_S$ denotes a subset of features indexed by $S \subseteq \{1, \ldots, p\}$.
+Feature importance for feature $j$ is denoted $\text{FI}_j$, with specific methods indicated by subscripts (e.g., $\text{PFI}_j$, $\text{LOCO}_j$).
+
+One central distinction between FI methods is whether they target *marginal* (unconditional) association between a feature and the target, $X_j \not\!\perp\!\!\!\perp Y$, or *conditional* association given a set of features $G$, $X_j \not\!\perp\!\!\!\perp Y \mid X_G$ [@strobl2008conditionalvariablec; @watson2021testingconditional].
+Many well-established model-independent methods target marginal association (e.g., correlation- or information-theoretic measures) [@li2018featureselection; @bommert2020benchmarkfilter].
+
+In the paper and \CRANpkg{xplainfi}, we primarily focus on conditional association of $X_j$ with $Y$, often with the important special case of conditioning on all remaining features $X_{-j}$.
+This captures the *incremental* predictive value of a feature when the others are already available, and it entails a substantially harder estimation problem than marginal association, typically requiring predictive models and procedures that respect the joint structure of the features.
+Conditioning on arbitrary feature subsets is also supported by \CRANpkg{xplainfi}, e.g., via relative feature importance (RFI) (see Section&nbsp;[2.2](#sec-fi-perturbation)).
+Importantly, the loss-based FI methods considered below quantify *predictive* importance (or reliance) under a particular intervention scheme (e.g., permutation, conditional resampling, refitting, or marginalization) and are therefore not equivalent to generic measures of statistical dependence.
+For certain population-level (oracle) importance parameters---including refitting-based measures in the framework of @williamson2023generalframeworkb under suitable losses---a zero importance parameter can be equivalent to conditional independence, but FI does not imply a causal effect of $X_j$ on $Y$, and estimated FI values can depend on the chosen intervention distribution as well as the presence of correlated or redundant predictors.
+
+## Estimands and statistical inference {#sec-fi-estimands}
+
+There are three possible targets of an FI analysis, corresponding to distinct estimands: 
+a fitted *model*, a given *learner*, or the true prediction function regarding the DGP, also called population-level inference [see also @chiaburu2024uncertainty; @molnar2023relatingpartialc].
+*Model importance* analyzes a single, fixed model and quantifies how it uses features for prediction.
+*Learner importance* targets the learning algorithm which produces the model when training data is sampled from the DGP of a given sample size.
+Unlike model importance, it captures how much models of this learner class rely on each feature on average, and requires refitting via resampling across multiple model instantiations on different test data.
+*DGP importance* aims to explain the true feature-target relationship by analyzing the population-level prediction function (or Bayes-optimal predictor), e.g., $f_0(x) = \mathbb{E}[Y \mid X = x]$ under $\ell_2$ loss.
+As we usually never have direct access to this Bayes-optimal predictor in practical applications, this function must then be approximated by a strong learner in an AutoML-like fashion, e.g., by optimizing over multiple model classes and hyperparameters [@thornton2013autoweka] or by constructing heterogeneous stacking ensembles [@erickson2020autogluontabular;@vanderlaan2007superlearner].
+In practice this is very similar to *learner importance*, while model building is usually more expensive.
+
+Statistical inference can be performed at each of the three estimand levels.
+At the model level, hypothesis tests can be based on observation-wise losses on a single test set.
+At the learner level, variance-corrected tests can be applied to paired loss differences across resampling iterations.
+Since FI estimation inherently involves random components (e.g., from data resampling, permutation, or stochastic learners), repeated evaluation is generally needed to quantify this uncertainty, just as cross-validation is needed for reliable performance estimation.
+\CRANpkg{xplainfi} provides dedicated inference methods at the model and learner levels, which therefore also include
+population-level inference.
+
+When evaluating multiple FOIs simultaneously, any of these inference procedures introduces a multiple-testing problem.
+Depending on the use case, it is necessary to control either the family-wise error rate (FWER) via methods such as the Bonferroni-Holm correction, or to control the false-discovery rate (FDR) with methods such as the Benjamini-Hochberg or Benjamini–Yekutieli procedures, where the latter is valid under arbitrary dependence structures [@holm1979simplesequentially; @benjamini1995controllingfalsea; @benjamini2001controlfalse].
+In an exploratory setting, it is often sufficient to control the FDR, which controls the expected proportion of false positives among all rejections (e.g., 1 out of 20 features deemed important), whereas controlling the FWER is more suitable for confirmatory settings in which avoiding false positives takes priority.
+
+Regardless of the estimand, loss-based FI methods are usually constructed by "removing" the information about the FOI(s) and calculating the difference in expected loss (with vs. without this information).
+Following @ewald2024guidefeatureb, we group the FI methods by the strategy used to remove information: feature perturbations, model refitting, or Shapley values.
+
+## Methods based on feature perturbations {#sec-fi-perturbation}
+
+The most well-known method in this category is *permutation feature importance* (PFI), originally introduced by @breiman2001randomforests for random forests.
+PFI targets the effect of breaking the link between $X_j$ and the rest of the joint distribution at evaluation time, holding $\hat{f}$ fixed.
+The model is fit once but evaluated twice: once with the original features and once with the FOI $X_j$ replaced by a perturbed version $\tilde{X}_j$.
+In PFI, $\tilde{X}_j$ is derived by simply shuffling $X_j$ in-place, which keeps the marginal distribution of $X_j$ intact.
+Importance is then measured as the difference in performance between the original model prediction and the model prediction using the uninformative replacement for the FOI.
+Formally,
+
+\begin{equation}
+\text{PFI}_j = \mathbb{E}\left[L\left(Y, \hat{f}(\tilde{X}_j, X_{-j})\right)\right] - \mathbb{E}\left[L\left(Y, \hat{f}(X)\right)\right].
+(\#eq:pfi)
+\end{equation}
+
+While PFI is computationally cheap, requiring only model predictions and simple shuffling of feature vectors, it breaks dependencies not only between the FOI and the target, but also between the FOI and all other features.
+This can yield implausible feature combinations and misleading attributions under feature dependence [see @hooker2021unrestrictedpermutationb].
+*Conditional permutation feature importance* (CFI), introduced by @strobl2008conditionalvariablec, addresses this by perturbing the FOI conditional on a set of other features: $X_j$ is replaced by $\tilde{X}_j$ sampled from the conditional distribution of $X_j \mid X_{-j}$, thereby preserving (parts of) the dependence structure among the predictors.
+@konig2021relativefeatured generalize PFI and CFI to *relative feature importance* (RFI) by specifying a conditioning set $G$ for which $\tilde{X}_j$ retains conditional dependencies, i.e., $\tilde{X}_j$ is sampled from the conditional distribution of $X_j \mid X_G$; this yields CFI for $G = -j$ and PFI for $G = \emptyset$.
+
+Since the permutation (or sampling) step introduces randomness, multiple repetitions should be used to stabilize the estimate of the importance score.
+In \CRANpkg{xplainfi}, this is controlled via the `n_repeats` parameter, with the final importance score averaged across repetitions.
+In terms of inference, \CRANpkg{xplainfi} allows applying the corrected t-test approach proposed by @nadeau2003inferencegeneralization to paired loss differences across resampling iterations, which can be used to quantify uncertainty of (learner-level) FI estimates based on repeated data splits.
+@molnar2023relatingpartialc evaluate and recommend this approach for PFI in combination with subsampling or bootstrapping with 10--15 iterations.
+@schulz-kumpel2025constructingconfidence recommend for this test a train-test ratio of 0.9 and 25 subsampling iterations.
+\CRANpkg{xplainfi} lets the user apply the inference method to all FI methods, while warning the user if fewer than 10 bootstrap or subsampling iterations are used.
+
+Beyond conditional permutation-based approaches, the conditional predictive impact (CPI) framework proposed by @watson2021testingconditional provides a dedicated hypothesis test for conditional feature importance.
+\CRANpkg{xplainfi} offers both the original version based on the knockoff framework [@candes2018panninggoldd] and an ARF-based version for mixed data [@blesch2025conditionalfeaturea].
+
+The conditional sampling required by CFI, RFI, and conditional SAGE (described below) can be performed using different approaches, each with distinct trade-offs.
+The Gaussian approach assumes multivariate normality, making it fast and straightforward but limited to continuous features.
+Conditional inference trees provide a nonparametric alternative that handles mixed feature types, as proposed by @redelmeier2020explainingpredictive for conditional distribution estimation (e.g., for conditional Shapley-style estimands) and implemented in \CRANpkg{shapr}.
+Adversarial random forests offer flexible density estimation and conditional sampling for mixed data at a higher computational cost [@watson2023adversarialrandom].
+Finally, knockoff sampling provides a specialized approach that enables valid inference through the CPI framework, but implementations for mixed data are less common [@candes2018panninggoldd; @blesch2024conditionalfeature].
+Gaussian, conditional inference tree, and ARF samplers can be applied to all conditional importance methods in \CRANpkg{xplainfi}, while knockoff sampling is only compatible with CFI.
+
+## Methods based on model refitting {#sec-fi-refit}
+
+A more intuitive approach to remove an FOI's information is to refit a model without the FOI (using the same learner) and then measure the performance difference between the reduced and the original (full) model.
+The best-known method following this approach is the *leave-one-covariate-out* (LOCO) [@lei2018distributionfreepredictivec], which analyzes a single FOI $X_j$.
+If one is interested in the importance of a set of features at once, 
+this is known as *leave-one-group-out* (LOGO) [@au2022grouped].
+@williamson2023generalframeworkb proposed a general framework for refitting-based methods, including a dedicated statistical inference method.
+In \CRANpkg{xplainfi}, we use the terms LOCO and WVIM (*Williamson's variable importance measure*; @ewald2024guidefeatureb proposed the acronym).
+
+This approach is conceptually simple: To evaluate an FOI's importance, the model in question is fit twice, once with and once without the FOI.
+Again, the resulting performance difference gives a straightforward indication of the predictive value "lost" by leaving out feature $X_j$:
+
+\begin{equation}
+\text{LOCO}_j = \mathbb{E}\left[L\left(Y, \hat{f}_{-j}(X_{-j})\right)\right] - \mathbb{E}\left[L\left(Y, \hat{f}(X)\right)\right],
+(\#eq:loco)
+\end{equation}
+
+where $\hat{f}_{-j}$ denotes the model fitted without feature $X_j$.
+Model refitting, of course, increases the computational cost in comparison to FI methods based on perturbations, where only one model needs to be fit as the basis for all subsequent calculations.
+This can be problematic when using LOCO (or a generalization thereof) on datasets with many features, especially when combined with expensive learners.
+
+The inverse operation, *leave-one-covariate-in* (LOCI), trains models with only a single feature and compares performance against a featureless baseline to measure the increase in performance.
+While theoretically consistent, LOCI is rarely useful in practice as it essentially investigates univariate associations between the target and a single feature, for which more appropriate methods are available (see above).
+The group version of LOCI (also included in the WVIM framework) is more useful, where a subset of the features is "left in", chosen, for example, based on domain knowledge about the data.
+
+For statistical inference on LOCO, @lei2018distributionfreepredictivec suggest an observation-level nonparametric test using the $\ell_1$ loss differences on a test set, which is implemented in \CRANpkg{xplainfi} in a generalized manner that also enables other losses and tests.
+The corrected t-test approach mentioned in the previous section is also available for LOCO, but it has not been explicitly investigated in this context.
+
+## Methods based on Shapley values {#sec-fi-shapley}
+
+Shapley values originate in cooperative game theory [see @shapley1953value] and, in ML, are often used for "local" explanations, i.e., for explaining individual model predictions for selected data instances.
+But several methods have also been proposed to apply the underlying principle to global FI, including SFIMP (*Shapley Feature IMPortance*) by @casalicchio2019visualizingfeatureb and SPVIM (*Shapley Population Variable Importance Measure*) by @williamson2020efficientnonparametrica, which is related to the more widely adopted SAGE (*Shapley Additive Global importancE*) by @covert2020understandingglobalb.
+\CRANpkg{xplainfi} implements SAGE, which distributes the overall model loss across the features based on their individual contributions, yielding importance scores that sum to the overall model loss.
+The SAGE value for feature $X_j$ is defined as the weighted average of its marginal contributions to feature subsets $S$, also called coalitions, based on a value function $v$:
+
+\begin{equation}
+\text{SAGE}_j = \sum_{S \subseteq P \setminus \{j\}} \frac{|S|!(p-|S|-1)!}{p!} \left[ v(S \cup \{j\}) - v(S) \right].
+(\#eq:sage)
+\end{equation}
+
+Here, $v(S)$ measures how much better the model performs when the information of the features in $S$ is used for prediction (while features outside $S$ are integrated out) compared to a featureless baseline.
+*Marginal SAGE* (mSAGE) uses the marginal distribution, resulting in
+
+\begin{equation}
+v_m(S) = \mathbb{E}\left[L(Y, \hat{f}_\emptyset)\right] - \mathbb{E}\left[L\left(Y, \mathbb{E}_{X_{-S}}\left[\hat{f}(X_S, X_{-S})\right]\right)\right],
+(\#eq:sage-marginal)
+\end{equation}
+
+and *conditional SAGE* (cSAGE) uses the conditional distribution, replacing $\mathbb{E}_{X_{-S}}$ with $\mathbb{E}_{X_{-S}|X_S}$ in Equation \@ref(eq:sage-marginal) to yield $v_c(S)$.
+
+Since exact computation requires evaluating all possible feature coalitions ($2^p$), implementations must rely on approximations.
+\CRANpkg{xplainfi} implements the permutation estimator described by @covert2020understandingglobalb, where the feature coalitions are built from one of `n_permutations` shuffles of the feature vector.
+The empty coalition is always evaluated, resulting in a total number of evaluated coalitions of $1 + p \cdot \mathtt{n\_permutations}$.
+The variance of SAGE value estimates along the evaluated permutations is also used to define an "early stopping" criterion to avoid excessive computations.
+@covert2020understandingglobalb use these variances to construct confidence-like intervals, but we do not include them as statistical inference methods because their coverage is unclear.
+Additionally, the marginalization step of the estimation requires a subset of size `n_samples` for each data instance, and larger values yield more stable SAGE value estimates but incur additional time and memory costs for large datasets.
+
+# Related work {#sec-related}
+
+```{r tab-related-method}
+checkmark <- "\u2714\uFE0F"
+
+if (knitr::is_latex_output()) {
+  checkmark <- "\\ding{51}"
+}
+
+pcheckmark <- sprintf("(%s)", checkmark)
+
+tibble::tribble(
+  ~` `                    , ~xplainfi , ~vimp     , ~vip, ~iml, ~hstats, ~flashlight, ~DALEX  , ~`fippy` ,    ~`sage` ,
+  "PFI"                   , checkmark , ""        , checkmark , checkmark, checkmark, checkmark, checkmark ,  checkmark     , ""   ,
+  "CFI"                   , checkmark , ""        , "", "", "", "", ""                 ,  checkmark     , ""           ,
+  "RFI"                   , checkmark , ""        , "", "", "", "", ""                 ,  checkmark     , ""           ,
+  "LOCO"                  , checkmark , checkmark , "", "", "", "", ""                 ,  ""            , ""           ,
+  "WVIM"                  , checkmark , checkmark , "", "", "", "", ""                 ,  ""            , ""           ,
+  "mSAGE"                 , checkmark , ""        , "", "", "", "", ""                 ,  checkmark     , checkmark    ,
+  "cSAGE"                 , checkmark , ""        , "", "", "", "", ""                 ,  checkmark     , pcheckmark   ,
+  "SPVIM"                 , ""        , checkmark , "", "", "", "", ""                  ,  ""            , ""           ,
+  "Model importance"      , checkmark , checkmark , checkmark,checkmark,checkmark,checkmark,checkmark ,  checkmark     , checkmark    ,
+  "Learner importance"    , checkmark , checkmark , "", "", "", "", ""                 ,  pcheckmark    , ""           ,
+  "Statistical inference" , checkmark , checkmark , "", "", "", "", ""                 ,  checkmark     , ""           ,
+) |>
+  kableExtra::kbl(
+    escape = FALSE,
+    booktabs = TRUE,
+    caption = "Overview of FI methods and capabilities in xplainfi and related R packages and selected Python packages. A checkmark indicates an available feature, and a checkmark in parentheses indicates a feature is not directly offered as such but available in either a limited or indirect fashion. Model importance refers to analyzing a pre-fit model; learner importance refers to refitting models via resampling. Statistical inference denotes the availability of confidence intervals or hypothesis tests for importance estimates.",
+    linesep = "", 
+    align = c("l", rep("c", 9))
+  ) |>
+  kableExtra::kable_styling(latex_options = "scale_down") |>
+  kableExtra::column_spec(8, border_right = TRUE) |>
+  kableExtra::pack_rows("Methods", 1, 8) |>
+  kableExtra::pack_rows("Capabilities", 9, 11)
+```
+
+Various R packages on CRAN implement one or more FI methods.
+We compare them along two dimensions: 
+(1) the *scope of FI methods* they provide, and 
+(2) whether they support *model importance* (analyzing a single pre-fit model) or also *learner importance* via resampling and refitting (see Section&nbsp;[2](#sec-fi-methods)).
+Table \@ref(tab:tab-related-method) gives a comparative overview.
+
+\pkg{vip} [@greenwell2020variable] requires a pre-fit model and provides model-specific importance extraction, PFI, a variance-based method ("FIRM"), and a Shapley-based measure based on the mean absolute Shapley/SHAP values per feature, i.e., an aggregate of per-observation feature attributions of the model prediction.
+Unlike loss-based FI methods such as PFI and SAGE, both FIRM and the Shapley-based importance in \pkg{vip} summarize importance on the model-output (prediction) scale rather than via changes in loss.
+It supports a wide range of model classes and offers repeated permutations and optional subsampling of the evaluation data, but does not refit models; 
+accordingly, it targets model importance.
+Similarly, \CRANpkg{iml} (no longer actively developed) operates on pre-fit models via a `Predictor` wrapper and provides PFI alongside other IML methods such as feature effects, interaction statistics, and local explanations.
+\CRANpkg{DALEX} likewise wraps pre-fit models via an explainer object; 
+its PFI implementation is provided by the companion package \CRANpkg{ingredients}, complemented by local explanations and feature-effect visualizations.
+\CRANpkg{hstats} provides PFI alongside H-statistics for interaction detection, also operating on pre-fit models.
+\CRANpkg{flashlight} wraps pre-fit models in an explainer abstraction and provides model-agnostic PFI, interaction-strength measures based on Friedman's $H$-statistics for interaction detection, as well as Shapley-based importance via mean absolute (approximate) SHAP feature attributions aggregated across observations.
+It supports side-by-side comparison of multiple fitted models via the `multiflashlight` function, which can also be used to compare models that were manually refit on different resampling splits.
+However, it does not orchestrate refitting/resampling or aggregate fold-wise importance into a single learner importance estimate.
+The \CRANpkg{mlr3} ecosystem includes \CRANpkg{mlr3filters}, which provides PFI with resampling support within its feature-selection framework, but is designed for feature ranking rather than importance analysis with uncertainty quantification.
+Generally, PFI is also available in many model-specific implementations (e.g., in \CRANpkg{ranger} and \CRANpkg{randomForestSRC} for random forests).
+
+To the best of our knowledge, there is no general-purpose, model-agnostic R implementation of CFI or RFI that mirrors the kind of model-wrapping interfaces available for PFI.
+\CRANpkg{cpi} implements Conditional Predictive Impact (CPI), a dedicated conditional-importance testing framework based on knockoff sampling [@watson2021testingconditional].
+It is tied to the knockoff construction rather than providing a general conditional-sampling interface for CFI/RFI and focuses on hypothesis testing (p-values and confidence intervals) rather than a broad FI computation framework.
+\CRANpkg{permimp} implements a version of CFI but is restricted to tree-based methods and is therefore not model-agnostic.
+
+\CRANpkg{vimp} takes a different approach: rather than evaluating a pre-fit model, it refits learners for each evaluated feature subset using the \CRANpkg{SuperLearner} framework, which automatically ensembles prediction models to approximate the Bayes-optimal predictor [@williamson2023generalframeworkb].
+This targets population-level importance with valid confidence intervals and hypothesis tests.
+^[But note that the \CRANpkg{SuperLearner} interface also allows using only a single learner, which can then be analyzed for learner importance with \CRANpkg{vimp}.]
+It implements what it calls "conditional VIM" (equivalent to LOCO for individual FOIs), "marginal VIM" (equivalent to LOCI), and SPVIM (*Shapley Population Variable Importance Measure*; @williamson2020efficientnonparametrica).
+SPVIM is a Shapley-based method that, like SAGE, distributes the overall model performance across features according to their marginal contributions.
+Unlike SAGE, it replaces the marginalization or conditional sampling step with model refitting for each feature coalition, which can be slow, but uses Kernel SHAP [@covert2021improvingkernelshap] to approximate the Shapley values.
+\CRANpkg{vimp} also accepts pre-computed prediction vectors, which, in principle, allow a form of model importance, but with a notably different API compared to the model-wrapping approach of the other packages.
+It is tightly coupled with the \CRANpkg{SuperLearner} framework and offers less flexibility in resampling strategies.
+
+In the Python ecosystem, `scikit-learn` provides tree-based PFI and model-agnostic PFI, both operating on pre-fit estimators.
+The `ELI5` project similarly provides PFI as its only model-agnostic FI method [@eli5debug].
+`sage` offers the original (marginal) SAGE implementation with no dedicated interface for conditional sampling, but it allows supplying external surrogate models for the same purpose [@covert2020understandingglobalb; @covert2021improvingkernelshap].
+The `fippy` package in Python offers the closest overlap with \CRANpkg{xplainfi} in terms of perturbation-based methods, providing PFI, CFI, RFI, and both marginal and conditional SAGE using various sampling methods.
+It also supports simple Wald-type CIs for FI scores from the observation-based losses on test data if the chosen performance measure is decomposable.
+Overall, `fippy` is mainly centered around explaining pre-fit estimators on fixed evaluation data, but it also offers a (somewhat underdeveloped) `LearnerExplainer` which only supports CFI in combination with subsampling.
+
+In summary, \CRANpkg{xplainfi} offers the most comprehensive coverage of model-agnostic FI methods in R, including PFI, CFI, RFI, LOCO, WVIM, and both marginal and conditional SAGE, with flexible systems covering learners, metrics, resampling, and model/learner importance, including tuning and complex ensembles for the latter. 
+Among the compared R packages, only \CRANpkg{xplainfi} and \CRANpkg{vimp} provide statistical inference methods for their importance estimates, 
+including confidence intervals and hypothesis tests.
+In the Python ecosystem, `fippy` also provides inference, but limited to the model-importance setting.
+
+
+
+# An introduction to xplainfi {#sec-intro-xplainfi}
+
+```{r setup-architecture-chap}
+library(knitr)
+library(ggplot2)
+library(mlr3)
+library(mlr3learners)
+library(xplainfi)
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+options(digits = 3)
+options(scipen = 5)
+options(
+  datatable.print.keys = FALSE,
+  datatable.print.class = FALSE
+)
+```
+
+\CRANpkg{xplainfi}'s architecture is heavily inspired by the \CRANpkg{mlr3} framework and its extension packages, which also form the foundation of the underlying computational infrastructure.
+This means primarily two things for the user: 
+1. The package API is based on \CRANpkg{R6} classes with the corresponding object-oriented design, using \CRANpkg{mlr3} functions and concepts.
+2. \CRANpkg{xplainfi}'s basic ML capabilities are determined by the \CRANpkg{mlr3} ecosystem. 
+We begin with a brief introduction to \CRANpkg{mlr3} and then build from simple to more advanced applications of \CRANpkg{xplainfi}.
+For a complete overview, we refer to @mlr3book, and in particular to @mlr3bookdatabasicmodeling for a full introduction.
+
+## A brief introduction to mlr3
+
+\CRANpkg{mlr3} is an R package and an associated ecosystem of extension packages born from methodological and applied ML research.
+Its core components are abstractions for the building blocks of ML pipelines.
+Most importantly for our purposes, these include the objects shown in this short application example:
+
+```{r mlr3-demo}
+#| cache: true
+library(mlr3learners) # loads mlr3
+set.seed(2026)        # for reproducibility
+rr <- resample(
+  learner = lrn("classif.ranger", num.trees = 100),
+  task = tsk("penguins"),
+  resampling = rsmp("cv", folds = 5))
+rr$score(msr("classif.ce"))
+rr$aggregate(msr("classif.ce"))
+```
+
+Here, we applied the random forest classification learner as implemented in \CRANpkg{ranger} with 100 trees to the `penguins` dataset [@horst2020palmerpenguinspalmer] in a 5-fold cross-validation procedure, evaluated each iteration with the classification error (CE), and finally calculated the average CE across iterations.
+
+A `Task` (`tsk()`) encapsulates the data and the learning problem (regression, classification, etc.).
+Built-in tasks for common datasets are available, e.g., `tsk("penguins")`, and custom tasks can be created from any `data.frame`-like object, e.g., `as_task_regr(mtcars, target = "mpg")`.
+A `Learner` (`lrn()`) represents an ML algorithm with its hyperparameters.
+For example, `lrn("regr.ranger", num.trees = 100)` creates a random forest learner via \CRANpkg{ranger} using 100 trees.
+Learners can also be extended into full ML pipelines with preprocessing, feature extraction, or hyperparameter optimization [see @mlr3bookpreprocessing, @mlr3booktuning, @binder2021mlr3pipelinesflexible].
+A `Measure` (`msr()`) quantifies prediction performance, e.g., `msr("regr.mse")` for MSE for a regression task.
+Some measures are decomposable into observation-wise losses, which is relevant for certain inference methods described below.
+A `Resampling` (`rsmp()`) defines train-test splitting strategies, such as holdout, k-fold CV, bootstrapping, or subsampling, e.g., `rsmp("cv", folds = 5)`.
+
+The general \CRANpkg{xplainfi} API relies on these components and applies them to all implemented feature importance methods.
+For each feature importance method, the user first defines the method object by specifying a `Task` as the target for the analysis, a `Learner` for training and predictions, a `Resampling` strategy, and a `Measure` for evaluating predictions.
+The `$compute()` method is then called to perform the actual computational steps required for the individual importance method.
+Finally, importance scores can be accessed at different levels of aggregation:
+`$importance()` returns importance values per feature, aggregated across resampling iterations and repetitions (e.g., permutation repetitions in `PFI`);
+`$scores()` returns importance values per feature _and_ per resampling iteration and repetition, allowing for custom aggregation or visualization;
+and `$obs_loss()` returns observation-wise loss scores and importance values, if available for the current importance method and `Measure`.
+
+In the following, we showcase \CRANpkg{xplainfi} on an included DGP and refer to [the package website](https://mlr-org.github.io/xplainfi/) for additional tutorials and descriptions of this and other illustrative simulation settings.
+
+## Example 1: PFI with xplainfi
+
+We start by calculating PFI on a synthetic task with four normally distributed features `x1` through `x4`, two of which are correlated (`x1` and `x2`, $r = 0.8$) and two of which are independent (`x3` and `x4`).
+The DGP is $y = 2 x_1 + x_3 + \varepsilon$, ($\varepsilon \sim \mathcal{N}(0, 0.04)$), generated by the `sim_dgp_correlated()` simulation utility function included in the package, which produces a `Task` object.
+
+### Model importance
+
+The simplest use case is analyzing a single pre-trained model.
+We train a \CRANpkg{ranger} random forest on a holdout split and compute PFI on the corresponding test set:
+
+<!-- Caching the following chunk breaks it for some reason as the task backend is lost -->
+
+```{r pfi-demo-model}
+#| echo: true
+#| cache: false
+library(xplainfi)
+task <- sim_dgp_correlated(n = 5000, r = 0.8)
+lrn_ranger <- lrn("regr.ranger")
+resampling_ho <- rsmp("holdout")$instantiate(task)
+lrn_ranger$train(task, row_ids = resampling_ho$train_set(1))
+
+pfi_model <- PFI$new(
+  task = task, learner = lrn_ranger, measure = msr("regr.mse"),
+  resampling = resampling_ho, n_repeats = 10)
+pfi_model$compute()
+pfi_model$importance()
+```
+
+When a pre-trained learner is passed, \CRANpkg{xplainfi} detects this automatically and skips the training step, using the fitted model directly for prediction.
+The resampling must be instantiated with exactly one test set (i.e., holdout), as there is only one model to evaluate.
+This yields *model importance*: the importance scores reflect the behavior of this specific model on this specific test set.
+
+### Learner importance
+
+To capture importance at the *learner* level, we pass an untrained learner together with a resampling strategy.
+\CRANpkg{xplainfi} then trains a new model in each resampling iteration, and importance scores are aggregated across iterations:
+
+```{r pfi-demo-learner}
+#| echo: true
+pfi <- PFI$new(
+  task = task, learner = lrn("regr.ranger"), measure = msr("regr.mse"),
+  resampling = rsmp("cv", folds = 3), n_repeats = 10)
+pfi$compute()
+pfi$importance()
+```
+
+The construction of the `PFI` object and the computation are separated: calling `$new()` defines the setup, while `$compute()` performs the actual work.
+To access individual importance scores for each permutation and resampling iteration, the `$scores()` method is available, which stores the corresponding feature, iteration indices, and the associated measure value of the original (baseline) model and the model post perturbation:
+
+```{r pfi-demo-scores}
+head(pfi$scores(), 3)
+```
+
+Using resampling not only captures learner-level variation but also enables variance-corrected inference methods such as the Nadeau-Bengio correction (see Example 3), which require loss differences across resampling iterations and are therefore not available for model importance.
+
+All other components are easily swappable.
+Here we rerun PFI with XGBoost using the mean absolute error and subsampling instead:
+
+```{r pfi-demo-swap-1}
+#| echo: true
+pfi <- PFI$new(
+  task = task,
+  learner = lrn("regr.xgboost", eta = 0.01, nrounds = 1000),
+  measure = msr("regr.mae"),
+  resampling = rsmp("subsampling", repeats = 10),
+  n_repeats = 15)
+pfi$compute()
+pfi$importance()
+```
+
+A learner tuned by cross-validation integrates the same way.
+Because `auto_tuner()` wraps a learner into an ordinary \CRANpkg{mlr3} learner, it can be passed directly to any importance method: its hyperparameters are tuned by an inner cross-validation within each resampling iteration, while importance is evaluated on the outer split.
+Here, we tune the random forest's `min.node.size` over a small grid with 10 iterations before computing PFI:
+
+```{r pfi-demo-tuned}
+#| echo: true
+#| cache: false
+library(mlr3tuning)
+lrn_tuned <- auto_tuner(
+  learner = lrn("regr.ranger", min.node.size = to_tune(1, 50)),
+  resampling = rsmp("cv", folds = 3), measure = msr("regr.mse"),
+  tuner = tnr("grid_search", resolution = 10), term_evals = 10)
+
+pfi <- PFI$new(
+  task = task, learner = lrn_tuned, measure = msr("regr.mse"),
+  resampling = rsmp("cv", folds = 3), n_repeats = 10)
+pfi$compute()
+pfi$importance()
+```
+
+\CRANpkg{xplainfi}'s capabilities are extendable by the \CRANpkg{mlr3} ecosystem: any learner from \CRANpkg{mlr3learners} or `mlr3extralearners` [@fischer2025mlr3extralearnersexpanding] can be used, including integrated hyperparameter tuning via `to_tune()` tokens or `auto_tuner()` learners, preprocessing and other pipelines via \CRANpkg{mlr3pipelines}, or full AutoML systems [@mlr3bookadvancedtuning; @mlr3bookpipelinestuning].
+Furthermore, any metric from \CRANpkg{mlr3measures} is available.
+The trained models and baseline results are retained via `$resample_result` for further analysis.
+
+## Example 2: CFI and conditional samplers
+
+As discussed in Section&nbsp;[2](#sec-fi-methods), PFI can produce misleading results when features are correlated.
+CFI addresses this by sampling from the conditional distribution, which requires a _conditional sampler_. 
+\CRANpkg{xplainfi} provides a modular abstraction for this.
+Several conditional samplers are available, but here we focus on two: 
+The `ConditionalGaussianSampler` assumes multivariate normality and is fast but limited to numeric features.
+The `ConditionalARFSampler` uses adversarial random forests (ARF) and handles mixed data, but is computationally more expensive [@watson2023adversarialrandom].
+
+Samplers are instantiated on a given task once, after which one can draw one or more observations, which `CFI` and related methods handle internally.
+Each conditional sampler allows the specification of an arbitrary conditioning set of features for sampling.
+
+We continue with the correlated DGP from Example 1, where `x1` and `x2` are correlated ($r = 0.8$), but only `x1` affects the target.
+Using a Gaussian conditional sampler, we compute CFI and also request quantiles calculated across resampling iterations:
+
+```{r cfi-demo}
+#| echo: true
+#| cache: true
+cfi <- CFI$new(
+  task = task, learner = lrn("regr.ranger"), measure = msr("regr.mse"),
+  resampling = rsmp("subsampling", repeats = 5),
+  sampler = ConditionalGaussianSampler$new(task),
+  n_repeats = 10)
+cfi$compute()
+cfi$importance(ci_method = "quantile", alternative = "two.sided")
+```
+
+Compared to PFI, CFI identifies that `x2` is not associated with `y` conditional on the other features. 
+The `sampler` argument distinguishes CFI from PFI: while PFI uses marginal permutation, CFI requires a conditional sampler.
+The `"quantile"` method shown above provides empirical quantiles from the distribution of importance scores across resampling iterations, which help to gauge the stability of the estimates.
+Note that via `"alternative"`, we explicitly requested the default of `"two-sided"` intervals, by analogy with two- or one-sided hypothesis tests, where `"alternative = 'greater'"` would have given us only the 5% quantile as lower bound.
+
+## Example 3: Inference
+
+For principled inference beyond empirical quantiles, \CRANpkg{xplainfi} supports two main approaches, depending on the chosen importance method.
+
+### Nadeau-Bengio correction for PFI
+
+@molnar2023relatingpartialc recommend variance correction based on @nadeau2003inferencegeneralization when using PFI with subsampling or bootstrapping.
+The correction accounts for dependence between resampling iterations that share training observations, yielding confidence intervals with improved (though still imperfect) coverage.
+The recommended setup uses approximately 15 subsampling iterations.
+Since our earlier PFI example already uses subsampling, we can request corrected confidence intervals via `ci_method = "nadeau_bengio"`:
+
+```{r pfi-inference}
+#| echo: true
+head(pfi$importance(ci_method = "nadeau_bengio"), 3)
+```
+
+The output includes standard errors and adjusted confidence intervals.
+Note that this approach assumes normally distributed importance scores and was primarily evaluated for PFI; its use with other methods is experimental.
+Figure \@ref(fig:pfi-inference-comparison-plot) compares the corrected confidence intervals with the empirical 95% quantiles and also unadjusted confidence intervals.
+We note that the latter are also available via `ci_method = "raw"` for comparison, but they are not valid for inference.
+
+```{r pfi-inference-comparison-plot}
+#| echo: false
+#| fig.height: 2.5
+#| fig.align: "center"
+#| fig.cap: Comparison of uncertainty quantification methods using PFI on the correlated task (omitting noise features). Empirical 95% quantiles fall between the very narrow unadjusted confidence intervals and the wider Nadeau-Bengio-corrected intervals, which show the uncertainty masked by the unadjusted method.
+#| fig.alt: Dot and whisker plot showing point estimates and error bars of the different methods, with the unadjusted being the narrowest and quantile intervals slightly narrower than the Nadeau & Bengio adjusted intervals being much wider.
+data.table::rbindlist(list(
+  pfi$importance(ci_method = "nadeau_bengio", alternative = "two.sided")[, method := "Nadeau & Bengio"][],
+  pfi$importance(ci_method = "raw", alternative = "two.sided")[, method := "Unadjusted"][],
+  pfi$importance(ci_method = "quantile", alternative = "two.sided")[, method := "Quantiles"][]
+), fill = TRUE) |>
+  dplyr::filter(feature %in% c("x1", "x3")) |>
+  ggplot(aes(y = feature, x = importance, color = method, fill = method)) +
+  # coord_cartesian(xlim = c(0, NA)) +
+  geom_point(shape = 21, size = 2, position = position_dodge(width = .7)) +
+  geom_errorbar(
+    aes(xmin = conf_lower, xmax = conf_upper),
+    position = position_dodge(width = .7),
+    orientation = "y"
+  ) +
+  scale_color_brewer(palette = "Dark2", aesthetics = c("color", "fill")) +
+  labs(
+    title = NULL,
+    x = "Importance (PFI)",
+    y = "Feature",
+    color = NULL,
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+### CPI for conditional importance
+
+For CFI, inference is available through the CPI framework when using knockoff-based sampling, which leverages observation-wise losses to perform hypothesis tests for feature importance [@watson2021testingconditional].
+Using a knockoff sampler with CFI enables `ci_method = "cpi"`, for example in conjunction with a t-test:
+
+```{r cfi-cpi}
+#| echo: true
+#| cache: true
+cfi_knockoff <- CFI$new(
+  task = task, learner = lrn("regr.ranger"), measure = msr("regr.mse"),
+  sampler = KnockoffGaussianSampler$new(task),
+  resampling = rsmp("holdout"), n_repeats = 1)
+cfi_knockoff$compute()
+cfi_knockoff$importance(
+  ci_method = "cpi", alternative = "greater", 
+  p_adjust = "BH", test = "t")
+```
+
+This CPI test provides p-values and one-sided confidence bounds for each feature.
+Here, we use the `p_adjust` argument to use R's `p.adjust()` function to correct for the FDR with the Benjamini-Hochberg procedure.
+We note that this only corrects the p-values, but not the confidence bounds, which would only be adjusted for `p_adjust = "bonferroni"`.
+Alternatively to the knockoff approach, `ConditionalARFSampler` can be used in place of knockoffs, enabling CPI-style inference for mixed data types as proposed by @blesch2025conditionalfeaturea, though at a higher computational cost.
+Note that CPI was proposed in combination with a fixed model and a test set, whereas \CRANpkg{xplainfi} also allows its use with cross-validation.
+Because the CPI test operates on observation-wise losses, the non-overlapping test sets from the resampling folds are pooled into a single set of observation-wise losses on which the test is computed (i.e., micro-averaging rather than averaging per-fold results).
+
+## Example 4: LOCO and WVIM
+
+LOCO is implemented as a special case of the more general WVIM framework as described in Section&nbsp;[2](#sec-fi-methods).
+We apply it to the simulated task from Example 1 using a single refit iteration and show the same Bonferroni-adjusted p-values and confidence intervals based on the Wilcoxon test proposed by @lei2018distributionfreepredictivec:
+
+```{r loco-demo}
+#| echo: true
+#| cache: true
+loco <- LOCO$new(
+  task = task, learner = lrn("regr.ranger"),
+  measure = msr("regr.mse"), resampling = rsmp("holdout"))
+loco$compute()
+loco$importance(
+  ci_method = "lei", test = "wilcox", 
+  p_adjust = "bonferroni")[, c(1:2, 5:7)]
+```
+
+`WVIM` supports arbitrary feature groups via the `groups` argument, which accepts a named list specifying features belonging to each group (i.e., LOGO):
+
+```{r wvim-groups-demo}
+#| echo: true
+#| cache: true
+groups <- list(correlated = c("x1", "x2"), independent = c("x3", "x4"))
+wvim <- WVIM$new(
+  task = task, learner = lrn("regr.ranger"),
+  groups = groups, direction = "leave-out",
+  measure = msr("regr.mse"), resampling = rsmp("holdout"))
+wvim$compute()
+wvim$importance()
+```
+
+Here, the `"correlated"` group contains features `x1` and `x2`, which are removed together.
+WVIM also supports a `"leave-in"` direction, which trains models with _only_ the specified features and compares against a featureless baseline (i.e., LOCI or "LOGI").
+The `groups` argument is also available for PFI, CFI, and RFI, where the specified groups of features are then always perturbed at once.
+
+## Conditional samplers
+
+As described in Section&nbsp;[2](#sec-fi-methods), conditional methods like CFI and cSAGE require a mechanism to sample from the conditional distribution $P(X_j | X_{-j})$.
+\CRANpkg{xplainfi} provides a modular sampler architecture that allows different sampling strategies to be instantiated and passed to the importance method.
+All samplers inherit from the `FeatureSampler` base class and share a common interface: Instantiate a sampler on a `Task`, then use the `$sample()` method to draw new values for specified features conditional on the remaining ones or a subset of features specified as `conditioning_set`.
+
+We demonstrate the ARF sampler on the `penguins` task, which contains both numeric and categorical features.
+After instantiation, we sample new values for the `body_mass` feature for a few observations, conditional on all other features (including the categorical `island`):
+
+```{r sampler-demo}
+#| echo: true
+task_penguins <- tsk("penguins")
+sampler_arf <- ConditionalARFSampler$new(task_penguins)
+# Original values for comparison
+task_penguins$data(
+  rows = c(1, 20, 40),
+  cols = c("island", "bill_length", "body_mass"))
+# Sample new body_mass values conditional on all other features
+sampler_arf$sample(feature = "body_mass", row_ids = c(1, 20, 40))[, c(6, 3, 4)]
+```
+
+The sampler produces new values for `body_mass` drawn from the estimated conditional distribution $P(\mathtt{body\_mass} | X_{-\mathtt{body\_mass}})$.
+These sampled values replace the original feature when computing CFI or cSAGE, allowing importance to be assessed while preserving dependencies with other features.
+
+The choice of sampler involves trade-offs between flexibility and computational cost.
+The ARF sampler handles mixed data types without making distributional assumptions but requires fitting an adversarial random forest, which increases computational time and memory usage.
+
+
+# Benchmark experiments {#sec-benchmark}
+
+```{r setup-section-05}
+#| echo: false
+knitr::opts_chunk$set(cache = TRUE, echo = FALSE)
+
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(kableExtra)
+# https://coolors.co/1e3888-ef476f-f5e663-ffad69-9c3848
+pal_package <- c(
+  xplainfi = "#1e3888",
+  fippy = "#8CD867",
+  vip = "#A31621",
+  iml = "#ffad69",
+  sage = "#EF476F"
+)
+source("paper_2025_xplainfi_benchmark/R/plotting.R")
+source("paper_2025_xplainfi_benchmark/R/clean-results.R")
+
+# Get result files either from locally stored results or from included benchmark
+importance_stored <- "results/importances.rds"
+importance_bm <- "paper_2025_xplainfi_benchmark/results/importance/importances.rds"
+
+if (file.exists(importance_stored)) {
+  importances <- readRDS(importance_stored)
+} else if (file.exists(importance_bm)) {
+  importances <- readRDS(importance_bm)
+} else {
+  stop("Can't find importances.rds")
+}
+# Earlier SAGE runs were superseded by a re-run; keep the newest run per cell.
+importances <- dedup_latest_run(importances)
+
+runtime_stored <- "results/runtime.rds"
+runtime_bm <- "paper_2025_xplainfi_benchmark/results/runtime/runtime.rds"
+
+if (file.exists(runtime_stored)) {
+  runtime <- readRDS(runtime_stored)
+} else if (file.exists(runtime_bm)) {
+  runtime <- readRDS(runtime_bm)
+} else {
+  stop("Can't find runtime.rds")
+}
+
+```
+
+To evaluate \CRANpkg{xplainfi}, we performed benchmark experiments in two categories:
+**Importance results**: Since \CRANpkg{xplainfi} re-implements methods available in other packages, we verify that it produces equivalent importance scores across shared methods and DGPs, establishing that the implementations are faithful and comparable across packages.
+**Runtime**: We assess whether \CRANpkg{xplainfi}'s implementations are competitive in terms of computational cost compared to existing single-method packages, across varying task dimensionalities and method parameters.
+
+We compare against packages that implement the same methods in a model-importance setting, as this is the common denominator across implementations (see Section&nbsp;[3](#sec-related)).
+For PFI, we compare with \CRANpkg{iml} and \pkg{vip}.
+For marginal SAGE, we compare with `fippy` and `sage`, the latter implementing kernel SAGE [@covert2021improvingkernelshap].
+For CFI and conditional SAGE, we compare with `fippy`, using a Gaussian conditional sampler as the lowest common denominator of available sampling options.
+\CRANpkg{vimp} is not included as it only shares the refitting-based methods (LOCO, WVIM) with \CRANpkg{xplainfi}, and differences in supported metrics, learner frameworks, and resampling strategies make a fair apples-to-apples comparison difficult.
+The MSE was used as the evaluation metric across all methods, except for \pkg{vip}, which only supports the root mean squared error.
+Since RMSE is a monotone transformation of MSE, feature rankings are preserved but scaled importance magnitudes differ.
+Both benchmarks are defined in R using \CRANpkg{batchtools} [@lang2017batchtoolstools] for cluster-based parallelization, and \CRANpkg{reticulate} is used to run Python implementations.
+
+Each method is evaluated using one of four learners to account for variability in learner capabilities: a linear model (\pkg{stats} / `scikit-learn` [@scikitlearn2011]), a random forest (\CRANpkg{ranger} / `scikit-learn`, 500 trees), `XGBoost` [@chen2016xgboostscalable] (1000 rounds, early stopping after 50, $\eta = 0.1$), and an MLP (\CRANpkg{mlr3torch} / `scikit-learn`, 1 hidden layer, 20 neurons, 500 epochs with early stopping).
+Of these, `XGBoost` is the only learner with an identical underlying implementation across R and Python. 
+The linear model is expected to yield approximately identical results in either language.
+Learner configurations were chosen for simplicity and robustness rather than predictive performance, i.e., learners were not tuned beyond built-in regularization mechanisms.
+
+## Importance benchmark
+
+We compare importance scores by scaling values for a given method and DGP to the unit interval to examine relative magnitudes.
+A rank-based comparison is available in the online supplement.
+
+<!-- ### Experimental setup -->
+
+We compare five FI methods across one to four different implementations.
+Table \@ref(tab:tab-benchmark-methods) lists these methods and packages, alongside the parameters used for each method where applicable.
+To obtain reliable FI estimates, we used 50 repetitions for PFI and CFI, and similarly a high number of permutations for mSAGE and cSAGE, while enabling the "early stopping" options in both \CRANpkg{xplainfi}'s and `fippy`'s implementations to avoid high computational cost at diminishing returns.
+Since we prioritize comparability, we used Gaussian conditional sampling for the conditional methods CFI and cSAGE throughout the experiment, as this is the only sampling mechanism implemented by both \CRANpkg{xplainfi} _and_ `fippy`.
+Both packages offer additional sampling mechanisms with greater flexibility, but would have introduced more variability into the comparison.
+The tasks selected for this experiment consist of simulation settings with DGPs designed to showcase differences and similarities among feature importance methods; a full listing is provided in the online supplement.
+Here, we focus on the "correlated" DGP generated by `xplainfi::sim_dgp_correlated()` as introduced in the previous section ($Y = 2X_1 + X_3 + \varepsilon$, with $\mathrm{cor}(X_1, X_2) \in \{0.25, 0.75\}$, $p = 4$), and the "bike sharing" dataset introduced by @fanaee-t2014eventlabeling ($p = 12$), which is frequently used as an example for FI methods [e.g., @covert2020understandingglobalb; @blesch2025conditionalfeaturea].
+The bike sharing dataset's categorical features were converted to numeric values, as this was required to ensure comparability between \CRANpkg{xplainfi} and `fippy` via the Gaussian conditional sampler.
+For simulated data, $n = 5000$ samples were generated and 2/3 of the observations were used for learner training and 1/3 for feature importance calculation as a test set.
+The bike sharing dataset was resampled in every replication with a different train-test split.
+The train and test sets were created consistently across the different implementations, i.e., the linear model for \CRANpkg{xplainfi} was trained on the same data as the one for \pkg{vip} or `fippy` within a replication.
+Importance scores shown are aggregated from 25 replications.
+<!-- This experiment was conducted on a shared Linux server running Ubuntu 24.04 on an AMD EPYC 9554 CPU with 1.41 TiB of RAM. -->
+For additional details on the simulated settings, see the online supplement or [\CRANpkg{xplainfi}'s online documentation](https://mlr-org.github.io/xplainfi/articles/simulation-settings.html).
+
+<!-- sequential runtime of over 200 days. -->
+
+```{r tab-benchmark-methods}
+#| echo: false
+#| eval: true
+tibble::tribble(
+  ~method , ~packages                   , ~parameters,
+  "PFI"   , "xplainfi, fippy, iml, vip" , "Importance: n\\_repeats = 50\nRuntime: n\\_repeats = \\{1, 50\\}",
+  "CFI"   , "xplainfi, fippy"           , "Importance: n\\_repeats = 50, sampler: Gaussian\nRuntime: n\\_repeats = \\{1, 50\\}, sampler: Gaussian",
+  "mSAGE" , "xplainfi, fippy"           , "Importance: n\\_permutations = 100, n\\_samples = 100, min\\_permutations = 20\nRuntime: n\\_permutations = \\{10, 20, 50\\}, n\\_samples = \\{10, 50, 100\\}",
+  "mSAGE" , "sage"                      , "Importance: n\\_samples = 100\nRuntime: n\\_samples = \\{10, 50, 100\\}",
+  "cSAGE" , "xplainfi, fippy"           , "Importance: n\\_permutations = 100, n\\_samples = 100, min\\_permutations = 20, sampler: Gaussian\nRuntime: n\\_permutations = \\{10, 20, 50\\}, n\\_samples = \\{10, 50, 100\\}, sampler: Gaussian"
+) |>
+  # linebreak() always emits \makecell{}, which pandoc drops when writing HTML,
+  # blanking the whole column; HTML needs <br> and no LaTeX escapes.
+  dplyr::mutate(parameters = if (knitr::is_latex_output()) {
+    kableExtra::linebreak(parameters, align = "l")
+  } else {
+    gsub("\\\\([_{}])", "\\1", gsub("\n", "<br>", parameters))
+  }) |>
+  kbl(
+    col.names = c("Method", "Packages", "Parameters"),
+    caption = "Methods, implementations, and parameters for both benchmarks. Parameter names correspond to xplainfi's API and are set equivalently in other implementations. For the importance benchmark, early stopping was enabled for mSAGE and cSAGE in xplainfi and fippy; for the runtime benchmark, it was disabled to ensure identical workloads.",
+    booktabs = TRUE,
+    escape = FALSE
+  ) |>
+  column_spec(1, width = "1cm") |>
+  column_spec(2, width = "2.5cm") |>
+  column_spec(3, width = "9cm") |>
+  kable_styling()
+```
+
+```{r tab-importance-problems}
+#| echo: false
+#| eval: false
+tibble::tribble(
+  ~DGP           , ~p , ~description                                          , ~model                                                                            ,
+  "ewald"        ,  5 , "DGP used by Ewald et al. (2024)"                     , r"($Y = X_4 + X_5 + X_4 X_5 + \varepsilon$)"                                      ,
+  "correlated"   ,  4 , "$X_1$ and $X_2$ correlated ($r = 0.25, 0.75$)"       , r"($Y = 2 X_1 + X_3 + \varepsilon$)"                                              ,
+  "interactions" ,  5 , "$X_1$ and $X_2$ interact but have no direct effects" , r"($Y = 2 X_1 X_2 + X_3 + \varepsilon$)"                                          ,
+  "friedman1"    , 10 , "Regression benchmark from mlbench"                   , r"($Y = 10 \sin(\pi X_1 X_2) + 20 (X_3 - 0.5)^2 + 10 X_4 + 5 X_5 + \varepsilon$)" ,
+  "independent"  ,  5 , "Uncorrelated features with direct effects"           , r"($Y = 2 X_1 + X_2 + 0.5 X_3 + \varepsilon$)"                                    ,
+  "confounded"   ,  4 , "Unobserved confounder $H$ with proxy"                , r"($Y = H + X_1 + \varepsilon$)"                                                  ,
+  "mediated"     ,  4 , "Mediator masks exposure variable"                    , r"($Y = 1.5 \cdot \mathrm{mediator} + 0.5 \cdot \mathrm{direct} + \varepsilon$)"  ,
+  "bike sharing" , 12 , "Real-world dataset from mlr3data"                    , "N/A"
+) |>
+  select(-description) |>
+  kbl(
+    # col.names = c("Dataset", "p", "Description", "Model"),
+    col.names = c("Dataset", "p", "Model"),
+    caption = "DGPs used for comparison, alongside their number of features ($p$). Unless otherwise specified, features in simulated data were drawn from a univariate normal distribution and do not have an effect on the target.",
+    escape = FALSE,
+    booktabs = TRUE
+  ) |>
+  column_spec(1, width = "2cm") |>
+  column_spec(2, width = "0.8cm") |>
+  # column_spec(3, width = "6.5cm") |>
+  kable_styling()
+```
+
+Due to the large number of factors in the experiment, we present a subset of results here and refer to the online supplement for a complete overview.
+We focus on the `linear` and `boosting` learners since they are the most comparable across R and Python.
+
+Figure \@ref(fig:plot-importance-correlated-all) shows almost identical scaled importance scores across all implementing packages for PFI and CFI.
+The exception is \pkg{vip}, which produces the same feature ranking but with differing importance scores, most likely due to the different evaluation metric.
+The feature ranking is equivalent between the two learner types.
+For mSAGE and cSAGE, similarly close agreement is visible between \CRANpkg{xplainfi} and `fippy`, while `sage`'s kernel SAGE shows scores close to the other implementations with a slightly larger variance.
+
+```{r plot-importance-correlated-all}
+#| echo: false
+#| fig.height: 7
+#| fig.width: 10
+#| fig.cap: Importance scores (scaled to percentages) for PFI, CFI, mSAGE, and cSAGE across implementations on the correlated simulation setting with r = 0.75, based on either the linear model or the boosting learner.
+#| fig.alt: Boxplots of scaled importance scores by feature, colored by implementing package. x1 has the highest importance at 100, and x2 and x4 have an importance of 0. vip shows slightly higher importance for x3. xplainfi and fippy show identical values. cSAGE assigns importance to x2 similar in magnitude to x3.
+
+plot_importance(
+  importances[correlation == 0.75],
+  type = "scaled",
+  problem = "correlated",
+  method = c("PFI", "CFI", "mSAGE", "cSAGE"),
+  learner_type = c("linear", "boosting"),
+  facets = c("method", "learner_type"),
+  multi_line = FALSE,
+  ncol = 4
+)
+```
+
+Next, we consider the bike sharing task.
+Figure \@ref(fig:plot-importance-bikesharing-pficfi) shows PFI and CFI using the linear model and boosting learner.
+For PFI, we see strong agreement between the methods similar to the previous setting.
+For CFI, \CRANpkg{xplainfi} and `fippy` produce different (scaled) importance scores for the `year` and `working_day` features.
+This is most likely explained by the Gaussian conditional sampler being implemented slightly differently in both packages, combined with its use here on effectively categorical features encoded as integers, which is not the most appropriate choice.
+A similar pattern is visible in Figure \@ref(fig:plot-importance-bikesharing-sages) for cSAGE with the same underlying cause but good agreement otherwise.
+For mSAGE, `sage`'s importance scores produce a different pattern which does not appear to agree with the other methods.
+The linear model's importance scores additionally show comparatively large variance (e.g., for `apparent_temperature`), which reflects multicollinearity among the bike sharing features: `temperature` and `apparent_temperature` are strongly correlated.
+The coefficients of this unregularized, main-effects-only learner are therefore unstable across train-test splits, and the loss-based importance inherits this instability.
+Scores for the remaining simulation settings and learners are available in the online supplement.
+In all settings, \CRANpkg{xplainfi}'s results agree with the reference implementations apart from minor deviations that did not affect the overall ranking, as also shown by the rank-based and paired-difference analyses in the supplement.
+
+```{r plot-importance-bikesharing-pficfi}
+#| echo: false
+#| fig.height: 7
+#| fig.width: 8
+#| fig.cap: Importance scores (scaled to percentages) for PFI and CFI across implementations on the bike sharing dataset, based on either the linear model or the boosting learner.
+#| fig.alt: Boxplots of scaled importance scores by feature, colored by implementing package. Most features have low or zero importance. `hour` is highest, followed by `year` and `humidity`. `season` ranks lower but is nonzero only for the linear model and PFI. `apparent_temperature` also only scores around 5 with high variance for the linear model. Methods using the boosting learner assign higher importance to `working_day` and `temperature`.
+
+plot_importance(
+  importances,
+  type = "scaled",
+  problem = "bike_sharing",
+  method = c("PFI", "CFI"),
+  learner_type = c("linear", "boosting"),
+  facets = c("method", "learner_type"),
+  multi_line = FALSE
+)
+```
+
+```{r plot-importance-bikesharing-sages}
+#| echo: false
+#| fig.height: 7
+#| fig.width: 8
+#| fig.cap: Importance scores (scaled to percentages) for mSAGE and cSAGE across implementations on the bike sharing dataset, based on either the linear model or the boosting learner.
+#| fig.alt: Boxplots of scaled importance scores by feature, colored by implementing package. Similar overall picture as in the previous plot, with notably higher importances for temperature and `apparent_temperature` for the methods using the linear model. `sage` (kernel SAGE) disagrees with the other implementations both in ranking and in magnitude, showing `hour` to be close to or below 50, with `apparent_temperature` consistently at 100 when the linear model is used, while hour remains at 100 when the boosting learner is used.
+
+plot_importance(
+  importances,
+  type = "scaled",
+  problem = "bike_sharing",
+  method = c("mSAGE", "cSAGE"),
+  learner_type = c("linear", "boosting"),
+  facets = c("method", "learner_type"),
+  multi_line = FALSE
+)
+```
+
+## Runtime benchmark
+
+Methods were run exclusively using linear models to isolate the computational cost of the FI method itself from that of the learner (see Table \@ref(tab:tab-benchmark-methods) for parameter ranges).
+We used only the `peak` task from \CRANpkg{mlbench}, which provides a regression problem with user-definable sample and feature sizes.
+Experiments were run for 25 replications on the Intel Xeon Platinum 8380 compute nodes of the Leibniz Supercomputing Centre.
+
+Figure \@ref(fig:plot-runtime-all) shows median runtimes with 25% and 75% quantiles for $n = 5000$ with varying $p$.
+For PFI, \CRANpkg{iml} is clearly the slowest implementation after `fippy`.
+\pkg{vip} shows only slightly slower times than \CRANpkg{xplainfi}.
+For mSAGE, `sage` notably becomes faster with more features, likely because the kernel SAGE implementation converges faster in that case.
+Across all methods, `fippy` is notably slower than \CRANpkg{xplainfi}.
+Overall, \CRANpkg{xplainfi} was consistently faster than or comparable to the reference implementations under close-to-equal settings.
+Additional results for all methods and parameter configurations are available in the online supplement.
+
+```{r plot-runtime-all}
+#| echo: false
+#| fig.height: 4.5
+#| fig.width: 8
+#| fig.cap: Median runtime in seconds with 25% and 75% quantiles for PFI and CFI with n\_repeats = 50 and mSAGE and cSAGE with n\_samples = 100 and n\_permutations = 100 across implementations on the peak simulation setting with 5, 10, and 20 features and 5000 samples using a linear model across 25 replications.
+#| fig.alt: Pointrange plots of runtime in seconds by method and implementation, colored by implementing package. For PFI and CFI, xplainfi is generally faster than fippy or on par and always faster than iml. For mSAGE, xplainfi is fastest. sage becomes faster the more features are used, and is slowest for 5 features and roughly on par with xplainfi for 20 features.
+
+plot_runtime_scaling(
+  runtime[n_repeats == 50 | is.na(n_repeats)],
+  n_samples = 5000,
+  geom = "pointrange",
+  x_var = "n_features",
+  learner_type = "linear",
+  sampler = c("gaussian", "simple"),
+  method = c("PFI", "CFI", "mSAGE", "cSAGE"),
+  facets = c("method"),
+  logscale = TRUE,  
+  sage_n_samples = 100,
+  n_permutations = 100,
+  ncol = 2
+)
+```
+
+
+# Discussion and conclusion {#sec-discussion}
+
+We introduced \CRANpkg{xplainfi}, a package that provides a comprehensive suite of global, loss-based FI methods within a unified framework built on the \CRANpkg{mlr3} ecosystem, by implementing methods previously unavailable or scattered across packages, including conditional feature importance (CFI), relative feature importance (RFI), and both marginal and conditional SAGE.
+This allows \CRANpkg{xplainfi} to focus primarily on FI methods without reimplementing common ML building blocks such as model interfaces, resampling, and performance measures.
+However, this also means \CRANpkg{xplainfi} is not compatible with related frameworks such as \CRANpkg{tidymodels} or arbitrary "unwrapped" models and learner implementations.
+We accept this compromise, as we could not otherwise maintain or expand the current feature set.
+Our benchmark experiments demonstrate that \CRANpkg{xplainfi} produces importance scores consistent with reference implementations across multiple DGPs and learner types, while offering competitive runtime performance.
+
+Choosing the "best" method depends on the research question, the type of association of interest (marginal vs. conditional), and the available computational budget, which can affect the choice between perturbation-based, refit-based, and Shapley-based methods.
+For detailed guidance on underlying estimands and interpretation, we refer to @ewald2024guidefeatureb.
+
+The modular feature sampler architecture is unique, enabling \CRANpkg{xplainfi} to perform conditional FI analysis on continuous and mixed data alike via flexible samplers.
+This includes the ability to specify arbitrary conditioning sets for each sampler in the `Conditional` family, which enables conditional SAGE and RFI.
+Interest in conditional methods has been growing, and future work may benefit from the building blocks available with \CRANpkg{xplainfi}.
+However, these methods come with trade-offs: the ARF sampler, while flexible, incurs higher computational cost and memory usage than Gaussian sampling, and SAGE methods can be slow due to the many feature coalitions that must be evaluated.
+Subsequent releases have reduced the computational cost of these methods, and a kernel-based SAGE estimator is in development.
+
+The package could and should be extended to include additional confidence interval methods, or more generally, uncertainty quantification methods for FI. 
+Although this is very desirable from a practical perspective, not enough (established) techniques and coverage studies exist, and we think exposing users to unvalidated techniques is not appropriate; such dedicated studies are out of scope for the current paper. 
+
+The package currently offers no visualization options, as we focused on the computational aspects.
+Visualizations for reports and publications often have specific requirements and are customized accordingly.
+Because we provide well-structured container types, the FI values (and other results) can be readily plotted using, e.g., \CRANpkg{ggplot2}.
+
+
+```{r sessioninfo, eval=knitr::is_html_output(), results="asis"}
+s <- sessionInfo()
+# Write to a file (HTML builds only, since chunk is gated)
+writeLines(capture.output(print(s)), "session_info.txt")
+# Show collapsible session info in HTML only
+cat("<details>\n<summary>Session info</summary>\n\n```\n")
+cat(capture.output(print(s)), sep = "\n")
+cat("\n```\n\n</details>\n")
+```
+
+# Acknowledgements
+
+\setlength{\parindent}{0pt}
+
+The authors gratefully acknowledge the computational and data resources provided by the Leibniz Supercomputing Centre (www.lrz.de).
+
+Lukas Burk is supported by the Federal Ministry of Research, Technology and Space (BMFTR), grant number 01EQ2409E.
+
+Marvin N. Wright is supported by the German Research Foundation (DFG), grant numbers 437611051 and 459360854, and the Federal Ministry of Research, Technology and Space (BMFTR), grant number 01EQ2409E.
+
+Bernd Bischl is supported by the German Research Foundation (DFG), grant number 460135501.
