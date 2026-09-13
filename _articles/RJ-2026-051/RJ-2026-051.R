@@ -2,7 +2,7 @@
 # Please edit RJ-2026-051.Rmd to modify this file
 
 ## ----setup, include=FALSE-----------------------------------------------------
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
 library(goSorensen)
 library(org.Hs.eg.db)
 library(plotly)
