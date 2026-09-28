@@ -19,11 +19,11 @@ knitr::include_graphics("goSorensenPaper-figures/GOterms.png")
 knitr::include_graphics("goSorensenPaper-figures/cycle.png")
 
 
-## ----boot-static, fig.cap='The true distribution (approximated) of the studentized statistic $Z_S$ and its fit degree with its bootstrap estimation $Z_S^*$ and the normal distribution $\\text{Norm}(0, 1)$, for a low enrichment level $(p_{11} = 0.125, p_{01} = 0.05, p_{10} = 0.05)$.', include=knitr::is_latex_output(), out.height="30%", out.width="73%", fig.align='center'----
+## ----boot-static, fig.cap='The true distribution (approximated) of the studentized statistic $Z_S$ and its fitting degree with its bootstrap estimation and the normal distribution $\\text{Norm}(0, 1)$, for a low enrichment level $(p_{11} = 0.125, p_{01} = 0.05, p_{10} = 0.05)$.', include=knitr::is_latex_output(), out.height="30%", out.width="73%", fig.align='center'----
 knitr::include_graphics("goSorensenPaper-figures/bootsplot.png")
 
 
-## ----boot-dynamic, fig.align='center', fig.cap='The true distribution (approximated) of the studentized statistic $Z_S$ and its fit degree with its bootstrap estimation $Z_S^*$ and the normal distribution $\\text{Norm}(0, 1)$, for three different enrichment levels: Low $(p_{11} = 0.0125, p_{01} = 0.005, p_{10} = 0.005)$, Moderate $(p_{11} = 0.125, p_{01} = 0.05, p_{10} = 0.05)$ and High $(p_{11} = 0.4, p_{01} = 0.2, p_{10} = 0.2)$.', include=knitr::is_html_output(), eval=knitr::is_html_output(), out.height="30%", out.width="78%"----
+## ----boot-dynamic, fig.align='center', fig.cap='The true distribution (approximated) of the studentized statistic $Z_S$ and its fitting degree with its bootstrap estimation  and the normal distribution $\\text{Norm}(0, 1)$, for three different enrichment levels: Low $(p_{11} = 0.0125, p_{01} = 0.005, p_{10} = 0.005)$, Moderate $(p_{11} = 0.125, p_{01} = 0.05, p_{10} = 0.05)$ and High $(p_{11} = 0.4, p_{01} = 0.2, p_{10} = 0.2)$.', include=knitr::is_html_output(), eval=knitr::is_html_output(), out.height="30%", out.width="78%"----
 # fig <- plot_ly()
 # 
 # load("goSorensenPaper-data/data_list.rda")
