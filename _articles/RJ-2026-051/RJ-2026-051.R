@@ -3,7 +3,7 @@
 
 ## ----setup, include=FALSE-----------------------------------------------------
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
-BiocManager::install(version = "3.23", ask = FALSE, update = FALSE)
+#BiocManager::install(version = "3.23", ask = FALSE, update = FALSE)
 library(goSorensen)
 library(org.Hs.eg.db)
 library(plotly)
